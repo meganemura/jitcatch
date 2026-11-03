@@ -238,6 +238,8 @@ gem の中から始まったエラーには `touches:changed_method` を付け�
 `related:guess` は、id を選んだ根拠が複数の変更メソッドを指している。
 たとえば、テストが変更されていない呼び出し元だけを含み、その呼び出し元から複数の変更メソッドへ届くときである。
 その行の次の行 `related guess: m05 of m02,m04,m05` が候補をすべて並べ、`--json` では `method_ids` が同じものを持つ。
+`related:dynamic` は、関連する変更メソッドはないが、テストが `dynamic_callers:` のメソッドを呼んでいる。
+その行の次の行が `related: none, Emit.looked_up sends render to a receiver the source does not name` のようにそれを言う。
 
 ## どう残すか
 
@@ -349,7 +351,9 @@ CLI を使わない場合は、`skills/jitcatch` をエージェントの skills
 - 呼び出しを数えるのは、レシーバのクラスがソースに書かれているときだけである。
   `self`（レシーバなしを含む）、定数（`Cart.build`）、`self.class`、それらの `new`、そしてクラスが一つの `Const.new` だけを代入するインスタンス変数がこれに当たる。
   メソッドの中のすべての代入が同じ `Const.new` であるローカル変数（`repo = Repo.new; repo.read`）もこれに当たる。
-  引数、ほかの値を代入したローカル変数、メソッドの戻り値への呼び出しは辺にならないので、`reachable_from` が呼び出し元を落とすことがある。
+  同じクラスのメソッドが返す値への呼び出し（`emitter_for(format).render`）は、そのメソッドが定数と nil だけを返すとき（`case`、`if`、三項演算子を通して）、返しうる定数それぞれへ向かう。
+  引数、ほかの値を代入したローカル変数、それ以外の戻り値への呼び出しは辺にならないので、`reachable_from` が呼び出し元を落とすことがある。
+  そうした呼び出しは、送る名前が変更メソッドの名前か、その `reachable_from` にあるメソッドの名前であれば、その変更メソッドの `dynamic_callers:` に `Emit.looked_up (render)` のように出る。
   クラスが定義していないメソッドを `self` に呼ぶと、その名前を持つ索引上ただ一つのメソッドへ向かう。
   モジュールやスーパークラスのメソッドのためである。
   インスタンスメソッドからはインスタンスメソッドだけが対象になる。

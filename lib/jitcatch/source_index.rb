@@ -34,7 +34,9 @@ module JitCatch
     Call = Data.define(:file, :bare_name, :line, :enclosing, :receiver)
     # What a call is sent to, as far as the source names it: the enclosing
     # object (`self`), a class or module itself (`singleton`), an instance
-    # of one (`instance`), or a value only a run would know (`unknown`).
+    # of one (`instance`), one of the constants a method of the same class
+    # returns (`one_of`, with `const` the list), or a value only a run would
+    # know (`unknown`).
     # `const` is the constant as written, or nil for the enclosing class.
     # An instance variable is an `instance` when every `Const.new` assigned
     # to it in the class names the same constant. A local variable is one
@@ -90,6 +92,7 @@ module JitCatch
       @defined = Hash.new { |hash, key| hash[key] = [] }
       @described = []
       @spec_helpers = []
+      @returned = {}
     end
 
     def parse
@@ -104,6 +107,7 @@ module JitCatch
       walk(result.value, "", false, nil)
       type_instance_variables
       type_local_variables
+      type_returned_receivers
       rename_module_function_callers
       @methods = self.class.hide_private_constants(@methods, @private_constants)
       self
@@ -450,6 +454,46 @@ module JitCatch
       end
     end
 
+    # `emitter_for(format).render` sends `render` to whatever `emitter_for`
+    # returns. When that method of the same class returns only constants (and
+    # nil), the call goes to one of them.
+    def type_returned_receivers
+      @calls.map! do |call|
+        next call unless call.receiver.kind == "returned"
+
+        qualifier, sep, _bare = self.class.split_qualified(call.enclosing.to_s)
+        names = [sep == ".", sep != "."].map { |singleton| self.class.qualify(qualifier, call.receiver.const, singleton) }
+        consts = @returned.values_at(*names).compact.first.to_a.uniq
+        call.with(receiver: consts.empty? ? UNKNOWN_RECEIVER : Receiver.new(kind: "one_of", const: consts))
+      end
+    end
+
+    # The constants a method body can return, or nil when it can return
+    # anything else. A `nil` branch adds none.
+    def returned_constants(node)
+      case node
+      when nil, Prism::NilNode
+        []
+      when Prism::ConstantReadNode, Prism::ConstantPathNode
+        [const_name(node)]
+      when Prism::StatementsNode
+        returned_constants(node.body.last)
+      when Prism::ParenthesesNode
+        returned_constants(node.body)
+      when Prism::ElseNode, Prism::WhenNode
+        returned_constants(node.statements)
+      when Prism::IfNode, Prism::UnlessNode, Prism::CaseNode
+        branches = (node.compact_child_nodes - [node.predicate]).map { |branch| returned_constants(branch) }
+        branches.all? ? branches.flatten : nil
+      end
+    end
+
+    def returns?(node)
+      return false if node.nil? || node.is_a?(Prism::DefNode)
+
+      node.is_a?(Prism::ReturnNode) || node.compact_child_nodes.any? { |child| returns?(child) }
+    end
+
     # The constants a value builds with `Const.new`, through `a || b`,
     # `c ? a : b`, and parentheses.
     def built_constants(node)
@@ -515,6 +559,7 @@ module JitCatch
         singleton = singleton_context || !node.receiver.nil?
         qname = self.class.qualify(qualifier, node.name.to_s, singleton)
         @defined[node.name.to_s] << qname unless @defined[node.name.to_s].include?(qname)
+        @returned[qname] = returned_constants(node.body) unless returns?(node.body)
         node.compact_child_nodes.each { |child| walk(child, qualifier, singleton_context, qname) }
       when Prism::CallNode
         return walk_spec_block(node, qualifier, singleton_context, enclosing) if spec_block?(node)
@@ -645,6 +690,8 @@ module JitCatch
           Receiver.new(kind: "instance", const: inner.const)
         elsif node.name == :new && inner.kind == "self"
           Receiver.new(kind: "instance", const: nil)
+        elsif inner.kind == "self"
+          Receiver.new(kind: "returned", const: node.name.to_s)
         else
           UNKNOWN_RECEIVER
         end

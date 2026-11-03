@@ -27,4 +27,30 @@ class TestEdgesProperty < Minitest::Test
       assert_equal expected.sort, edges.map { |edge| [edge["from"], edge["to"]] }.sort
     end
   end
+
+  # A call on what a same-class method returns goes to each constant that
+  # method can return and that defines the name, and nowhere when one of
+  # the values it returns is not a constant or nil.
+  def test_a_call_on_a_returned_constant_goes_to_each_constant_returned
+    Hegel.test do |tc|
+      defined = (0..2).to_h { |k| ["K#{k}", tc.draw(arrays(sampled_from(NAMES.map { |name| "self.#{name}" }), unique: true, max_size: 3))] }
+      returned = tc.draw(arrays(sampled_from(%w[K0 K1 K2 nil value]), min_size: 1, max_size: 3))
+      name = tc.draw(sampled_from(NAMES))
+      body = case tc.draw(sampled_from(%w[case ternary last]))
+      when "case" then "case value\n#{returned.each_with_index.map { |item, i| "    when #{i} then #{item}\n" }.join}    end"
+      when "ternary" then returned.drop(1).reverse.reduce(returned.first) { |rest, item| "(value ? #{item} : #{rest})" }
+      else returned.last
+      end
+      returned = [returned.last] if body == returned.last
+      classes = defined.map { |klass, defs| "class #{klass}\n#{defs.map { |item| "  def #{item}\n    1\n  end\n" }.join}end\n" }
+      caller_src = "class Caller\n  def call(value)\n    pick(value).#{name}\n  end\n\n  def pick(value)\n    #{body}\n  end\nend\n"
+      index = JitCatch::SourceIndex.parse(classes.join("\n") + caller_src, file: "lib/x.rb")
+      edges = JitCatch::Changes.allocate.send(:edges_for, { "methods" => index.methods, "calls" => index.calls })
+        .select { |edge| edge["from"] == "Caller#call" && edge["to"].start_with?("K") }
+
+      constants = returned.include?("value") ? [] : returned.grep(/\AK/).uniq
+      expected = constants.select { |klass| defined.fetch(klass).include?("self.#{name}") }.map { |klass| "#{klass}.#{name}" }
+      assert_equal expected.sort, edges.map { |edge| edge["to"] }.sort, caller_src
+    end
+  end
 end

@@ -39,6 +39,7 @@ module JitCatch
       head_edges = edges_for(head_idx)
       base_edges = edges_for(base_idx)
       decorate_calls(methods, head_edges, base_edges)
+      decorate_dynamic_callers(methods, head_idx, base_idx)
       decorate_tests(methods, base_idx, head_idx)
       entrypoints = entrypoints_for(methods, head_idx, base_idx)
 
@@ -275,6 +276,24 @@ module JitCatch
       end
     end
 
+    # A method that sends the name of a changed method, or of one that
+    # reaches it, to a receiver the source does not name, as in
+    # `EMITTERS.fetch(format).render`, may reach it, but no edge says so.
+    def decorate_dynamic_callers(methods, head_idx, base_idx)
+      methods.each do |method|
+        node = method["new"] || method["old"]
+        idx = method["change"] == "removed" ? base_idx : head_idx
+        names = [node.qualified, *method["reachable_from"]].to_h { |name| [SourceIndex.split_qualified(name).last, name] }
+        callers = idx["calls"].filter_map do |call|
+          next unless call.receiver.kind == "unknown" && names.key?(call.bare_name) && call.enclosing && !test_file?(call.file)
+          next if call.enclosing == node.qualified || method["reachable_from"].include?(call.enclosing)
+
+          { "from" => call.enclosing, "name" => call.bare_name }
+        end
+        method["dynamic_callers"] = callers.uniq.sort_by { |caller| [caller["from"], caller["name"]] }.first(REACHABLE_CAP)
+      end
+    end
+
     def decorate_tests(methods, base_idx, head_idx)
       test_sources = test_sources_for(base_idx, head_idx)
       public_names = (base_idx["methods"] + head_idx["methods"]).filter_map { |node| [node.qualified, true] if node.visibility == "public" }.to_h
@@ -384,10 +403,11 @@ module JitCatch
       idx["calls"].each do |call|
         next if call.enclosing.nil? || test_file?(call.file)
 
-        target = call_target(call, by_class, by_bare, qualifiers)
-        next if target.nil? || target.qualified == call.enclosing
+        Array(call_target(call, by_class, by_bare, qualifiers)).each do |target|
+          next if target.qualified == call.enclosing
 
-        edges << { "from" => call.enclosing, "to" => target.qualified, "file" => call.file, "line" => call.line }
+          edges << { "from" => call.enclosing, "to" => target.qualified, "file" => call.file, "line" => call.line }
+        end
       end
       edges.uniq { |edge| [edge["from"], edge["to"], edge["file"], edge["line"]] }
         .sort_by { |edge| [edge["file"], edge["line"], edge["from"], edge["to"]] }
@@ -417,6 +437,11 @@ module JitCatch
         owner = receiver.const.nil? ? qualifier : resolve_constant(receiver.const, qualifier, qualifiers)
         found = (by_class[[owner, call.bare_name]] || []).select { |method| method.kind == receiver.kind }
         found.first if found.size == 1
+      when "one_of"
+        receiver.const.filter_map do |const|
+          found = (by_class[[resolve_constant(const, qualifier, qualifiers), call.bare_name]] || []).select { |method| method.kind == "singleton" }
+          found.first if found.size == 1
+        end
       end
     end
 
@@ -477,6 +502,7 @@ module JitCatch
         "callsites" => item["callsites"],
         "callsites_omitted" => item["callsites_omitted"],
         "reachable_from" => item["reachable_from"],
+        "dynamic_callers" => item["dynamic_callers"],
         "existing_tests" => item["existing_tests"],
         "entry_point_tests" => item["entry_point_tests"],
         "via_constant" => item["via_constant"]

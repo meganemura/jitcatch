@@ -94,7 +94,7 @@ class TestRunner < Minitest::Test
       assert_equal "reported", by_name["TotalTest#test_total"]["disposition"]
       assert_includes by_name["TotalTest#test_total"]["tags"], "caller:unchanged:lib/calc.rb:11"
       assert_includes by_name["TotalTest#test_total"]["tags"], "touches:unchanged_caller"
-      assert_equal %w[bare_name callsites_omitted change end_line file id kind name new_end new_start
+      assert_equal %w[bare_name callsites_omitted change dynamic_callers end_line file id kind name new_end new_start
         old_end old_start reachable_from signature start_line via_constant visibility],
         doc["methods"].flat_map(&:keys).uniq.sort
 
@@ -990,6 +990,57 @@ def test_the_receiver_class_picks_the_related_method_among_same_named_ones
     assert_equal [ids.fetch("Log.parse"), [ids.fetch("Log.parse")]], rows.fetch("ParseTest#test_log")
   end
 end
+
+  def test_a_call_through_a_picked_constant_is_related_and_one_through_a_lookup_says_so
+    with_repo do |repo|
+      leaf = "module Plain\n  def self.render(text) = text\nend\n\nmodule Fancy\n  def self.render(text) = BODY\nend\n"
+      repo.write("lib/emit.rb", <<~RUBY)
+        require "leaf"
+
+        module Emit
+          EMITTERS = { "plain" => Plain, "fancy" => Fancy }.freeze
+
+          module_function
+
+          def render(format, text) = emitter_for(format).render(text)
+
+          def emitter_for(format) = format == "plain" ? Plain : Fancy
+
+          def looked_up(format, text) = EMITTERS.fetch(format).render(text)
+        end
+      RUBY
+      repo.write("lib/leaf.rb", leaf.sub("BODY", "text"))
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/leaf.rb", leaf.sub("BODY", "text.upcase"))
+      repo.commit("Shout the fancy text.", date: "2026-02-12T00:00:00Z")
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, {
+        "emit_test.rb" => <<~TEST
+          require "minitest/autorun"
+          require "emit"
+
+          class EmitTest < Minitest::Test
+            def test_render
+              assert_equal "x", Emit.render("fancy", "x")
+            end
+
+            def test_looked_up
+              assert_equal "x", Emit.looked_up("fancy", "x")
+            end
+          end
+        TEST
+      })
+
+      doc = execute(repo, tests)
+      rows = doc["tests"].to_h { |test| [test["name"], test.values_at("method_id", "dynamic_call", "tags")] }
+
+      assert_equal ["m01", nil, %w[assertion report touches:unchanged_caller]], rows.fetch("EmitTest#test_render")
+      assert_equal [nil, { "from" => "Emit.looked_up", "name" => "render" }, %w[assertion related:dynamic report]], rows.fetch("EmitTest#test_looked_up")
+      assert_includes JitCatch::Render.run_text(doc), "    related: none, Emit.looked_up sends render to a receiver the source does not name\n"
+      assert_includes JitCatch::Render.context_text(JitCatch::Changes.between(repo.dir, "base", "HEAD")), "    dynamic_callers: Emit.looked_up (render)\n"
+    end
+  end
 
   def test_a_word_in_a_string_or_a_comment_is_not_a_mention
     with_repo do |repo|

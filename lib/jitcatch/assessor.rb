@@ -22,6 +22,7 @@ module JitCatch
       @doc = doc
       @methods = Array(doc["methods"])
       @constants = Array(doc["constants"])
+      @callers = @methods.flat_map { |item| Array(item["reachable_from"]) }.uniq
     end
 
     def apply
@@ -36,9 +37,12 @@ module JitCatch
           test["disposition"] = reason ? "discarded" : "reported"
           test["tags"] = tags_for(test, method, reason, call)
           test["tags"] = (test["tags"] + ["related:guess"]).sort if pool.size > 1
+          test["dynamic_call"] = method ? nil : dynamic_call(test)
+          test["tags"] = (test["tags"] + ["related:dynamic"]).sort if test["dynamic_call"]
         else
           test["method_id"] = nil
           test["method_ids"] = []
+          test["dynamic_call"] = nil
           test["disposition"] = test["classification"]
           test["tags"] = []
         end
@@ -53,7 +57,7 @@ module JitCatch
     private
 
     def strip(test)
-      test.reject { |key, _| %w[method_id method_ids tags disposition candidate_id].include?(key) }
+      test.reject { |key, _| %w[method_id method_ids dynamic_call tags disposition candidate_id].include?(key) }
     end
 
     def assign_candidate_ids(tests)
@@ -170,12 +174,16 @@ module JitCatch
       tags = []
       changed_mentions = @methods.map { |item| mention(item) }
       gem = origin_gem(test)
-      direct = method && gem.nil? && (mentions.include?(mention(method)) || frame_hits?(test, method))
+      named = method && mentions.include?(mention(method)) && sent_to_named_receivers([method], mentions).any?
+      direct = method && gem.nil? && (named || frame_hits?(test, method))
       tags << "touches:changed_method" if direct
       tags << "touches:changed_dependency" if gem && Array(@doc["dependencies"]).any? { |dep| dep["gem"] == gem }
       tags << "touches:changed_constant" if (mentions & @constants.map { |const| const["bare_name"] }).any?
-      upstream = @methods.flat_map { |item| Array(item["reachable_from"]).map { |name| bare(name) } }
-      callers = (mentions & upstream) - changed_mentions
+      # A bare name that a changed method shares counts as that method; one
+      # the test sends to a named class counts as that class's.
+      callers = (@callers - @methods.map { |item| item["name"] }).select { |name|
+        sent_to?(name, mentions) && (receivers_of(name, mentions).any? || !changed_mentions.include?(bare(name)))
+      }
       tags << "touches:unchanged_caller" if callers.any?
       tags
     end
@@ -214,6 +222,8 @@ module JitCatch
         upstream = Array(item["reachable_from"]).map { |name| bare(name) }
         (mentions & upstream).any?
       }
+      sent = via_caller.select { |item| Array(item["reachable_from"]).any? { |name| sent_to?(name, mentions) } }
+      via_caller = sent unless sent.empty?
       pool = via_caller.empty? ? constructors : via_caller
       [most_downstream(pool), pool]
     end
@@ -222,19 +232,43 @@ module JitCatch
     # `described_class.parse`) calls that class's method of the name, not
     # another class's. When no changed method of the name is on a class
     # the test names, the call may reach one through a superclass or a
-    # module, so all of them stay.
+    # module, so all of them stay, unless the named class's method is a
+    # known caller of a changed method: the call stops there.
     def sent_to_named_receivers(items, mentions)
-      receivers = mentions.map { |name| SourceIndex.split_qualified(name) }.reject { |owner, _, _| owner.empty? }
-      items.group_by { |item| bare(item["name"]) }.flat_map do |name, group|
-        named = receivers.select { |_, _, bare_name| bare_name == name }
-        hits = group.select { |item| named.any? { |owner, sep, _| defined_on?(item, owner, sep) } }
-        hits.empty? ? group : hits
+      items.group_by { |item| bare(item["name"]) }.flat_map do |_name, group|
+        receivers = receivers_of(group.first["name"].to_s, mentions)
+        next group if receivers.empty?
+
+        hits = group.select { |item| sent_to?(item["name"].to_s, mentions) }
+        hits.empty? && @callers.none? { |name| on_receiver?(name, receivers) } ? group : hits
       end
     end
 
-    def defined_on?(item, owner, sep)
-      qualifier, item_sep, _bare = SourceIndex.split_qualified(item["name"].to_s)
-      item_sep == sep && (qualifier == owner || qualifier.end_with?("::#{owner}"))
+    # Whether the test calls the method: on a class it names when it names
+    # one for that method name, or by the bare name when it names none.
+    def sent_to?(qualified, mentions)
+      receivers = receivers_of(qualified, mentions)
+      receivers.empty? ? mentions.include?(bare(qualified)) : on_receiver?(qualified, receivers)
+    end
+
+    def on_receiver?(qualified, receivers)
+      qualifier, sep, name = SourceIndex.split_qualified(qualified)
+      receivers.any? { |owner, owner_sep, owner_name| owner_name == name && sep == owner_sep && (qualifier == owner || qualifier.end_with?("::#{owner}")) }
+    end
+
+    def receivers_of(qualified, mentions)
+      name = bare(qualified)
+      mentions.map { |mention| SourceIndex.split_qualified(mention) }
+        .select { |owner, _sep, bare_name| !owner.empty? && bare_name == name }
+    end
+
+    # With no related method, the call the test makes may still reach one
+    # through a receiver the source does not name. That is said, not guessed.
+    def dynamic_call(test)
+      mentions = Array(test["mentions"])
+      @methods.flat_map { |item| Array(item["dynamic_callers"]) }
+        .sort_by { |caller| [caller["from"], caller["name"]] }
+        .find { |caller| sent_to?(caller["from"], mentions) }
     end
 
     def method_from_backtrace(test)

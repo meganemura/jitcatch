@@ -145,6 +145,9 @@ module JitCatch
           unless method["reachable_from"].empty?
             lines << "    reachable_from: #{method["reachable_from"].join(", ")}"
           end
+          unless method["dynamic_callers"].to_a.empty?
+            lines << "    dynamic_callers: #{method["dynamic_callers"].map { |caller| "#{caller["from"]} (#{caller["name"]})" }.join(", ")}"
+          end
           lines << "    tests: #{format_tests(method["existing_tests"])}"
           unless method["entry_point_tests"].empty?
             hits = method["entry_point_tests"].map { |hit| "#{hit["file"]} via #{hit["entry_points"].join(", ")}" }
@@ -239,6 +242,9 @@ module JitCatch
         method = row["method_id"] || "-"
         lines << "  #{row["candidate_id"]} #{row["name"]} base=#{row["base_status"]} head=#{row["head_status"]} #{method} #{row["tags"].join(",")}"
         lines << "    related guess: #{method} of #{row["method_ids"].join(",")}" if row["method_ids"].size > 1
+        if (dynamic = row["dynamic_call"])
+          lines << "    related: none, #{dynamic["from"]} sends #{dynamic["name"]} to a receiver the source does not name"
+        end
         row["message_lines"].each { |line| lines << "    #{line}" }
         lines << "    cause: #{cause_line(row["cause"])}" if row["cause"]
         lines << "    rerun: #{row["rerun"]}" if row["rerun"]
@@ -259,6 +265,7 @@ module JitCatch
           "head_status" => test.dig("head", "status"),
           "method_id" => test["method_id"],
           "method_ids" => Array(test["method_ids"]),
+          "dynamic_call" => test["dynamic_call"],
           "tags" => test["tags"],
           "disposition" => test["disposition"],
           "message_first_line" => test.dig("head", "message_first_line").to_s,

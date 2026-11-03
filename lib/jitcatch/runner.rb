@@ -342,7 +342,9 @@ module JitCatch
     # `Owner.new`, so a constructor is mentioned as `Owner.new`, with the
     # owner's last name segment as the test usually writes it.
     def mention_names(change)
-      names = change["methods"].map { |method| Assessor.mention_of(method["name"]) }
+      names = change["methods"].flat_map { |method|
+        [method["name"], *method["reachable_from"], *method["dynamic_callers"].map { |caller| caller["from"] }].map { |name| Assessor.mention_of(name) }
+      }
       names += change["entrypoints"].flat_map { |entry| entry["methods"].map { |method| Assessor.mention_of(method["name"]) } }
       names += change["constants"].map { |const| const["bare_name"] }
       names.compact.uniq.sort.reject(&:empty?)

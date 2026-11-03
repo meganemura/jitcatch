@@ -177,6 +177,50 @@ class TestChangesGraph < Minitest::Test
     end
   end
 
+  def test_a_receiver_a_method_picks_from_constants_reaches_each_constant
+    with_repo do |repo|
+      leaf = "module Plain\n  def self.render(text) = text\nend\n\nmodule Fancy\n  def self.render(text) = BODY\nend\n"
+      users = <<~SRC
+        module Emit
+          module_function
+
+          def render(format, text)
+            emitter_for(format).render(text)
+          end
+
+          def emitter_for(format)
+            case format
+            when "plain" then Plain
+            when "fancy" then Fancy
+            end
+          end
+
+          def looked_up(format, text)
+            EMITTERS.fetch(format).render(text)
+          end
+
+          def mixed(format, text)
+            either(format).render(text)
+          end
+
+          def either(format)
+            format == "plain" ? Plain : format
+          end
+        end
+      SRC
+      repo.write("lib/leaf.rb", leaf.sub("BODY", "text"))
+      repo.write("lib/emit.rb", users)
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/leaf.rb", leaf.sub("BODY", "text.upcase"))
+      repo.commit("Shout the fancy text.", date: "2026-02-12T00:00:00Z")
+
+      doc = JitCatch::Changes.between(repo.dir, "base", "HEAD")
+
+      assert_equal [["Fancy.render", ["Emit.render"]]], doc["methods"].map { |method| method.values_at("name", "reachable_from") }
+    end
+  end
+
   def test_an_instance_variable_built_from_one_class_is_that_class
     with_repo do |repo|
       leaf = "class Repo\n  def read\n    BODY\n  end\nend\n\nclass Other\n  def read\n    0\n  end\nend\n"
