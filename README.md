@@ -154,7 +154,7 @@ bin/jitcatch assess --json run.json
 
 `generated` counts test methods. `candidates` counts stable pass-on-base / fail-on-head tests before the discard rules. `reported` is what remains.
 
-A tag is a hint, not the judgment. `touches:changed_method` means the test names a method the diff changed. `touches:unchanged_caller` means the test goes through an entry point the diff did not edit, and that entry point reaches a changed method. `discard:signature_change`, `discard:load_error`, and `discard:timeout` name the rule that removed a candidate. The related id (`m05`, or `-` when there is none) is the downstream changed method when several changed methods sit on the path.
+A tag is a hint, not the judgment. `touches:changed_method` means the test names a method the diff changed. `touches:changed_constant` means it names a constant the diff changed. `touches:unchanged_caller` means the test goes through an entry point the diff did not edit, and that entry point reaches a changed method. `discard:signature_change`, `discard:load_error`, and `discard:timeout` name the rule that removed a candidate. The related id (`m05`, or `-` when there is none) is the downstream changed method when several changed methods sit on the path.
 
 ## How it filters
 

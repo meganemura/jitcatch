@@ -234,6 +234,43 @@ class TestRunner < Minitest::Test
     end
   end
 
+  def test_a_test_that_names_a_changed_constant_mentions_it
+    with_repo do |repo|
+      repo.write("lib/geo.rb", "module Geo\n  SCALE = 2\n  Point = Struct.new(:x) do\n    def scaled\n      x * SCALE\n    end\n  end\nend\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/geo.rb", "module Geo\n  SCALE = 3\n  Point = Struct.new(:x) do\n    def scaled\n      x * SCALE\n    end\n  end\nend\n")
+      repo.commit("Scale by three.", date: "2026-02-12T00:00:00Z")
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, {
+        "geo_test.rb" => <<~RUBY
+          require "minitest/autorun"
+          require "geo"
+
+          class GeoTest < Minitest::Test
+            def test_scale
+              assert_equal 2, Geo::SCALE
+            end
+
+            def test_point
+              assert_equal 4, Geo::Point.new(2).scaled
+            end
+          end
+        RUBY
+      })
+
+      doc = execute(repo, tests)
+
+      assert_equal [["Geo::Point#scaled", "affected"]], doc["methods"].map { |method| method.values_at("name", "change") }
+      by_name = doc["tests"].to_h { |test| [test["name"], test] }
+      assert_equal ["SCALE"], by_name["GeoTest#test_scale"]["mentions"]
+      assert_includes by_name["GeoTest#test_scale"]["tags"], "touches:changed_constant"
+      assert_equal ["scaled"], by_name["GeoTest#test_point"]["mentions"]
+      assert_includes by_name["GeoTest#test_point"]["tags"], "touches:changed_method"
+      refute_includes by_name["GeoTest#test_point"]["tags"], "touches:changed_constant"
+    end
+  end
+
   def test_reruns_judge_only_candidates_and_run_every_rerun
     with_repo do |repo|
       repo.write("lib/calc.rb", BASE_CALC)
@@ -517,7 +554,7 @@ class TestRunner < Minitest::Test
       assert_equal [
         ["t01", "calc_test.rb", "CalcTest#test_double", ["double"], "candidate", "reported"],
         ["t02", "calc_test.rb", "CalcTest#test_ruby", [], "no_signal", "no_signal"],
-        ["t03", "test_extra.rb", "test_extra.rb#load", [], "candidate", "discarded"]
+        ["t03", "test_extra.rb", "test_extra.rb#load", ["Extra"], "candidate", "discarded"]
       ], rows
       assert_equal ["pass", "LoadError"], doc["tests"][2].values_at("base", "head").map { |side| side["error_class"] || side["status"] }
       assert_raises(JitCatch::UsageError) { JitCatch::Runner.run(repo.dir, "base", "HEAD", File.join(repo.dir, "nope")) }

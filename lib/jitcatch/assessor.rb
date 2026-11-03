@@ -111,6 +111,7 @@ module JitCatch
       changed_bares = @methods.map { |item| item["bare_name"] }
       direct = method && (mentions.include?(method["bare_name"]) || frame_hits?(test, method))
       tags << "touches:changed_method" if direct
+      tags << "touches:changed_constant" if (mentions & @constants.map { |const| const["bare_name"] }).any?
       upstream = @methods.flat_map { |item| Array(item["reachable_from"]).map { |name| bare(name) } }
       callers = (mentions & upstream) - changed_bares
       tags << "touches:unchanged_caller" if callers.any?

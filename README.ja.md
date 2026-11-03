@@ -154,7 +154,7 @@ bin/jitcatch assess --json run.json
 
 `generated` はテストメソッドの数である。`candidates` は、破棄ルールの前に、base で安定して通り head で落ちた数である。`reported` はそのあと残った数である。
 
-タグはヒントであり、判断そのものではない。`touches:changed_method` は、テストが diff の変更したメソッド名を含んでいる。`touches:unchanged_caller` は、diff が編集していない入口を通り、その入口から変更メソッドへ届いている。`discard:signature_change`、`discard:load_error`、`discard:timeout` は、候補を除いたルールの名前である。関連 id（`m05`、無ければ `-`）は、経路上に変更メソッドが複数あるときの、最も下流の変更メソッドである。
+タグはヒントであり、判断そのものではない。`touches:changed_method` は、テストが diff の変更したメソッド名を含んでいる。`touches:changed_constant` は、テストが diff の変更した定数名を含んでいる。`touches:unchanged_caller` は、diff が編集していない入口を通り、その入口から変更メソッドへ届いている。`discard:signature_change`、`discard:load_error`、`discard:timeout` は、候補を除いたルールの名前である。関連 id（`m05`、無ければ `-`）は、経路上に変更メソッドが複数あるときの、最も下流の変更メソッドである。
 
 ## どう残すか
 

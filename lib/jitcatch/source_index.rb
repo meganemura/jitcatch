@@ -100,13 +100,13 @@ module JitCatch
       when Prism::DefNode
         record_method(stmt, qualifier, visibility, singleton)
         visibility
-      when Prism::ConstantWriteNode
-        record_constant(stmt.name.to_s, qualifier, stmt.location.start_line, stmt.location.end_line, slice_of(stmt))
-        visibility
-      when Prism::ConstantPathWriteNode
-        full = const_name(stmt.target)
-        bare = full.to_s.split("::").last
-        record_constant(bare, full.to_s.delete_suffix("::#{bare}"), stmt.location.start_line, stmt.location.end_line, slice_of(stmt), qualified: full)
+      when Prism::ConstantWriteNode, Prism::ConstantPathWriteNode
+        full = constant_target(stmt, qualifier)
+        bare = full.split("::").last
+        source, end_line = constant_header(stmt)
+        record_constant(bare, full.delete_suffix(bare).delete_suffix("::"), stmt.location.start_line, end_line, source, qualified: full)
+        block = value_block(stmt)
+        scan_body(block, full, :public, false) if block
         visibility
       when Prism::CallNode
         return handle_visibility(stmt, qualifier, visibility, singleton) if visibility_modifier?(stmt)
@@ -211,6 +211,26 @@ module JitCatch
       )
     end
 
+    def constant_target(node, qualifier)
+      node.is_a?(Prism::ConstantWriteNode) ? join_qual(qualifier, node.name.to_s) : const_name(node.target).to_s
+    end
+
+    # `Point = Struct.new(:x) do ... end` and `Class.new do ... end` define
+    # methods for that constant. Those methods are indexed on their own, so
+    # the constant keeps only the text before the block.
+    def value_block(node)
+      value = node.value
+      value.block if value.is_a?(Prism::CallNode) && value.block.is_a?(Prism::BlockNode)
+    end
+
+    def constant_header(node)
+      block = value_block(node)
+      return [slice_of(node), node.location.end_line] unless block
+
+      length = block.location.start_offset - node.location.start_offset
+      [@source.byteslice(node.location.start_offset, length).force_encoding(@source.encoding).rstrip, block.location.start_line]
+    end
+
     def walk(node, qualifier, singleton_context, enclosing)
       case node
       when Prism::ClassNode
@@ -221,6 +241,9 @@ module JitCatch
         node.compact_child_nodes.each { |child| walk(child, q, false, enclosing) }
       when Prism::SingletonClassNode
         node.compact_child_nodes.each { |child| walk(child, qualifier, true, enclosing) }
+      when Prism::ConstantWriteNode, Prism::ConstantPathWriteNode
+        owner = value_block(node) ? constant_target(node, qualifier) : qualifier
+        node.compact_child_nodes.each { |child| walk(child, owner, singleton_context, enclosing) }
       when Prism::DefNode
         singleton = singleton_context || !node.receiver.nil?
         qname = self.class.qualify(qualifier, node.name.to_s, singleton)

@@ -315,6 +315,7 @@ module JitCatch
       names += change["entrypoints"].flat_map { |entry|
         entry["methods"].map { |method| SourceIndex.split_qualified(method["name"]).last }
       }
+      names += change["constants"].map { |const| const["bare_name"] }
       names.compact.uniq.sort
     end
 

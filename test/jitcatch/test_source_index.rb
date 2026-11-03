@@ -167,6 +167,32 @@ class TestSourceIndex < Minitest::Test
     }, visibility)
   end
 
+  def test_methods_in_a_block_given_to_a_constant_belong_to_that_constant
+    source = <<~RUBY
+      module Geo
+        Point = Struct.new(:x, :y) do
+          def norm
+            Math.sqrt(x * x + y * y)
+          end
+        end
+
+        Geo::Line = Class.new(Base) do
+          def self.build
+            norm
+          end
+        end
+
+        LIMIT = 3
+      end
+    RUBY
+    index = JitCatch::SourceIndex.parse(source, file: "lib/geo.rb")
+    assert_equal [["Geo::Line.build", "Geo::Line", 9], ["Geo::Point#norm", "Geo::Point", 3]],
+      index.methods.map { |method| [method.qualified, method.qualifier, method.start_line] }.sort
+    assert_equal [["Geo::LIMIT", "LIMIT = 3", 14, 14], ["Geo::Line", "Geo::Line = Class.new(Base)", 8, 8], ["Geo::Point", "Point = Struct.new(:x, :y)", 2, 2]],
+      index.constants.map { |const| [const.qualified, const.source, const.start_line, const.end_line] }.sort
+    assert_equal "Geo::Line.build", index.calls.find { |call| call.bare_name == "norm" }.enclosing
+  end
+
   def test_split_qualified_reverses_qualify
     assert_equal "Calc#add", JitCatch::SourceIndex.qualify("Calc", "add", false)
     assert_equal "Shop::Cart.build", JitCatch::SourceIndex.qualify("Shop::Cart", "build", true)
