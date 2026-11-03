@@ -145,7 +145,7 @@ module JitCatch
         return [lowest(hits), hits] if hits.any?
       end
       framed = @methods.select { |item| frame_hits?(test, item) }
-      return [lowest(framed), framed] if framed.any?
+      return [method_from_backtrace(test), framed] if framed.any?
 
       mentions = Array(test["mentions"])
       mentioned = @methods.select { |item| mentions.include?(item["bare_name"]) }

@@ -199,7 +199,7 @@ class TestAssessor < Minitest::Test
       "t01" => ["m04", ["discard:signature_change", "error:NoMethodError"]],
       "t02" => ["m02", ["error:NoMethodError", "report"]],
       "t03" => ["m01", ["error:RuntimeError", "report"]],
-      "t04" => ["m03", ["discard:signature_change", "error:ArgumentError", "related:guess", "touches:changed_method"]],
+      "t04" => ["m05", ["discard:signature_change", "error:ArgumentError", "related:guess", "touches:changed_method"]],
       "t05" => ["m03", ["error:ArgumentError", "report", "touches:changed_method"]],
       "t06" => [nil, ["assertion", "report"]],
       "t07" => ["m02", ["assertion", "report", "touches:changed_method"]],
