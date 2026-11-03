@@ -17,7 +17,7 @@ bundle install
 bundle exec ruby -Ilib test/property/run.rb
 ```
 
-They cover the assessor's counts and ids, the diff and Minitest parsers, the blob reader, qualified names, the names a test refers to, and the text helpers. Keep `test/run.rb` free of gems.
+They cover the assessor's counts and ids, the call edges a receiver names, the diff and Minitest parsers, the blob reader, qualified names, the names a test refers to, and the text helpers. Keep `test/run.rb` free of gems.
 
 CI (`.github/workflows/ci.yml`) runs `test/run.rb` on Ruby 3.3 with no bundle, and both suites on Ruby 4.0.
 
