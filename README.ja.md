@@ -156,11 +156,11 @@ bin/jitcatch assess --json run.json
 
 `generated` はテストメソッドの数である。`candidates` は、破棄ルールの前に、base で安定して通り head で落ちた数である。`reported` はそのあと残った数である。
 
-タグはヒントであり、判断そのものではない。`touches:changed_method` は、テストが diff の変更したメソッド名を含んでいる。`touches:changed_constant` は、テストが diff の変更した定数名を含んでいる。`touches:unchanged_caller` は、diff が編集していない入口を通り、その入口から変更メソッドへ届いている。`discard:signature_change`、`discard:load_error`、`discard:timeout` は、候補を除いたルールの名前である。関連 id（`m05`、無ければ `-`）は、経路上に変更メソッドが複数あるときの、最も下流の変更メソッドである。
+タグはヒントであり、判断そのものではない。`touches:changed_method` は、テストが diff の変更したメソッド名を含んでいる。`touches:changed_constant` は、テストが diff の変更した定数名を含んでいる。`touches:changed_dependency` は、ロックしたバージョンが変わった gem の中からエラーが出た。gem の中から始まったエラーには `touches:changed_method` を付けない。`touches:unchanged_caller` は、diff が編集していない入口を通り、その入口から変更メソッドへ届いている。`discard:signature_change`、`discard:load_error`、`discard:timeout` は、候補を除いたルールの名前である。関連 id（`m05`、無ければ `-`）は、経路上に変更メソッドが複数あるときの、最も下流の変更メソッドである。
 
 ## どう残すか
 
-`context` は 2 つのリビジョンを diff し、ハンクを Prism でメソッドに対応づける。変更メソッドは `m01`、`m02` と付く。変わった定数は `k01` で、その定数を読むだけで本体が変わっていないメソッドは `affected`（`via=k01`）になる。片方の側にしか無いクラスやモジュールも定数として `added` か `removed` になり、ソースには宣言の行が出る。各メソッドには、旧ソースと新ソース、ライブラリ内の呼び出し、そこへ届く入口（`reachable_from`）、それに言及している既存テストが出る。言及しているテストがないときは `entry_point_tests` が出る。`reachable_from` のうち public な入口について、そのクラスを書き、入口と同じ名前のメソッドを呼んでいるテストファイルである。`--coverage` を渡すと、grep の代わりに JSON の行リストを使う。
+`context` は 2 つのリビジョンを diff し、ハンクを Prism でメソッドに対応づける。変更メソッドは `m01`、`m02` と付く。`Gemfile.lock` が変わったときは、`dependencies:` に gem ごとに `gem 旧 -> 新` を出す。変わった定数は `k01` で、その定数を読むだけで本体が変わっていないメソッドは `affected`（`via=k01`）になる。片方の側にしか無いクラスやモジュールも定数として `added` か `removed` になり、ソースには宣言の行が出る。各メソッドには、旧ソースと新ソース、ライブラリ内の呼び出し、そこへ届く入口（`reachable_from`）、それに言及している既存テストが出る。言及しているテストがないときは `entry_point_tests` が出る。`reachable_from` のうち public な入口について、そのクラスを書き、入口と同じ名前のメソッドを呼んでいるテストファイルである。`--coverage` を渡すと、grep の代わりに JSON の行リストを使う。
 
 `run` はリビジョンごとに git worktree を作り、スクラッチディレクトリをその worktree の `.jitcatch/` へコピーし、ファイルごとに 1 プロセスで実行する。
 

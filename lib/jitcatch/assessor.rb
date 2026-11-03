@@ -109,13 +109,25 @@ module JitCatch
       mentions = Array(test["mentions"])
       tags = []
       changed_bares = @methods.map { |item| item["bare_name"] }
-      direct = method && (mentions.include?(method["bare_name"]) || frame_hits?(test, method))
+      gem = origin_gem(test)
+      direct = method && gem.nil? && (mentions.include?(method["bare_name"]) || frame_hits?(test, method))
       tags << "touches:changed_method" if direct
+      tags << "touches:changed_dependency" if gem && Array(@doc["dependencies"]).any? { |dep| dep["gem"] == gem }
       tags << "touches:changed_constant" if (mentions & @constants.map { |const| const["bare_name"] }).any?
       upstream = @methods.flat_map { |item| Array(item["reachable_from"]).map { |name| bare(name) } }
       callers = (mentions & upstream) - changed_bares
       tags << "touches:unchanged_caller" if callers.any?
       tags
+    end
+
+    # The gem an error came from, when its first frame outside the candidate
+    # file is inside an installed gem. Such an error says the gem broke, not
+    # that a changed method returned a new value.
+    def origin_gem(test)
+      return nil unless test.dig("head", "status") == "error"
+
+      frame = frames(test).find { |item| !item["file"].to_s.start_with?(".jitcatch/") }
+      frame && frame["file"].to_s[%r{(?:\A|/)gems/([^/]+?)-\d[^/]*/}, 1]
     end
 
     def related_method(test)

@@ -182,6 +182,29 @@ class TestAssessor < Minitest::Test
                    "t05" => "reported", "t06" => "discarded", "t07" => "reported" }, out)
   end
 
+  def test_an_error_raised_inside_a_gem_does_not_touch_the_changed_method
+    in_gem = frames("{ruby}/lib/ruby/gems/4.0.0/gems/rack-3.1.0/lib/rack/utils.rb", 12) + frames("lib/calc.rb", 41)
+    vendored = frames(".jitcatch/scale_test.rb", 5) + frames("vendor/bundle/ruby/4.0.0/gems/json-2.9.0/lib/json.rb", 3)
+    doc = {
+      "methods" => [method("m01", "modified", "same", "scale", [], 40)],
+      "constants" => [],
+      "dependencies" => [{ "gem" => "rack", "old" => "3.0.0", "new" => "3.1.0" }],
+      "tests" => [
+        candidate("t01", "ScaleTest#test_a", ["scale"], error("TypeError", "no implicit conversion"), in_gem),
+        candidate("t02", "ScaleTest#test_b", ["scale"], error("JSON::ParserError", "unexpected token"), vendored),
+        candidate("t03", "ScaleTest#test_c", ["scale"], error("TypeError", "no implicit conversion"), frames("lib/calc.rb", 41)),
+        candidate("t04", "ScaleTest#test_d", ["scale"], failure("Expected: 1\n  Actual: 2"), in_gem)
+      ]
+    }
+    out = JitCatch::Assessor.apply(doc)["tests"].to_h { |test| [test["id"], test["tags"]] }
+    assert_equal({
+      "t01" => ["error:TypeError", "report", "touches:changed_dependency"],
+      "t02" => ["error:JSON::ParserError", "report"],
+      "t03" => ["error:TypeError", "report", "touches:changed_method"],
+      "t04" => ["assertion", "report", "touches:changed_method"]
+    }, out)
+  end
+
   def test_removed_constants_match_by_bare_name_full_name_or_suffix
     doc = {
       "methods" => [],

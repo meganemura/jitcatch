@@ -250,6 +250,34 @@ class TestChanges < Minitest::Test
     end
   end
 
+  def test_dependencies_come_from_the_gemfile_lock_diff
+    lock = lambda do |specs|
+      "GEM\n  remote: https://rubygems.org/\n  specs:\n#{specs.map { |spec| "    #{spec}\n      dep (>= 0)\n" }.join}\nPLATFORMS\n  ruby\n\nBUNDLED WITH\n   2.6.0\n"
+    end
+    with_repo do |repo|
+      repo.write("lib/calc.rb", "class Calc\n  def add(a, b)\n    a + b\n  end\nend\n")
+      repo.write("Gemfile.lock", lock.call(["rack (3.0.0)", "gone (1.0)", "same (2.0)", "nokogiri (1.16.0-x86_64-linux)"]))
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("Gemfile.lock", lock.call(["rack (3.1.0)", "fresh (0.1)", "same (2.0)", "nokogiri (1.16.0-x86_64-linux)", "nokogiri (1.16.0-arm64-darwin)"]))
+      repo.commit("Bump rack.", date: "2026-02-12T00:00:00Z")
+
+      doc = JitCatch::Changes.between(repo.dir, "base", "HEAD")
+      assert_equal [
+        { "gem" => "fresh", "old" => nil, "new" => "0.1" },
+        { "gem" => "gone", "old" => "1.0", "new" => nil },
+        { "gem" => "nokogiri", "old" => "1.16.0-x86_64-linux", "new" => "1.16.0-arm64-darwin 1.16.0-x86_64-linux" },
+        { "gem" => "rack", "old" => "3.0.0", "new" => "3.1.0" }
+      ], doc["dependencies"]
+      text = JitCatch::Render.context_text(doc)
+      assert_includes text, "dependencies:\n  fresh (none) -> 0.1\n  gone 1.0 -> (none)\n"
+      assert_includes text, "  rack 3.0.0 -> 3.1.0\nconstants: (none)\n"
+
+      assert_equal [], JitCatch::Changes.between(repo.dir, "base", "base")["dependencies"]
+      refute_includes JitCatch::Render.context_text(JitCatch::Changes.between(repo.dir, "base", "base")), "dependencies"
+    end
+  end
+
   def test_whole_files_added_and_removed_and_a_changed_signature
     with_repo do |repo|
       repo.write("lib/old.rb", "module Old\n  LIMIT = 1\n\n  def self.gone\n    LIMIT\n  end\nend\n")

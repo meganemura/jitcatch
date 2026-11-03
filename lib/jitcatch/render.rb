@@ -23,6 +23,7 @@ module JitCatch
       else
         doc["files"].each { |file| lines << "  #{file["status"]} #{file["file"]}" }
       end
+      lines.concat(dependency_lines(Array(doc["dependencies"])))
       lines.concat(constant_lines(doc["constants"]))
       lines.concat(method_lines(doc["methods"]))
       lines.concat(entrypoint_lines(doc["entrypoints"]))
@@ -94,6 +95,12 @@ module JitCatch
 
     def dump(obj)
       JSON.pretty_generate(obj) + "\n"
+    end
+
+    def dependency_lines(dependencies)
+      return [] if dependencies.empty?
+
+      ["dependencies:", *dependencies.map { |dep| "  #{dep["gem"]} #{dep["old"] || "(none)"} -> #{dep["new"] || "(none)"}" }]
     end
 
     def constant_lines(constants)

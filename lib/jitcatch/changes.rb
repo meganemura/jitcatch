@@ -47,6 +47,7 @@ module JitCatch
         "existing_tests_via" => @coverage ? "coverage" : "grep",
         "intent" => intent_lines(base, head),
         "files" => files,
+        "dependencies" => dependencies(base, head),
         "parse_errors" => (base_idx["errors"] + head_idx["errors"]).sort_by { |err| [err["ref"], err["file"], err["message"]] },
         "constants" => constants.map { |item| constant_hash(item) },
         "methods" => methods.map { |item| method_hash(item) },
@@ -55,6 +56,24 @@ module JitCatch
     end
 
     private
+
+    # Each spec line in a lockfile is four spaces, a name, and the version
+    # in parentheses. A gem locked for several platforms has several lines.
+    def dependencies(base, head)
+      old = locked_versions(base)
+      new = locked_versions(head)
+      (old.keys | new.keys).sort.filter_map do |gem|
+        next if old[gem] == new[gem]
+
+        { "gem" => gem, "old" => old[gem], "new" => new[gem] }
+      end
+    end
+
+    def locked_versions(sha)
+      @git.show(sha, "Gemfile.lock").to_s.scan(/^    (\S+) \(([^)]+)\)$/)
+        .group_by(&:first)
+        .transform_values { |pairs| pairs.map(&:last).uniq.sort.join(" ") }
+    end
 
     def index_hunks(files)
       map = {}

@@ -70,6 +70,7 @@ module JitCatch
         "env" => @env_names,
         "bundle" => bundle,
         "test_files_omitted" => omitted,
+        "dependencies" => change["dependencies"],
         "methods" => change["methods"].map { |method| slim_method(method) },
         "constants" => change["constants"].map { |const| slim_constant(const) },
         "tests" => rows
