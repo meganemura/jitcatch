@@ -75,6 +75,53 @@ class TestSourceIndex < Minitest::Test
     assert_operator call.line, :>, 0
   end
 
+  def test_calls_name_the_enclosing_method_in_each_singleton_context
+    source = <<~RUBY
+      module Shop
+        def helper
+          log
+        end
+
+        class Cart
+          attr_reader :items
+
+          def self.build
+            make
+          end
+
+          class << self
+            def from_hash(h)
+              load_hash
+            end
+          end
+
+          def add(sku)
+            total
+          end
+        end
+      end
+    RUBY
+    index = JitCatch::SourceIndex.parse(source, file: "lib\\shop.rb")
+    enclosing = index.calls.to_h { |call| [call.bare_name, call.enclosing] }
+    assert_equal "Shop#helper", enclosing["log"]
+    assert_equal "Shop::Cart.build", enclosing["make"]
+    assert_equal "Shop::Cart.from_hash", enclosing["load_hash"]
+    assert_equal "Shop::Cart#add", enclosing["total"]
+
+    add = index.methods.find { |method| method.qualified == "Shop::Cart#add" }
+    assert_equal ["lib/shop.rb", "public", "    def add(sku)\n      total\n    end"], [add.file, add.visibility, add.source]
+  end
+
+  def test_split_qualified_reverses_qualify
+    assert_equal "Calc#add", JitCatch::SourceIndex.qualify("Calc", "add", false)
+    assert_equal "Shop::Cart.build", JitCatch::SourceIndex.qualify("Shop::Cart", "build", true)
+    assert_equal "#top", JitCatch::SourceIndex.qualify("", "top", false)
+    assert_equal ["Calc", "#", "add"], JitCatch::SourceIndex.split_qualified("Calc#add")
+    assert_equal ["Shop::Cart", ".", "build"], JitCatch::SourceIndex.split_qualified("Shop::Cart.build")
+    assert_equal ["", "#", "top"], JitCatch::SourceIndex.split_qualified("#top")
+    assert_equal ["", "#", "label"], JitCatch::SourceIndex.split_qualified("label")
+  end
+
   def test_parse_error_is_recorded
     index = JitCatch::SourceIndex.parse("def (\n", file: "lib/bad.rb")
     assert index.parse_error
