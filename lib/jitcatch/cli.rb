@@ -96,8 +96,8 @@ module JitCatch
           value = rest.shift
           raise UsageError, "#{arg} requires a value" if value.nil? || value.start_with?("-")
           opts[name] = case name
-          when :reruns then integer_option(arg, value, minimum: 0)
-          when :timeout then integer_option(arg, value, minimum: 1)
+          when :reruns then integer_option(arg, value)
+          when :timeout then seconds_option(arg, value)
           else value
           end
         else
@@ -107,13 +107,17 @@ module JitCatch
       [opts, positional]
     end
 
-    def integer_option(flag, value, minimum:)
+    def integer_option(flag, value)
       raise UsageError, "#{flag} requires an integer" unless value.match?(/\A\d+\z/)
 
-      number = value.to_i
-      raise UsageError, "#{flag} must be >= #{minimum}" if number < minimum
+      value.to_i
+    end
 
-      number
+    def seconds_option(flag, value)
+      seconds = integer_option(flag, value)
+      raise UsageError, "#{flag} must be >= 1" if seconds < 1
+
+      seconds
     end
 
     def repo_at(opts)
