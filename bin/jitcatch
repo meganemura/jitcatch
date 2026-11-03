@@ -3,12 +3,4 @@
 
 require_relative "../lib/jitcatch"
 
-begin
-  exit JitCatch::CLI.start(ARGV)
-rescue JitCatch::UsageError => err
-  warn "jitcatch: #{err.message}"
-  exit 1
-rescue JitCatch::GitError => err
-  warn "jitcatch: #{err.message}"
-  exit 2
-end
+exit JitCatch::CLI.start(ARGV)

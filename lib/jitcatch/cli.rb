@@ -4,6 +4,12 @@ module JitCatch
   class CLI
     def self.start(argv)
       new(argv).run
+    rescue UsageError => err
+      warn "jitcatch: #{err.message}"
+      1
+    rescue GitError => err
+      warn "jitcatch: #{err.message}"
+      2
     end
 
     def initialize(argv)
