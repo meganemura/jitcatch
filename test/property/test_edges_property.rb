@@ -17,7 +17,7 @@ class TestEdgesProperty < Minitest::Test
       end
       caller_src = "class Caller\n  def initialize\n    @held = K0.new\n  end\n\n#{bodies.each_with_index.map { |body, i| "  def c#{i}(value)\n    #{body}\n  end\n" }.join("\n")}end\n"
       index = JitCatch::SourceIndex.parse(classes.join("\n") + caller_src, file: "lib/x.rb")
-      edges = JitCatch::Changes.allocate.send(:edges_for, { "methods" => index.methods, "calls" => index.calls })
+      edges = JitCatch::Changes.allocate.send(:edges_for, { "methods" => index.methods, "calls" => index.calls, "attributes" => index.attributes })
         .select { |edge| edge["from"].start_with?("Caller#c") }
 
       expected = calls.each_with_index.filter_map do |(shape, klass, name), i|

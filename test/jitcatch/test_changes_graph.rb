@@ -219,6 +219,40 @@ class TestChangesGraph < Minitest::Test
     end
   end
 
+  def test_a_self_call_does_not_reach_another_class_method_or_past_an_attribute
+    with_repo do |repo|
+      leaf = "class Runner\n  def self.simulate\n    BODY\n  end\n\n  def label\n    BODY\n  end\n\n  def size\n    BODY\n  end\nend\n"
+      users = <<~SRC
+        class Mismatch
+          attr_reader :label
+
+          def to_s
+            simulate
+          end
+
+          def name
+            label
+          end
+
+          def count
+            size
+          end
+        end
+      SRC
+      repo.write("lib/runner.rb", leaf.gsub("BODY", "1"))
+      repo.write("lib/mismatch.rb", users)
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/runner.rb", leaf.gsub("BODY", "2"))
+      repo.commit("Change the runner.", date: "2026-02-12T00:00:00Z")
+
+      doc = JitCatch::Changes.between(repo.dir, "base", "HEAD")
+      callers = doc["methods"].to_h { |method| [method["name"], method["callsites"].map { |site| site["enclosing"] }] }
+
+      assert_equal({ "Runner.simulate" => [], "Runner#label" => [], "Runner#size" => ["Mismatch#count"] }, callers)
+    end
+  end
+
   def test_parse_errors_and_oversized_files_are_not_indexed
     with_repo do |repo|
       big = "class Big\n  def size\n    1\n  end\nend\n#{"#" * 200_001}\n"

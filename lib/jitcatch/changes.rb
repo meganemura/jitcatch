@@ -108,6 +108,7 @@ module JitCatch
       constants = []
       namespaces = []
       calls = []
+      attributes = []
       private_constants = []
       errors = []
       sources = {}
@@ -126,10 +127,11 @@ module JitCatch
         constants.concat(index.constants)
         namespaces.concat(index.namespaces)
         calls.concat(index.calls)
+        attributes.concat(index.attributes)
         private_constants.concat(index.private_constants)
       end
       methods = SourceIndex.hide_private_constants(methods, private_constants.uniq)
-      { "methods" => methods, "constants" => constants, "namespaces" => namespaces, "calls" => calls, "errors" => errors, "sources" => sources }
+      { "methods" => methods, "constants" => constants, "namespaces" => namespaces, "calls" => calls, "attributes" => attributes, "errors" => errors, "sources" => sources }
     end
 
     def changed_methods(base_idx, head_idx, hunks)
@@ -370,11 +372,12 @@ module JitCatch
       by_class = methods.group_by { |method| [method.qualifier, method.bare_name] }
       by_bare = methods.group_by(&:bare_name)
       qualifiers = methods.group_by(&:qualifier)
+      attributes = idx["attributes"].group_by(&:itself)
       edges = []
       idx["calls"].each do |call|
         next if call.enclosing.nil? || test_file?(call.file)
 
-        target = call_target(call, by_class, by_bare, qualifiers)
+        target = call_target(call, by_class, by_bare, qualifiers, attributes)
         next if target.nil? || target.qualified == call.enclosing
 
         edges << { "from" => call.enclosing, "to" => target.qualified, "file" => call.file, "line" => call.line }
@@ -386,9 +389,10 @@ module JitCatch
     # A call on a receiver the source does not name gets no edge: a bare
     # name alone would send `line.strip` to any indexed `strip`. An implicit
     # `self` call still falls back to a unique bare name, for methods a class
-    # gets from a module or a superclass.
-    def call_target(call, by_class, by_bare, qualifiers)
-      qualifier, _sep, _bare = SourceIndex.split_qualified(call.enclosing)
+    # gets from a module or a superclass; from an instance method, only to
+    # an instance method, since no mixin turns a class method into one.
+    def call_target(call, by_class, by_bare, qualifiers, attributes)
+      qualifier, sep, _bare = SourceIndex.split_qualified(call.enclosing)
       receiver = call.receiver
       case receiver.kind
       when "self"
@@ -398,8 +402,9 @@ module JitCatch
           instance.first
         elsif same.size == 1
           same.first
-        elsif by_bare[call.bare_name]&.size == 1
-          by_bare[call.bare_name].first
+        elsif !attributes.key?([qualifier, call.bare_name])
+          inherited = (by_bare[call.bare_name] || []).select { |method| sep == "." || method.kind == "instance" }
+          inherited.first if inherited.size == 1
         end
       when "singleton", "instance"
         owner = receiver.const.nil? ? qualifier : resolve_constant(receiver.const, qualifier, qualifiers)

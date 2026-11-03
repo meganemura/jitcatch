@@ -13,6 +13,7 @@ module JitCatch
     HASH_KEY_CALLS = %i[[] []= fetch dig key? has_key? values_at fetch_values].freeze
     # These name a method by their first argument, as a symbol or a string.
     REFLECTIVE_CALLS = %i[send __send__ public_send method public_method respond_to?].freeze
+    ATTRIBUTE_READERS = { attr_reader: [""], attr: [""], attr_writer: ["="], attr_accessor: ["", "="] }.freeze
 
     Method = Data.define(
       :file, :bare_name, :qualifier, :qualified, :kind, :visibility,
@@ -31,7 +32,7 @@ module JitCatch
     Receiver = Data.define(:kind, :const)
     UNKNOWN_RECEIVER = Receiver.new(kind: "unknown", const: nil)
 
-    attr_reader :methods, :constants, :namespaces, :calls, :private_constants, :parse_error
+    attr_reader :methods, :constants, :namespaces, :calls, :private_constants, :attributes, :parse_error
 
     def self.parse(source, file:)
       new(source, file).parse
@@ -46,6 +47,7 @@ module JitCatch
       @namespaces = []
       @module_functions = []
       @private_constants = []
+      @attributes = []
       @calls = []
       @references = Hash.new { |hash, key| hash[key] = [] }
       @ivar_classes = Hash.new { |hash, key| hash[key] = [] }
@@ -374,6 +376,7 @@ module JitCatch
             receiver: receiver_of(node.receiver)
           )
           refer(enclosing, node.name)
+          record_attributes(node, qualifier) unless singleton_context
           owner = constructor_owner(node)
           refer(enclosing, "#{owner}.new") if owner
           named = reflective_name(node)
@@ -405,6 +408,16 @@ module JitCatch
 
     def refer(enclosing, name)
       @references[enclosing] << name.to_s
+    end
+
+    # `attr_reader :name` defines a method the index does not list, so a call
+    # to `name` on self must not fall through to another class's `name`.
+    def record_attributes(node, qualifier)
+      suffixes = ATTRIBUTE_READERS[node.name]
+      return unless suffixes && node.receiver.nil?
+
+      names = Array(node.arguments&.arguments).grep(Prism::SymbolNode).map(&:unescaped)
+      @attributes.concat(names.product(suffixes).map { |name, suffix| [qualifier.to_s, "#{name}#{suffix}"] })
     end
 
     def reflective_name(node)
