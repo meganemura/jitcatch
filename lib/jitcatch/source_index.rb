@@ -116,7 +116,7 @@ module JitCatch
 
         return handle_module_function(stmt, qualifier, visibility) if stmt.receiver.nil? && stmt.name == :module_function
 
-        record_private_constants(stmt, qualifier) if stmt.receiver.nil? && stmt.name == :private_constant
+        record_private_constants(stmt, qualifier) if stmt.name == :private_constant && (stmt.receiver.nil? || stmt.receiver.is_a?(Prism::SelfNode))
 
         handle_class_visibility(stmt, qualifier) if stmt.receiver.nil? && CLASS_VISIBILITY.key?(stmt.name)
         visibility
@@ -179,8 +179,6 @@ module JitCatch
     # Code outside the namespace cannot name a private constant, so no method
     # under it is an entry point, whatever its own visibility says.
     def hide_private_constants
-      return if @private_constants.empty?
-
       @methods.map! do |method|
         hidden = @private_constants.any? { |name| method.qualifier == name || method.qualifier.start_with?("#{name}::") }
         hidden ? method.with(visibility: "private") : method

@@ -228,7 +228,7 @@ class TestSourceIndex < Minitest::Test
         Impl = Class.new do
           def z = 3
         end
-        private_constant "Impl"
+        self.private_constant "Impl"
 
         module Open
           def self.w = 4
@@ -237,6 +237,7 @@ class TestSourceIndex < Minitest::Test
         module Bee
           def self.v = 5
         end
+        Other.private_constant :Bee
       end
     RUBY
     index = JitCatch::SourceIndex.parse(source, file: "lib/a.rb")
