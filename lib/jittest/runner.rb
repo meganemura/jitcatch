@@ -68,10 +68,11 @@ module JitTest
 
     def classify_file(relative, base_dir, head_dir, normalizer, change)
       source = File.read(File.join(@tests_dir, relative), mode: "r:bom|utf-8")
-      mentions = mentions_in(source, change)
+      known = known_names(change)
+      index = SourceIndex.parse(source, file: relative)
       base_run = execute(base_dir, relative, normalizer)
       head_run = execute(head_dir, relative, normalizer)
-      rows = rows_for(relative, base_run, head_run, mentions)
+      rows = rows_for(relative, base_run, head_run, index, known, source)
       return rows unless rows.any? { |row| row["classification"] == "candidate" }
       return rows if head_run.timed_out
 
@@ -90,13 +91,20 @@ module JitTest
       rows
     end
 
-    def rows_for(relative, base_run, head_run, mentions)
+    def rows_for(relative, base_run, head_run, index, known, source)
       if file_level?(base_run) || file_level?(head_run)
-        [file_level_row(relative, base_run, head_run, mentions)]
+        name = file_level_name(relative, base_run, head_run)
+        [build_row(relative, name, side_result(base_run), side_result(head_run), mentions_for(index, name, known, source))]
       else
         names = (base_run.tests.keys | head_run.tests.keys).sort
         names.map { |name|
-          build_row(relative, name, base_run.tests[name], head_run.tests[name], mentions)
+          build_row(
+            relative,
+            name,
+            base_run.tests[name],
+            head_run.tests[name],
+            mentions_for(index, name, known, source)
+          )
         }
       end
     end
@@ -105,10 +113,9 @@ module JitTest
       execution.timed_out || execution.file_error || (execution.tests.empty? && execution.exit_code != 0 && !execution.summary)
     end
 
-    def file_level_row(relative, base_run, head_run, mentions)
+    def file_level_name(relative, base_run, head_run)
       timed_out = base_run.timed_out || head_run.timed_out
-      name = "#{File.basename(relative)}##{timed_out ? "timeout" : "load"}"
-      build_row(relative, name, side_result(base_run), side_result(head_run), mentions)
+      "#{File.basename(relative)}##{timed_out ? "timeout" : "load"}"
     end
 
     def side_result(execution)
@@ -275,12 +282,20 @@ module JitTest
       [list, omitted]
     end
 
-    def mentions_in(source, change)
-      known = change["methods"].map { |method| method["bare_name"] }
-      known += change["entrypoints"].flat_map { |entry|
+    def known_names(change)
+      names = change["methods"].map { |method| method["bare_name"] }
+      names += change["entrypoints"].flat_map { |entry|
         entry["methods"].map { |method| SourceIndex.split_qualified(method["name"]).last }
       }
-      known.uniq.sort.select { |bare| !bare.empty? && source.match?(/\b#{Regexp.escape(bare)}\b/) }
+      names.compact.uniq.sort
+    end
+
+    # Mentions are taken from the individual test method so a neighbor in the
+    # same file does not change this test's tags.
+    def mentions_for(index, test_name, known, source)
+      method = index.methods.find { |item| item.qualified == test_name }
+      text = method ? method.source : source
+      known.select { |bare| !bare.empty? && text.match?(/\b#{Regexp.escape(bare)}\b/) }
     end
 
     def assign_test_ids(rows)
