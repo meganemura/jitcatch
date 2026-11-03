@@ -71,12 +71,36 @@ module JitCatch
       { "base_only" => count, "merge_base" => fork.empty? ? nil : fork }
     end
 
-    def ruby_files(ref)
-      git("ls-tree", "-r", "--name-only", "--end-of-options", ref)
-        .lines
-        .map(&:strip)
-        .select { |path| path.end_with?(".rb") }
-        .sort
+    Blob = Data.define(:path, :oid, :size)
+
+    # `-z` leaves a path with a tab, a newline, or a quote unquoted too.
+    def ruby_blobs(ref)
+      git("ls-tree", "-r", "-l", "-z", "--end-of-options", ref).split("\0").filter_map { |entry|
+        meta, path = entry.split("\t", 2)
+        _mode, type, oid, size = meta.split
+        Blob.new(path: path, oid: oid, size: size.to_i) if type == "blob" && path.end_with?(".rb")
+      }.sort_by(&:path)
+    end
+
+    # One `cat-file` reads every blob. A `git show` per file cost one process
+    # each, which was most of the time `context` took.
+    def read_blobs(oids)
+      return {} if oids.empty?
+
+      stdout, stderr, status = Open3.capture3(
+        "git", "--no-pager", "-C", @dir, "cat-file", "--batch",
+        stdin_data: "#{oids.join("\n")}\n", binmode: true
+      )
+      raise GitError, "git cat-file failed: #{stderr.strip}" unless status.success?
+
+      blobs = {}
+      offset = 0
+      while (newline = stdout.index("\n", offset))
+        oid, _type, size = stdout.byteslice(offset, newline - offset).split
+        blobs[oid] = as_utf8(stdout.byteslice(newline + 1, size.to_i))
+        offset = newline + size.to_i + 2
+      end
+      blobs
     end
 
     def show(ref, path)

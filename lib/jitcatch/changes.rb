@@ -19,6 +19,8 @@ module JitCatch
       @base_ref = base_ref
       @head_ref = head_ref
       @coverage = coverage.nil? ? nil : CoverageFile.load(coverage)
+      @texts = {}
+      @parsed = {}
     end
 
     def build
@@ -108,12 +110,13 @@ module JitCatch
       calls = []
       errors = []
       sources = {}
-      @git.ruby_files(sha).each do |file|
-        blob = @git.show(sha, file)
-        next if blob.nil? || blob.bytesize > MAX_BLOB
-
-        sources[file] = blob
-        index = SourceIndex.parse(blob, file: file)
+      listed = @git.ruby_blobs(sha).select { |blob| blob.size <= MAX_BLOB }
+      @texts.merge!(@git.read_blobs(listed.map(&:oid).uniq - @texts.keys))
+      listed.each do |blob|
+        file = blob.path
+        sources[file] = @texts.fetch(blob.oid)
+        # A file both sides share is parsed once.
+        index = (@parsed[[file, blob.oid]] ||= SourceIndex.parse(sources[file], file: file))
         if index.parse_error
           errors << { "ref" => label, "file" => file, "message" => index.parse_error }
           next
