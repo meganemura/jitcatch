@@ -74,7 +74,9 @@ class TestCLI < Minitest::Test
     assert_equal "", stderr
     assert_includes stdout, "never calls an LLM"
     assert_equal [stdout, "", 0], cli("--help")
-    assert_equal [stdout, "", 0], cli("run", "--help")
+    %w[context run assess].each do |command|
+      assert_equal [stdout, "", 0], cli(command, "--help"), command
+    end
   end
 
   def test_usage_errors_exit_1_and_git_errors_exit_2
