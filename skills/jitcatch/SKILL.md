@@ -39,7 +39,7 @@ Read `intent:` first. Then the changed files, `dependencies:` (each gem whose `G
 
 `visibility=` follows `private`, `protected`, and `public` (bare, with names, or before a `def`), the same inside `class << self`, and `private_class_method` / `public_class_method` (with names or before `def self.x`). A `private` method is not an entry point. Test it through a public caller in `reachable_from`. Visibility set by `send`, by `module_function`, or by `private :name` written above its `def` is not seen.
 
-Methods in test files (under `test/` or `spec/`, or named `test_*.rb` or `*_test.rb`) are listed too, when the change edits tests. They are not targets for candidate tests. Skip them.
+Methods in test files (under `test/` or `spec/`, or named `test_*.rb` or `*_test.rb`) are not listed, and are not entry points. The changed test files still appear under `files:`.
 
 `tests: (none)` means no test file names that method. Then `entry_point_tests:` lists, when it finds any, the test files that call a public `reachable_from` entry point: the file names the entry point's class (`Cart.new`, not only `Cart::LIMIT`) and calls a method of that name (`.total`). Each file shows the entry points it matched. Read those tests before you write yours. They show how the repository builds the object and which inputs already reach the changed method. Like `tests:`, this line is a grep. It misses tests that drive the code through a subprocess or a factory, and it can list a file that calls a same-named method on another object. A `tests:` grep hit on a common name such as `initialize` or `call` can be any file that defines or calls that name.
 

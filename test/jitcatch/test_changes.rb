@@ -278,6 +278,25 @@ class TestChanges < Minitest::Test
     end
   end
 
+  def test_methods_in_test_files_are_not_listed
+    with_repo do |repo|
+      repo.write("lib/calc.rb", "class Calc\n  def add(a, b)\n    a + b\n  end\nend\n")
+      repo.write("test/calc_test.rb", "class CalcTest\n  def test_add\n    Calc.new.add(1, 2)\n  end\nend\n")
+      repo.write("spec/support/build.rb", "def build_calc\n  Calc.new\nend\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/calc.rb", "class Calc\n  def add(a, b)\n    b + a\n  end\nend\n")
+      repo.write("test/calc_test.rb", "class CalcTest\n  def test_add\n    Calc.new.add(2, 1)\n  end\nend\n")
+      repo.write("spec/support/build.rb", "def build_calc\n  Calc.new.freeze\nend\n")
+      repo.commit("Swap operands.", date: "2026-02-12T00:00:00Z")
+
+      doc = JitCatch::Changes.between(repo.dir, "base", "HEAD")
+      assert_equal ["Calc#add"], doc["methods"].map { |method| method["name"] }
+      assert_equal ["Calc"], doc["entrypoints"].map { |entry| entry["class"] }
+      assert_equal ["test/calc_test.rb"], doc["methods"].fetch(0)["existing_tests"].map { |hit| hit["file"] }
+    end
+  end
+
   def test_reachable_from_keeps_the_nearest_callers_when_it_is_cut
     with_repo do |repo|
       near = (1..6).map { |n| "  def z#{n}\n    leaf\n  end\n" }.join("\n")

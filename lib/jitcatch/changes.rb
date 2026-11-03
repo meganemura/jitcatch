@@ -120,7 +120,7 @@ module JitCatch
         new_m = new_map[key]
         file = (new_m || old_m).file
         file_hunks = hunks[file]
-        next unless file_hunks
+        next if file_hunks.nil? || test_file?(file)
 
         old_hit = old_m && DiffParser.overlaps?(old_m.start_line, old_m.end_line, file_hunks["hunks"], "old")
         new_hit = new_m && DiffParser.overlaps?(new_m.start_line, new_m.end_line, file_hunks["hunks"], "new")
