@@ -215,11 +215,12 @@ module JitCatch
         scan_body(stmt, qualifier, :public, true)
         visibility
       when Prism::IfNode, Prism::UnlessNode, Prism::ElseNode
-        # A conditional in a class body defines what any branch defines.
-        Array(stmt.statements&.body).each { |inner| scan_statement(inner, qualifier, visibility, singleton) }
+        # A conditional in a class body defines what any branch defines,
+        # read as if every branch ran in order, so a bare `private` in a
+        # branch carries past the conditional as it does when that branch runs.
+        visibility = Array(stmt.statements&.body).reduce(visibility) { |vis, inner| scan_statement(inner, qualifier, vis, singleton) }
         rest = %i[subsequent else_clause consequent].find { |name| stmt.respond_to?(name) }
-        scan_statement(stmt.public_send(rest), qualifier, visibility, singleton) if rest
-        visibility
+        rest ? scan_statement(stmt.public_send(rest), qualifier, visibility, singleton) : visibility
       when Prism::DefNode
         record_method(stmt, qualifier, visibility, singleton)
         visibility

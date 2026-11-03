@@ -248,6 +248,7 @@ gem の中から始まったエラーには `touches:changed_method` を付け�
 `attr_reader`、`attr_writer`、`attr_accessor`、`Struct.new` や `Data.define` のメンバーが定義する読み書きのメソッドもメソッドとして数え、ソースには名前一つの形（`attr_reader :seed`）が出る。
 そのため、その行から外した名前は `removed` になり、行に残った名前は変わらない。
 クラス本体の条件分岐の中にある `def` や読み出しメソッド（`attr_reader :x if cond`）も数える。
+分岐はすべてが順に走ったものとして読むので、分岐の中の引数のない `private` は条件分岐の後にも効く。
 Concern の `included do`、`prepended do`、`class_methods do` ブロックの中にあるものも数える。
 片方の側にしか無いクラスやモジュールも定数として `added` か `removed` になり、ソースには宣言の行が出る。
 各メソッドには、旧ソースと新ソース、ライブラリ内の呼び出し、そこへ届く入口（`reachable_from`）、それに言及している既存テストが出る。
@@ -353,7 +354,7 @@ CLI を使わない場合は、`skills/jitcatch` をエージェントの skills
   モジュールやスーパークラスのメソッドのためである。
   インスタンスメソッドからはインスタンスメソッドだけが対象になる。
   クラスが `attr_reader`、`attr_writer`、`attr_accessor` で宣言した名前は、その読み書きのメソッドへの辺になる。
-- `define_method`、`class_eval`、条件の中の `def` は索引しない。
+- `define_method` と `class_eval` は索引しない。
   `def self.foo` 以外のレシーバ付き定義は粗い。
 - リネームは削除と追加に見える（`git diff --no-renames`）。
 - カバレッジは集めない。

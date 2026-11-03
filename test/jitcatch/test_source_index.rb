@@ -466,6 +466,38 @@ def test_a_top_level_describe_without_rspec_is_a_group_too
     ], index.methods.map { |method| [method.qualified, method.visibility, method.source, method.params, method.start_line] }.sort
   end
 
+  def test_a_bare_private_in_a_conditional_carries_past_it
+    source = <<~RUBY
+      class Order
+        def open = 1
+
+        if defined?(Money)
+          private
+
+          def cents = 1
+        end
+
+        def secret = 2
+
+        unless ENV["LEGACY"]
+          public
+        else
+          def legacy = 3
+        end
+
+        def total = 4
+      end
+    RUBY
+    index = JitCatch::SourceIndex.parse(source, file: "lib/order.rb")
+    assert_equal [
+      ["Order#cents", "private"],
+      ["Order#legacy", "public"],
+      ["Order#open", "public"],
+      ["Order#secret", "private"],
+      ["Order#total", "public"]
+    ], index.methods.map { |method| [method.qualified, method.visibility] }.sort
+  end
+
   def test_a_conditional_or_a_concern_block_defines_what_it_holds
     source = <<~RUBY
       class Order
