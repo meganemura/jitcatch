@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - queue
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Ruby ${{ matrix.ruby }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The floor runs test/run.rb alone. It needs no gems, and hegeltest
+          # needs Ruby 3.4, so no bundle is installed there.
+          - ruby: "3.3"
+            bundler: none
+            property: false
+          - ruby: "4.0"
+            bundler: Gemfile.lock
+            property: true
+    # Actions are pinned to a commit. A tag can be moved to another commit,
+    # so a tag reference says which version its owner offers today rather
+    # than which code this workflow ran last time.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
+        with:
+          ruby-version: ${{ matrix.ruby }}
+          bundler: ${{ matrix.bundler }}
+          bundler-cache: ${{ matrix.property }}
+      - name: Run the tests
+        run: ruby -Ilib test/run.rb
+      - name: Run the property tests
+        if: ${{ matrix.property }}
+        run: bundle exec ruby -Ilib test/property/run.rb
