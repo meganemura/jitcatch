@@ -105,6 +105,8 @@ The full text is `examples/runs/intended/context.txt` and `examples/runs/intende
 
 Delete the scratch directory when you are done. Keep a test in the project's suite only when you mean to promote it. A likely-regression test belongs there after the bug is fixed. An intended-change test states the old behavior.
 
+Characterization tests from branchout can be candidates. Emit them on a checkout of the base revision, and rewrite the `require_relative` of the target to `require "<lib>"`, so that each side loads its own worktree's code.
+
 On another repository, pass `--repo` when that repository is not the working directory:
 
 ```sh

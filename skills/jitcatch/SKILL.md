@@ -57,6 +57,8 @@ Write 3 to 6 Minitest files in a scratch directory you can delete.
 
 A catching test states a behavior the old code already satisfies. Aim it at a changed or affected method, and at unchanged callers that reach that method (`reachable_from`). Prefer a boundary, a rounding case, or an error path the diff could disturb. One claim per test method. A test that only describes the new feature fails on base and is not evidence. Assert on one field, not on a whole returned Hash: a whole-Hash test (such as a branchout characterization test) fails on any added key, even one the intent asked for.
 
+To use branchout characterization tests as candidates, run `branchout explore` on a checkout of `BASE`, not of `HEAD`: a test emitted on head pins the new behavior and is `fail_on_base`. Then replace the `require_relative` lines it writes for the target (an absolute path, or a path relative to the checkout it ran in) with `require "<lib>"`. Left as written, both sides load the same file outside the worktree and every test is `no_signal`. On jitcatch itself, 14 tests emitted on head and kept as written gave 14 `no_signal`; emitted on base with the require rewritten, they gave 8 `reported`.
+
 The `mentions` and the `touches:` tags read the test method's body and the bodies of the methods in the same file that it calls, directly or through other such methods. A helper in another file (`require "test/support/..."`) is not read, so call the changed method or its public caller from the candidate file. Prefer a public entry point over `send(:private_helper)`: a private helper can move between base and head, and the test then fails on base.
 
 Each file:
