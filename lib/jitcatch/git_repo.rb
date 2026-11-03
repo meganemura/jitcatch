@@ -52,10 +52,7 @@ module JitCatch
 
     def show(ref, path)
       stdout, _stderr, status = capture("show", "--end-of-options", "#{ref}:#{path}")
-      return nil unless status.success?
-
-      stdout.force_encoding(Encoding::UTF_8)
-      stdout.valid_encoding? ? stdout : stdout.scrub("?")
+      status.success? ? stdout : nil
     end
 
     def worktree_add(path, sha)
@@ -91,7 +88,16 @@ module JitCatch
     def capture(*args, env: nil)
       command = ["git", "--no-pager", "-C", @dir, *args]
       merged = ENV.to_h.merge(env || {})
-      Open3.capture3(merged, *command)
+      stdout, stderr, status = Open3.capture3(merged, *command)
+      [as_utf8(stdout), as_utf8(stderr), status]
+    end
+
+    # Open3 tags output with the locale's encoding, which is US-ASCII under
+    # LANG=C. Paths, sources, and messages in a repository are UTF-8 bytes,
+    # and a stray invalid byte must not stop a regexp match.
+    def as_utf8(text)
+      text.force_encoding(Encoding::UTF_8)
+      text.valid_encoding? ? text : text.scrub("?")
     end
   end
 end

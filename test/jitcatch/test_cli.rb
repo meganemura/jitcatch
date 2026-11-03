@@ -122,6 +122,26 @@ class TestCLI < Minitest::Test
     assert_match(/\Ajitcatch: unknown command: nope\n/, stderr)
   end
 
+  def test_context_reads_non_ascii_git_output_under_the_c_locale
+    with_repo do |repo|
+      repo.write("lib/box.rb", "class Box\n  def n\n    10\n  end\nend\n")
+      repo.commit("Initial box", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      File.binwrite(File.join(repo.dir, "lib/box.rb"), "class Box\n  def n\n    # caf\xC3\xA9 \xFF\n    5\n  end\nend\n".b)
+      repo.commit("Lower n for the café.", date: "2026-02-12T00:00:00Z")
+
+      bin = File.expand_path("../../bin/jitcatch", __dir__)
+      stdout, stderr, status = Open3.capture3(
+        { "LANG" => "C", "LC_ALL" => "C" }, RbConfig.ruby, bin, "context", "--repo", repo.dir, "base", "HEAD"
+      )
+
+      assert_equal [0, ""], [status.exitstatus, stderr]
+      text = stdout.force_encoding(Encoding::UTF_8)
+      assert_includes text, "  Lower n for the café.\n"
+      assert_includes text, "# café ?\n"
+    end
+  end
+
   def cli(*args)
     status = nil
     stdout, stderr = capture_io { status = JitCatch::CLI.start(args) }
