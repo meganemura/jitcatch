@@ -76,7 +76,7 @@ Each file:
 A file named `*_spec.rb` runs with the project's RSpec, one process per file, from the worktree root:
 
 ```sh
-ruby -Ilib -I. -e 'require "rspec/core"; RSpec::Core::RubyProject.instance_variable_set(:@project_root, Dir.pwd); exit(RSpec::Core::Runner.run(ARGV))' -- \
+ruby -Ilib -I. -e 'require "rspec/core"; require "rspec/support/object_formatter"; RSpec::Core::RubyProject.instance_variable_set(:@project_root, Dir.pwd); RSpec::Support::ObjectFormatter.default_instance.max_formatted_output_length = nil; exit(RSpec::Core::Runner.run(ARGV))' -- \
   --format json --out .jitcatch-report.json --seed 1 --backtrace --no-color .jitcatch/<file>_spec.rb
 ```
 
@@ -110,7 +110,7 @@ counts generated=4 no_signal=2 fail_on_base=0 candidates=2 flaky=0 discarded=0 r
     -"rspec {tests}/a_spec.rb:7"
     +"ruby -Ilib -I. -e 'require \"rspec/core\"; RSpec::Core::Ruby...
        ^ column 3
-    rerun: bundle exec ruby -Ilib -I. -e 'require "rspec/core"; RSpec::Core::RubyProject.instance_variable_set(:@project_root, Dir.pwd); exit(RSpec::Core::Runner.run(ARGV))' {tests}/rerun_spec.rb:4
+    rerun: bundle exec ruby -Ilib -I. -e 'require "rspec/core"; require "rspec/support/object_formatter"; RSpec::Core::RubyProject.instance_variable_set(:@project_root, Dir.pwd); RSpec::Support::ObjectFormatter.default_instance.max_formatted_output_length = nil; exit(RSpec::Core::Runner.run(ARGV))' {tests}/rerun_spec.rb:4
 ```
 
 Not supported yet: shared example groups (an example from a group in another file reads the whole candidate file for mentions), an error outside every example when some example ran (such as in `after(:suite)`), and a project whose bundle has no `rspec-core`.
@@ -128,7 +128,7 @@ When either worktree has a `Gemfile`, the report prints `bundle base ok` or `bun
 
 Judge only rows whose disposition is `reported`.
 
-Each candidate row under `assess:` ends with `rerun:`, the command that runs that one test again from the repository root on the checkout you have (`--json` rows carry it as `rerun`). `{tests}/` stands for your `TESTS_DIR`. A Minitest row reads `ruby -Ilib -I. {tests}/cart_test.rb -n CartTest#test_total`, an RSpec row `ruby -Ilib -I. -e 'require "rspec/core"; RSpec::Core::RubyProject.instance_variable_set(:@project_root, Dir.pwd); exit(RSpec::Core::Runner.run(ARGV))' {tests}/cart_spec.rb:11`, both behind `bundle exec` when head has a `Gemfile`. The RSpec line runs Ruby with the run's `-I` flags and pins RSpec's project root to the working directory, because `rspec` puts `lib/` of the nearest directory holding `spec/` first on the load path: a checkout under a Rails app's `tmp/` would load the app's `lib/`. Use it to rerun a row on head after you read the diff.
+Each candidate row under `assess:` ends with `rerun:`, the command that runs that one test again from the repository root on the checkout you have (`--json` rows carry it as `rerun`). `{tests}/` stands for your `TESTS_DIR`. A Minitest row reads `ruby -Ilib -I. {tests}/cart_test.rb -n CartTest#test_total`, an RSpec row `ruby -Ilib -I. -e 'require "rspec/core"; require "rspec/support/object_formatter"; RSpec::Core::RubyProject.instance_variable_set(:@project_root, Dir.pwd); RSpec::Support::ObjectFormatter.default_instance.max_formatted_output_length = nil; exit(RSpec::Core::Runner.run(ARGV))' {tests}/cart_spec.rb:11`, both behind `bundle exec` when head has a `Gemfile`. The RSpec line runs Ruby with the run's `-I` flags and pins RSpec's project root to the working directory, because `rspec` puts `lib/` of the nearest directory holding `spec/` first on the load path: a checkout under a Rails app's `tmp/` would load the app's `lib/`. It also lifts RSpec's 200-character cut on a printed object, so a `raise_error` row shows the whole error it got. Use it to rerun a row on head after you read the diff.
 
 | Bucket | Meaning |
 | --- | --- |

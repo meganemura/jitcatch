@@ -62,7 +62,9 @@ module JitCatch
       # the load path, which under a Rails app's tmp/ is the app's lib/, not
       # the checkout's. Pinning that directory to the working directory
       # loads the checkout's lib/ in the run and in its rerun line alike.
-      LAUNCH = 'require "rspec/core"; RSpec::Core::RubyProject.instance_variable_set(:@project_root, Dir.pwd); exit(RSpec::Core::Runner.run(ARGV))'
+      # RSpec cuts an object it prints to 200 characters, which can cut
+      # the class and message a raise_error got out of the row.
+      LAUNCH = 'require "rspec/core"; require "rspec/support/object_formatter"; RSpec::Core::RubyProject.instance_variable_set(:@project_root, Dir.pwd); RSpec::Support::ObjectFormatter.default_instance.max_formatted_output_length = nil; exit(RSpec::Core::Runner.run(ARGV))'
 
       def names?(basename)
         basename.end_with?("_spec.rb")

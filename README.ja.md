@@ -307,11 +307,12 @@ Ruby 自身の prefix は `{ruby}/` と書く。
 `--json` のすべての行にも `rerun` がある。
 これは、手元のチェックアウトでリポジトリの根からそのテスト 1 つだけを再実行するコマンドである。
 `{tests}/` は渡した `TESTS_DIR` を表す。
-たとえば `ruby -Ilib -I. -e 'require "rspec/core"; RSpec::Core::RubyProject.instance_variable_set(:@project_root, Dir.pwd); exit(RSpec::Core::Runner.run(ARGV))' {tests}/cart_spec.rb:11` や `ruby -Ilib -I. {tests}/cart_test.rb -n CartTest#test_total` で、head に `Gemfile` があれば `bundle exec` が前に付く。
+たとえば `ruby -Ilib -I. -e 'require "rspec/core"; require "rspec/support/object_formatter"; RSpec::Core::RubyProject.instance_variable_set(:@project_root, Dir.pwd); RSpec::Support::ObjectFormatter.default_instance.max_formatted_output_length = nil; exit(RSpec::Core::Runner.run(ARGV))' {tests}/cart_spec.rb:11` や `ruby -Ilib -I. {tests}/cart_test.rb -n CartTest#test_total` で、head に `Gemfile` があれば `bundle exec` が前に付く。
 `<file>#load` と `<file>#timeout` の行は、ファイル全体を再実行する。
 RSpec の行がただの `rspec` でないのは、`rspec` が `spec/` を持ついちばん近い親ディレクトリの `lib/` を読み込みパスの先頭に置くからである。
 そのため Rails アプリの `tmp/` の下にあるチェックアウトでは、アプリの `lib/` を読んでしまう。
 この行はそのディレクトリを作業ディレクトリに固定し、実行時のワークツリーでも同じようにする。
+また、RSpec が表示するオブジェクトを 200 文字で切る設定を外すので、`raise_error` の行は受け取ったエラーを最後まで示す。
 
 ## インストール
 

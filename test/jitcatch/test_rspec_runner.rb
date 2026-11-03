@@ -285,6 +285,25 @@ class TestRSpecRunner < Minitest::Test
     end
   end
 
+  def test_a_raise_error_row_keeps_the_whole_message_that_came
+    with_repo do |repo|
+      repo.write("lib/a.rb", %(module A; def self.f = raise(KeyError, "k"); end\n))
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/a.rb", %(module A; def self.f = raise(ArgumentError, "#{"x" * 200} wrapped k"); end\n))
+      repo.commit("Wrap the key error.", date: "2026-02-12T00:00:00Z")
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, { "a_spec.rb" => %(require "a"\n\nRSpec.describe A do\n  it("raises a key error") { expect { A.f }.to raise_error(KeyError) }\nend\n) })
+
+      row = execute(repo, tests)["tests"].fetch(0)
+
+      assert_equal "expected KeyError, got #<ArgumentError: #{"x" * 200} wrapped k> with backtrace:", row["head"]["message"]
+      rerun = Shellwords.split(row["rerun"]).map { |part| part.sub("{tests}/", "#{tests}/") }
+      out, _status = Open3.capture2e(*rerun, chdir: repo.dir)
+      assert_includes out, "#{"x" * 200} wrapped k>"
+    end
+  end
+
   def execute(repo, tests, reruns: 0)
     raw = JitCatch::Runner.run(repo.dir, "base", "HEAD", tests, reruns: reruns, timeout: 20)
     JitCatch::Assessor.apply(raw)
