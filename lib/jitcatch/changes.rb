@@ -369,7 +369,7 @@ module JitCatch
       methods = idx["methods"]
       by_class = methods.group_by { |method| [method.qualifier, method.bare_name] }
       by_bare = methods.group_by(&:bare_name)
-      qualifiers = methods.to_h { |method| [method.qualifier, true] }
+      qualifiers = methods.group_by(&:qualifier)
       edges = []
       idx["calls"].each do |call|
         next if call.enclosing.nil? || test_file?(call.file)
