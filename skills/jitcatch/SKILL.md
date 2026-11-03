@@ -101,7 +101,7 @@ Tags are hints, not a verdict. They are sorted:
 - `discard:signature_change` — `NameError`, `NoMethodError`, or an arity `ArgumentError` on a symbol the diff removed or rewrote, including a removed nested class such as `Model::Unsupported`. An arity `ArgumentError` is `wrong number of arguments`, `missing keyword`, or `unknown keyword`, raised in a method whose signature changed. It counts too when `assert_raises(X)` caught it and failed with `[X] exception expected, not ArgumentError`. An `ArgumentError` raised on purpose is kept.
 - `discard:load_error` — `LoadError` on head. `discard:timeout` — the head run timed out. Timeouts are not rerun.
 - The related id (`m05`, or `-` when none) is the downstream modified method when several changed methods sit on the path. Read that method's old and new source before you judge.
-- A mention is a whole word anywhere in the test text, string literals and comments included. An expected string such as `"jitcatch run\n"` mentions every changed method named `run`, and the most downstream of those can become the related id instead of the method the test calls. When the id does not match the call in the test, judge against the method the test calls, and keep common method names out of expected strings when you can.
+- A mention is a method call, a constant, or a symbol in the test code. Words in strings and comments are not mentions, so an expected string such as `"jitcatch run\n"` does not point the related id at a method named `run`. A method name passed as a string (`send("total")`) is not one either; pass a symbol.
 
 ## Judge
 

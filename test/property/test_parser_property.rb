@@ -52,6 +52,19 @@ class TestParserProperty < Minitest::Test
     end
   end
 
+  def test_strings_and_comments_do_not_change_what_a_test_refers_to
+    Hegel.test do |tc|
+      code = ["cart = Shop::Cart.new", "cart.total += 1", "assert_equal 3, helper(:run)"]
+      words = tc.draw(arrays(from_regex("[A-Za-z_:.# ]{0,20}", fullmatch: true), min_size: 1, max_size: 4))
+      noise = words.flat_map { |word| ["note = '#{word}'", "# #{word}", "label = \"#{word}\#{1}\""] }
+      body = noise.reduce(code) { |lines, line| lines.dup.insert(tc.draw(integers(min_value: 0, max_value: lines.size)), line) }
+      source = "class T\n  def test_x\n#{body.map { |line| "    #{line}" }.join("\n")}\n  end\n\n  def helper(name) = Price.new\nend\n"
+      plain = "class T\n  def test_x\n#{code.map { |line| "    #{line}" }.join("\n")}\n  end\n\n  def helper(name) = Price.new\nend\n"
+      assert_equal JitCatch::SourceIndex.parse(plain, file: "t.rb").referenced_names("T#test_x"),
+        JitCatch::SourceIndex.parse(source, file: "t.rb").referenced_names("T#test_x")
+    end
+  end
+
   def test_split_qualified_reverses_qualify
     Hegel.test do |tc|
       qualifier = tc.draw(from_regex("([A-Z][a-z]{0,3}(::[A-Z][a-z]{0,3}){0,2})?"))

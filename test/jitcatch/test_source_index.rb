@@ -288,4 +288,34 @@ class TestSourceIndex < Minitest::Test
     assert_match(/L1:/, index.parse_error)
     assert_empty index.methods
   end
+  def test_referenced_names_read_code_through_helpers_and_skip_strings_and_comments
+    source = <<~'RUBY'
+      module Util
+        module_function
+
+        def build(n) = Shop::Cart.new(n)
+      end
+
+      class CartTest
+        def test_total
+          # apply_coupon is not called here
+          cart = Util.build("apply_coupon")
+          cart.total ||= 1
+          cart.items, = [], 1
+          assert_equal "x #{cart.size}", cart.public_send(:label)
+        end
+
+        def test_other
+          other_only
+        end
+      end
+    RUBY
+    index = JitCatch::SourceIndex.parse(source, file: "test/cart_test.rb")
+
+    assert_equal %w[Cart Cart.new Shop Util assert_equal build items= label new public_send size total total=],
+      index.referenced_names("CartTest#test_total")
+    assert_equal %w[Cart Cart.new Shop new], index.referenced_names("Util.build")
+    assert_equal %w[Cart Cart.new CartTest Shop Util assert_equal build items= label module_function new other_only public_send size total total=],
+      index.referenced_names("CartTest#test_missing")
+  end
 end

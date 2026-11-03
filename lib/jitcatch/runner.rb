@@ -86,13 +86,13 @@ module JitCatch
 
     def classify_file(relative, base_dir, head_dir, normalizer, change)
       source = File.read(File.join(@tests_dir, relative), mode: "r:bom|utf-8")
-      known = mention_patterns(change)
+      known = mention_names(change)
       index = SourceIndex.parse(source, file: relative)
       # Each side runs in its own worktree, so the two can run at once.
       base_thread = Thread.new { execute(base_dir, relative, normalizer) }
       head_run = execute(head_dir, relative, normalizer)
       base_run = base_thread.value
-      rows = rows_for(relative, base_run, head_run, index, known, source)
+      rows = rows_for(relative, base_run, head_run, index, known)
       return rows unless rows.any? { |row| row["classification"] == "candidate" }
       return rows if head_run.timed_out
 
@@ -111,10 +111,10 @@ module JitCatch
       rows
     end
 
-    def rows_for(relative, base_run, head_run, index, known, source)
+    def rows_for(relative, base_run, head_run, index, known)
       if file_level?(base_run) || file_level?(head_run)
         name = file_level_name(relative, base_run, head_run)
-        [build_row(relative, name, side_result(base_run), side_result(head_run), mentions_for(index, name, known, source))]
+        [build_row(relative, name, side_result(base_run), side_result(head_run), mentions_for(index, name, known))]
       else
         names = (base_run.tests.keys | head_run.tests.keys).sort
         names.map { |name|
@@ -123,7 +123,7 @@ module JitCatch
             name,
             base_run.tests[name],
             head_run.tests[name],
-            mentions_for(index, name, known, source)
+            mentions_for(index, name, known)
           )
         }
       end
@@ -308,9 +308,9 @@ module JitCatch
       [list, omitted]
     end
 
-    # Each bare name a test can mention, with the pattern that finds it. A
-    # test runs `Owner#initialize` by writing `Owner.new`.
-    def mention_patterns(change)
+    # Each bare name a test can mention, with the referenced names that
+    # mention it. A test runs `Owner#initialize` by writing `Owner.new`.
+    def mention_names(change)
       names = change["methods"].map { |method| method["bare_name"] }
       names += change["entrypoints"].flat_map { |entry|
         entry["methods"].map { |method| SourceIndex.split_qualified(method["name"]).last }
@@ -320,38 +320,15 @@ module JitCatch
         SourceIndex.split_qualified(method["name"]).first.split("::").last if method["bare_name"] == "initialize"
       }.uniq
       names.compact.uniq.sort.reject(&:empty?).to_h do |bare|
-        pattern = /\b#{Regexp.escape(bare)}\b/
-        pattern = Regexp.union(pattern, *owners.map { |owner| /\b#{Regexp.escape(owner)}\.new\b/ }) if bare == "initialize"
-        [bare, pattern]
+        [bare, bare == "initialize" ? [bare, *owners.map { |owner| "#{owner}.new" }] : [bare]]
       end
     end
 
     # Mentions are taken from the test method and the same-file helpers it
     # calls, so a neighbor test in the same file does not change its tags.
-    def mentions_for(index, test_name, patterns, source)
-      text = test_text(index, test_name) || source
-      patterns.filter_map { |bare, pattern| bare if text.match?(pattern) }
-    end
-
-    def test_text(index, test_name)
-      start = index.methods.find { |item| item.qualified == test_name }
-      return nil unless start
-
-      by_bare = index.methods.group_by(&:bare_name)
-      calls = index.calls.group_by(&:enclosing)
-      reached = { start.qualified => start }
-      queue = [start]
-      while (method = queue.shift)
-        calls.fetch(method.qualified, []).each do |call|
-          by_bare.fetch(call.bare_name, []).each do |helper|
-            next if reached.key?(helper.qualified)
-
-            reached[helper.qualified] = helper
-            queue << helper
-          end
-        end
-      end
-      reached.values.map(&:source).join("\n")
+    def mentions_for(index, test_name, known)
+      referenced = index.referenced_names(test_name)
+      known.filter_map { |bare, names| bare if names.any? { |name| referenced.include?(name) } }
     end
 
     def assign_test_ids(rows)

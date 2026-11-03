@@ -643,6 +643,41 @@ class TestRunner < Minitest::Test
     end
   end
 
+  def test_a_word_in_a_string_or_a_comment_is_not_a_mention
+    with_repo do |repo|
+      repo.write("lib/job.rb", "class B\n  def run\n    1\n  end\nend\n\nmodule Z\n  def self.run_text\n    \"x run\"\n  end\nend\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/job.rb", "class B\n  def run\n    2\n  end\nend\n\nmodule Z\n  def self.run_text\n    \"y run\"\n  end\nend\n")
+      repo.commit("Rework jobs.", date: "2026-02-12T00:00:00Z")
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, {
+        "job_test.rb" => <<~RUBY
+          require "minitest/autorun"
+          require "job"
+
+          class JobTest < Minitest::Test
+            def test_text
+              # B#run is not called here.
+              assert_equal "x run", Z.run_text
+            end
+
+            def test_symbol_and_constant
+              assert_equal 1, B.new.public_send(:run)
+            end
+          end
+        RUBY
+      })
+
+      doc = execute(repo, tests)
+
+      ids = doc["methods"].to_h { |method| [method["name"], method["id"]] }
+      rows = doc["tests"].to_h { |test| [test["name"], test.values_at("mentions", "method_id")] }
+      assert_equal [%w[run_text], ids["Z.run_text"]], rows["JobTest#test_text"]
+      assert_equal [%w[run], ids["B#run"]], rows["JobTest#test_symbol_and_constant"]
+    end
+  end
+
   def test_the_base_and_head_runs_of_a_file_overlap
     with_repo do |repo|
       repo.write("lib/flag.rb", "module Flag; end\n")

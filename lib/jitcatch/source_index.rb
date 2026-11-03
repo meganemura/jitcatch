@@ -34,6 +34,7 @@ module JitCatch
       @module_functions = []
       @private_constants = []
       @calls = []
+      @references = Hash.new { |hash, key| hash[key] = [] }
       @parse_error = nil
     end
 
@@ -64,6 +65,31 @@ module JitCatch
       else
         ["", "#", qname]
       end
+    end
+
+    # The names a method refers to in code, with the same-file helpers it
+    # calls: method calls, constant reads, and symbols. A constructor call
+    # is also listed as `Owner.new`. Strings and comments are not read. A
+    # name the file does not define as a method is read from the whole file.
+    def referenced_names(qualified = nil)
+      start = @methods.find { |method| method.qualified == qualified } if qualified
+      return @references.values.flatten.uniq.sort unless start
+
+      by_bare = @methods.group_by(&:bare_name)
+      calls = @calls.group_by(&:enclosing)
+      reached = { start.qualified => true }
+      queue = [start.qualified]
+      while (name = queue.shift)
+        calls.fetch(name, []).each do |call|
+          by_bare.fetch(call.bare_name, []).each do |helper|
+            next if reached.key?(helper.qualified)
+
+            reached[helper.qualified] = true
+            queue << helper.qualified
+          end
+        end
+      end
+      reached.keys.flat_map { |name| @references.fetch(name, []) }.uniq.sort
     end
 
     # Code outside the namespace cannot name a private constant, so no method
@@ -255,6 +281,7 @@ module JitCatch
     def rename_module_function_callers
       renamed = @module_functions.to_h { |name| [name, name.sub(/#(?=[^#]*\z)/, ".")] }
       @calls.map! { |call| renamed.key?(call.enclosing) ? call.with(enclosing: renamed[call.enclosing]) : call }
+      renamed.each { |from, to| @references[to] = @references.delete(from) if @references.key?(from) }
     end
 
     def constant_target(node, qualifier)
@@ -302,11 +329,34 @@ module JitCatch
             line: node.location.start_line,
             enclosing: enclosing
           )
+          refer(enclosing, node.name)
+          owner = constructor_owner(node)
+          refer(enclosing, "#{owner}.new") if owner
         end
         node.compact_child_nodes.each { |child| walk(child, qualifier, singleton_context, enclosing) }
+      when Prism::CallOperatorWriteNode, Prism::CallAndWriteNode, Prism::CallOrWriteNode
+        refer(enclosing, node.read_name)
+        refer(enclosing, node.write_name)
+        node.compact_child_nodes.each { |child| walk(child, qualifier, singleton_context, enclosing) }
+      when Prism::CallTargetNode, Prism::ConstantReadNode, Prism::ConstantPathNode
+        refer(enclosing, node.name)
+        node.compact_child_nodes.each { |child| walk(child, qualifier, singleton_context, enclosing) }
+      when Prism::SymbolNode
+        refer(enclosing, node.unescaped)
       else
         node.compact_child_nodes.each { |child| walk(child, qualifier, singleton_context, enclosing) }
       end
+    end
+
+    def refer(enclosing, name)
+      @references[enclosing] << name.to_s
+    end
+
+    def constructor_owner(node)
+      return nil unless node.name == :new
+
+      receiver = node.receiver
+      receiver.name.to_s if receiver.is_a?(Prism::ConstantReadNode) || receiver.is_a?(Prism::ConstantPathNode)
     end
 
     def const_name(node)
