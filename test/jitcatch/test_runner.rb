@@ -230,6 +230,17 @@ class TestRunner < Minitest::Test
             end
           end
         RUBY
+        "broken_test.rb" => <<~RUBY,
+          require "minitest/autorun"
+          require "calc"
+          raise "double moved" unless Calc.new.double(2) == 4
+
+          class BrokenTest < Minitest::Test
+            def test_already_failing
+              flunk "fails on base"
+            end
+          end
+        RUBY
         "guard_test.rb" => <<~RUBY
           require "minitest/autorun"
           require "calc"
@@ -246,6 +257,7 @@ class TestRunner < Minitest::Test
       assert_equal [
         ["TripleTest#test_add_two", "reported", "pass", "error"],
         ["TripleTest#test_triple", "fail_on_base", "error", "pass"],
+        ["broken_test.rb#load", "fail_on_base", "fail", "error"],
         ["guard_test.rb#load", "reported", "pass", "error"]
       ], rows.sort
       assert_match(/\A\.jitcatch\/guard_test\.rb:3:in .<main>.: double moved \(RuntimeError\)\z/, doc["tests"].find { |test| test["name"] == "guard_test.rb#load" }["head"]["message"])
@@ -279,6 +291,10 @@ class TestRunner < Minitest::Test
             def test_parse
               JSON.parse("{") unless Calc.new.double(2) == 4
             end
+
+            def test_lib_frame
+              raise "moved" unless Calc.new.double(2) == 4
+            end
           end
         RUBY
       })
@@ -290,6 +306,10 @@ class TestRunner < Minitest::Test
       assert_includes JitCatch::Render.dump(doc), "caf\u00e9"
       assert_equal "Expected: \"x\"\n  Actual: \".jitcatch/words_test.rb\"", by_name["WordsTest#test_file"]["head"]["message"]
       assert_equal "{ruby}/", by_name["WordsTest#test_parse"]["head"]["backtrace"].fetch(0)["file"][0, 7]
+      assert_includes by_name["WordsTest#test_word"]["head"]["message"], "café"
+      frames = doc["tests"].flat_map { |test| [test["base"], test["head"]] }.flat_map { |side| side["backtrace"] }.map { |frame| frame["file"] }
+      assert_includes frames, ".jitcatch/words_test.rb"
+      assert_empty frames.select { |file| file.start_with?("/") }
     end
   end
 
