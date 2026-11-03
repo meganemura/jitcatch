@@ -244,6 +244,8 @@ gem の中から始まったエラーには `touches:changed_method` を付け�
 変わった定数は `k01` で、その定数を読むだけで本体が変わっていないメソッドは `affected`（`via=k01`）になる。
 `attr_reader`、`attr_writer`、`attr_accessor`、`Struct.new` や `Data.define` のメンバーが定義する読み書きのメソッドもメソッドとして数え、ソースには名前一つの形（`attr_reader :seed`）が出る。
 そのため、その行から外した名前は `removed` になり、行に残った名前は変わらない。
+クラス本体の条件分岐の中にある `def` や読み出しメソッド（`attr_reader :x if cond`）も数える。
+Concern の `included do`、`prepended do`、`class_methods do` ブロックの中にあるものも数える。
 片方の側にしか無いクラスやモジュールも定数として `added` か `removed` になり、ソースには宣言の行が出る。
 各メソッドには、旧ソースと新ソース、ライブラリ内の呼び出し、そこへ届く入口（`reachable_from`）、それに言及している既存テストが出る。
 言及しているテストがないときは `entry_point_tests` が出る。

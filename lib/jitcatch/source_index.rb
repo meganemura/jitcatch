@@ -16,6 +16,9 @@ module JitCatch
     ATTRIBUTE_MACROS = { attr_reader: [""], attr: [""], attr_writer: ["="], attr_accessor: ["", "="] }.freeze
     # The constant a member list is given to, and whether its members get writers.
     MEMBER_BUILDERS = { %i[Struct new] => true, %i[Data define] => false }.freeze
+    # ActiveSupport::Concern blocks that define methods on the including
+    # class, and whether those are class methods.
+    CONCERN_BLOCKS = { included: false, prepended: false, class_methods: true }.freeze
 
     # `macro` is nil for a `def`. A method an `attr_*` macro or a Struct or
     # Data member list defines names that macro, and its source is the
@@ -211,6 +214,12 @@ module JitCatch
       when Prism::SingletonClassNode
         scan_body(stmt, qualifier, :public, true)
         visibility
+      when Prism::IfNode, Prism::UnlessNode, Prism::ElseNode
+        # A conditional in a class body defines what any branch defines.
+        Array(stmt.statements&.body).each { |inner| scan_statement(inner, qualifier, visibility, singleton) }
+        rest = %i[subsequent else_clause consequent].find { |name| stmt.respond_to?(name) }
+        scan_statement(stmt.public_send(rest), qualifier, visibility, singleton) if rest
+        visibility
       when Prism::DefNode
         record_method(stmt, qualifier, visibility, singleton)
         visibility
@@ -228,6 +237,11 @@ module JitCatch
         return handle_module_function(stmt, qualifier, visibility) if stmt.receiver.nil? && stmt.name == :module_function
 
         record_private_constants(stmt, qualifier) if stmt.name == :private_constant && (stmt.receiver.nil? || stmt.receiver.is_a?(Prism::SelfNode))
+
+        if stmt.receiver.nil? && CONCERN_BLOCKS.key?(stmt.name) && stmt.block.is_a?(Prism::BlockNode)
+          scan_body(stmt.block, qualifier, :public, CONCERN_BLOCKS.fetch(stmt.name))
+          return visibility
+        end
 
         handle_class_visibility(stmt, qualifier) if stmt.receiver.nil? && CLASS_VISIBILITY.key?(stmt.name)
         if stmt.receiver.nil? && ATTRIBUTE_MACROS.key?(stmt.name)

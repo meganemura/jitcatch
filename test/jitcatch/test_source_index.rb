@@ -465,4 +465,51 @@ def test_a_top_level_describe_without_rspec_is_a_group_too
       ["Pick#name", "public", "Data.define(:name)", "", 19]
     ], index.methods.map { |method| [method.qualified, method.visibility, method.source, method.params, method.start_line] }.sort
   end
+
+  def test_a_conditional_or_a_concern_block_defines_what_it_holds
+    source = <<~RUBY
+      class Order
+        attr_reader :total if defined?(Money)
+
+        unless ENV["LEGACY"]
+          attr_accessor :note
+        else
+          def note = "legacy"
+        end
+
+        private
+
+        if true
+          attr_reader :secret
+        end
+      end
+
+      module Billable
+        extend ActiveSupport::Concern
+
+        included do
+          attr_reader :invoice
+          def bill = invoice
+        end
+
+        class_methods do
+          def billing = :monthly
+        end
+
+        def before = included
+      end
+    RUBY
+    index = JitCatch::SourceIndex.parse(source, file: "lib/order.rb")
+    assert_equal [
+      ["Billable#before", "public", 29],
+      ["Billable#bill", "public", 22],
+      ["Billable#invoice", "public", 21],
+      ["Billable.billing", "public", 26],
+      ["Order#note", "public", 5],
+      ["Order#note", "public", 7],
+      ["Order#note=", "public", 5],
+      ["Order#secret", "private", 13],
+      ["Order#total", "public", 2]
+    ], index.methods.map { |method| [method.qualified, method.visibility, method.start_line] }.sort
+  end
 end

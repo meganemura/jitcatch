@@ -347,6 +347,49 @@ class TestRunner < Minitest::Test
     end
   end
 
+  def test_a_reader_removed_from_a_conditional_is_a_signature_change
+    with_repo do |repo|
+      repo.write("lib/order.rb", <<~RUBY)
+        class Order
+          attr_reader :total if true
+
+          def initialize
+            @total = 9
+          end
+        end
+      RUBY
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/order.rb", <<~RUBY)
+        class Order
+          def initialize
+            @total = 9
+          end
+        end
+      RUBY
+      repo.commit("Drop the readers.", date: "2026-02-12T00:00:00Z")
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, {
+        "order_test.rb" => <<~RUBY
+          require "minitest/autorun"
+          require "order"
+
+          class OrderTest < Minitest::Test
+            def test_total
+              assert_equal 9, Order.new.total
+            end
+          end
+        RUBY
+      })
+
+      doc = execute(repo, tests)
+
+      assert_includes doc["methods"].map { |method| [method["name"], method["change"]] }, ["Order#total", "removed"]
+      row = doc["tests"].fetch(0)
+      assert_equal ["discarded", "discard:signature_change"], [row["disposition"], row["tags"].first]
+    end
+  end
+
   def test_a_removed_constructor_or_reader_is_a_signature_change_of_the_class_new_names
     with_repo do |repo|
       repo.write("lib/mismatch.rb", <<~RUBY)
