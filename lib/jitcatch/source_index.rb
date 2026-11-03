@@ -77,27 +77,21 @@ module JitCatch
 
       by_bare = @methods.group_by(&:bare_name)
       calls = @calls.group_by(&:enclosing)
-      reached = { start.qualified => true }
-      queue = [start.qualified]
-      while (name = queue.shift)
+      reached = [start.qualified]
+      reached.each do |name|
         calls.fetch(name, []).each do |call|
           by_bare.fetch(call.bare_name, []).each do |helper|
-            next if reached.key?(helper.qualified)
-
-            reached[helper.qualified] = true
-            queue << helper.qualified
+            reached << helper.qualified unless reached.include?(helper.qualified)
           end
         end
       end
-      reached.keys.flat_map { |name| @references.fetch(name, []) }.uniq.sort
+      reached.flat_map { |name| @references.fetch(name, []) }.uniq.sort
     end
 
     # Code outside the namespace cannot name a private constant, so no method
     # under it is an entry point, whatever its own visibility says. A revision
     # passes the names from all its files, since a namespace can be reopened.
     def self.hide_private_constants(methods, names)
-      return methods if names.empty?
-
       methods.map do |method|
         hidden = names.any? { |name| method.qualifier == name || method.qualifier.start_with?("#{name}::") }
         hidden ? method.with(visibility: "private") : method

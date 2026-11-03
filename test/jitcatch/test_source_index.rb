@@ -293,7 +293,7 @@ class TestSourceIndex < Minitest::Test
       module Util
         module_function
 
-        def build(n) = Shop::Cart.new(n)
+        def build(n) = n.zero? ? Shop::Cart.new(n) : build(n - 1)
       end
 
       class CartTest
@@ -312,10 +312,10 @@ class TestSourceIndex < Minitest::Test
     RUBY
     index = JitCatch::SourceIndex.parse(source, file: "test/cart_test.rb")
 
-    assert_equal %w[Cart Cart.new Shop Util assert_equal build items= label new public_send size total total=],
+    assert_equal %w[- Cart Cart.new Shop Util assert_equal build items= label new public_send size total total= zero?],
       index.referenced_names("CartTest#test_total")
-    assert_equal %w[Cart Cart.new Shop new], index.referenced_names("Util.build")
-    assert_equal %w[Cart Cart.new CartTest Shop Util assert_equal build items= label module_function new other_only public_send size total total=],
+    assert_equal %w[- Cart Cart.new Shop build new zero?], index.referenced_names("Util.build")
+    assert_equal %w[- Cart Cart.new CartTest Shop Util assert_equal build items= label module_function new other_only public_send size total total= zero?],
       index.referenced_names("CartTest#test_missing")
   end
 end
