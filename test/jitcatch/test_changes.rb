@@ -393,7 +393,7 @@ class TestChanges < Minitest::Test
     end
   end
 
-  def test_attribute_readers_and_struct_members_are_methods
+  def test_attribute_readers_and_struct_members_are_methods_and_new_is_an_entry_point
     with_repo do |repo|
       repo.write("lib/mismatch.rb", <<~RUBY)
         class Mismatch < StandardError
@@ -439,7 +439,7 @@ class TestChanges < Minitest::Test
       reason = doc["methods"].find { |method| method["name"] == "Mismatch#reason" }
       assert_equal ["attr_reader :reason", 2], reason.values_at("old_source", "old_start")
       entries = doc["entrypoints"].to_h { |entry| [entry["class"], entry["methods"].map { |method| method.values_at("name", "role") }] }
-      assert_equal [["Mismatch#seed=", "unchanged"], ["Mismatch#to_s", "unchanged"], ["Mismatch#trace", "unchanged"]], entries["Mismatch"].last(3)
+      assert_equal [["Mismatch.new", "removed"], ["Mismatch#seed=", "unchanged"], ["Mismatch#to_s", "unchanged"], ["Mismatch#trace", "unchanged"]], entries["Mismatch"]
       assert_equal [["Pick#name", "unchanged"]], entries["Pick"]
       assert_equal [["Rule#fixed", "added"], ["Rule#fixed=", "added"], ["Rule#action", "unchanged"]], entries["Rule"].first(3)
     end

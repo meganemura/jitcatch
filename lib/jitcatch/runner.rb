@@ -343,27 +343,21 @@ module JitCatch
       [list, omitted]
     end
 
-    # Each bare name a test can mention, with the referenced names that
-    # mention it. A test runs `Owner#initialize` by writing `Owner.new`.
+    # The names a test can mention. A test runs `Owner#initialize` by writing
+    # `Owner.new`, so a constructor is mentioned as `Owner.new`, with the
+    # owner's last name segment as the test usually writes it.
     def mention_names(change)
-      names = change["methods"].map { |method| method["bare_name"] }
-      names += change["entrypoints"].flat_map { |entry|
-        entry["methods"].map { |method| SourceIndex.split_qualified(method["name"]).last }
-      }
+      names = change["methods"].map { |method| Assessor.mention_of(method["name"]) }
+      names += change["entrypoints"].flat_map { |entry| entry["methods"].map { |method| Assessor.mention_of(method["name"]) } }
       names += change["constants"].map { |const| const["bare_name"] }
-      owners = change["methods"].filter_map { |method|
-        SourceIndex.split_qualified(method["name"]).first.split("::").last if method["bare_name"] == "initialize"
-      }.uniq
-      names.compact.uniq.sort.reject(&:empty?).to_h do |bare|
-        [bare, bare == "initialize" ? [bare, *owners.map { |owner| "#{owner}.new" }] : [bare]]
-      end
+      names.compact.uniq.sort.reject(&:empty?)
     end
 
     # Mentions are taken from the test method and the same-file helpers it
     # calls, so a neighbor test in the same file does not change its tags.
     def mentions_for(index, test_name, line, known)
       referenced = (line && index.example_references(line)) || index.referenced_names(test_name)
-      known.filter_map { |bare, names| bare if names.any? { |name| referenced.include?(name) } }
+      known & referenced
     end
 
     # A file-level row (`file#load`, `file#timeout`) reruns the whole file.

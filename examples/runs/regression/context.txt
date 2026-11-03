@@ -87,9 +87,9 @@ methods:
         Money.percent(subtotal_cents, VOLUME_PERCENT)
       end
 entrypoints Shop::Cart:
+  Shop::Cart.new modified
   Shop::Cart#apply_coupon added
   Shop::Cart#coupon_discount_cents added
-  Shop::Cart#initialize modified
   Shop::Cart#taxable_cents modified
   Shop::Cart#volume_discount_cents modified
   Shop::Cart#add unchanged

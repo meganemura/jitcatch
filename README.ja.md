@@ -218,7 +218,7 @@ bin/jitcatch assess --json run.json
 
 タグはヒントであり、判断そのものではない。
 `touches:changed_method` は、テストが diff の変更したメソッド名を含んでいる。
-`Owner.new` は `Owner#initialize` の名前として数える。
+`Owner.new` は、その `Owner` の `initialize` だけの名前として数える（`Mismatch.new` は `Spec#initialize` を指さない）。
 変更したコンストラクタが関連メソッドになるのは、テストがほかの変更メソッドの名前を含まず、その呼び出し元も通らないときだけである。
 `touches:changed_constant` は、テストが diff の変更した定数名を含んでいる。
 `touches:changed_dependency` は、ロックしたバージョンが変わった gem の中からエラーが出た。
@@ -247,6 +247,7 @@ gem の中から始まったエラーには `touches:changed_method` を付け�
 ブリーフの最後には、変更メソッドを持つクラスやモジュールごとに `entrypoints <Const>:` の節が出る。
 その節は、そのクラスの head での public メソッドを並べる（head に無ければ base のもの）。
 変更メソッドが先に変更の種類つきで並び、残りは `unchanged` として続き、最大 12 件である。
+どちらかの側で `initialize` を定義するクラスは、その代わりに `Owner.new` を `Owner#initialize` の変更の種類つきで出す。
 これはテストが呼べるメソッドであり、`run` はその名前も言及として数える。
 
 `run` はリビジョンごとに git worktree を作り、スクラッチディレクトリをその worktree の `.jitcatch/` へコピーし、ファイルごとに 1 プロセスで実行する。
@@ -347,7 +348,7 @@ CLI を使わない場合は、`skills/jitcatch` をエージェントの skills
 - 新機能のテストは base で落ち、候補にならない。
 - 関連 id は、失敗の原因の行から一段ずれていることがある。
 - 言及は、そのテストメソッドと、それが直接または間接に呼ぶ同じファイルのメソッドの中にある、メソッド呼び出し、定数、シンボルである。
-  `Owner.new` は `Owner#initialize` への言及になる。
+  `Owner.new` は、名前が `Owner` で終わるクラスの `initialize` への言及になり、`mentions` には `Owner.new` として出る。
   文字列とコメントの中の語は言及にならない。
   ただし、`send`、`public_send`、`method`、`respond_to?` に普通の文字列で渡したメソッド名は、`send("total")` のように言及になる。
   `snap[:total]`、`snap.fetch(:total)`、`{ total: 1 }` のようにハッシュのキーとして使ったシンボルは言及にならない。

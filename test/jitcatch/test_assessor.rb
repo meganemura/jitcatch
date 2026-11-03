@@ -112,9 +112,9 @@ class TestAssessor < Minitest::Test
       ],
       "constants" => [],
       "tests" => [
-        candidate("t01", "RateTest#test_rate", %w[initialize rate], failure("Expected: 1\n  Actual: 2")),
-        candidate("t02", "TotalTest#test_total", %w[initialize total], failure("Expected: 1\n  Actual: 2")),
-        candidate("t03", "NewTest#test_new", %w[initialize], failure("Expected: 1\n  Actual: 2"))
+        candidate("t01", "RateTest#test_rate", %w[Calc.new rate], failure("Expected: 1\n  Actual: 2")),
+        candidate("t02", "TotalTest#test_total", %w[Calc.new total], failure("Expected: 1\n  Actual: 2")),
+        candidate("t03", "NewTest#test_new", %w[Calc.new], failure("Expected: 1\n  Actual: 2"))
       ]
     }
 
@@ -124,6 +124,24 @@ class TestAssessor < Minitest::Test
     assert_includes out["tests"][1]["tags"], "touches:unchanged_caller"
     refute_includes out["tests"][1]["tags"], "touches:changed_method"
     assert_includes out["tests"][2]["tags"], "touches:changed_method"
+  end
+
+  def test_owner_new_names_the_constructor_of_that_owner_alone
+    removed = method("m01", "removed", "removed", "initialize", [], 1).merge("name" => "QuintDriver::Mismatch#initialize")
+    modified = method("m02", "modified", "same", "initialize", [], 10).merge("name" => "QuintDriver::Spec#initialize")
+    doc = {
+      "methods" => [removed, modified],
+      "constants" => [],
+      "tests" => [
+        candidate("t01", "MismatchTest#test_seed", %w[Mismatch.new], failure("Expected: 1\n  Actual: 2")),
+        candidate("t02", "SpecTest#test_path", %w[Spec.new], failure("Expected: 1\n  Actual: 2"))
+      ]
+    }
+
+    out = JitCatch::Assessor.apply(doc)
+
+    assert_equal [["m01", ["m01"]], ["m02", ["m02"]]], out["tests"].map { |test| test.values_at("method_id", "method_ids") }
+    out["tests"].each { |test| assert_equal %w[assertion report touches:changed_method], test["tags"] }
   end
 
   def test_an_id_reached_only_through_unchanged_callers_is_marked_a_guess

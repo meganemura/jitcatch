@@ -474,7 +474,7 @@ module JitCatch
           )
           refer(enclosing, node.name)
           owner = constructor_owner(node) || described_owner(node)
-          refer(enclosing, "#{owner}.new") if owner
+          refer(enclosing, "#{owner.split("::").last}.new") if owner
           named = reflective_name(node)
           refer(enclosing, named) if named
         end

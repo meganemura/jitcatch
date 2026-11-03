@@ -762,8 +762,8 @@ class TestRunner < Minitest::Test
 
       ids = doc["methods"].to_h { |method| [method["name"], method["id"]] }
       rows = doc["tests"].to_h { |test| [test["name"], test.values_at("mentions", "method_id")] }
-      assert_equal [%w[doubled initialize], ids["Price#doubled"]], rows["PriceTest#test_doubled_through_a_helper"]
-      assert_equal [%w[cents initialize], ids["Price#initialize"]], rows["PriceTest#test_new_keeps_the_cents"]
+      assert_equal [%w[Price.new doubled], ids["Price#doubled"]], rows["PriceTest#test_doubled_through_a_helper"]
+      assert_equal [%w[Price.new cents], ids["Price#initialize"]], rows["PriceTest#test_new_keeps_the_cents"]
       assert_equal [%w[size], ids["Box#size"]], rows["PriceTest#test_box_new_is_not_price_new"]
       doc["tests"].each { |test| assert_includes test["tags"], "touches:changed_method", test["name"] }
     end

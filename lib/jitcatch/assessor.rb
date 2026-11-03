@@ -10,6 +10,14 @@ module JitCatch
       new(doc).apply
     end
 
+    # The name a test writes to reach a method: its bare name, or
+    # `Owner.new` for a constructor.
+    def self.mention_of(qualified)
+      qualifier, sep, bare = SourceIndex.split_qualified(qualified)
+      constructor = (sep == "#" && bare == "initialize") || (sep == "." && bare == "new")
+      constructor ? "#{qualifier.split("::").last}.new" : bare
+    end
+
     def initialize(doc)
       @doc = doc
       @methods = Array(doc["methods"])
@@ -112,14 +120,14 @@ module JitCatch
     def touch_tags(test, method)
       mentions = Array(test["mentions"])
       tags = []
-      changed_bares = @methods.map { |item| item["bare_name"] }
+      changed_mentions = @methods.map { |item| mention(item) }
       gem = origin_gem(test)
-      direct = method && gem.nil? && (mentions.include?(method["bare_name"]) || frame_hits?(test, method))
+      direct = method && gem.nil? && (mentions.include?(mention(method)) || frame_hits?(test, method))
       tags << "touches:changed_method" if direct
       tags << "touches:changed_dependency" if gem && Array(@doc["dependencies"]).any? { |dep| dep["gem"] == gem }
       tags << "touches:changed_constant" if (mentions & @constants.map { |const| const["bare_name"] }).any?
       upstream = @methods.flat_map { |item| Array(item["reachable_from"]).map { |name| bare(name) } }
-      callers = (mentions & upstream) - changed_bares
+      callers = (mentions & upstream) - changed_mentions
       tags << "touches:unchanged_caller" if callers.any?
       tags
     end
@@ -149,10 +157,10 @@ module JitCatch
       return [method_from_backtrace(test), framed] if framed.any?
 
       mentions = Array(test["mentions"])
-      mentioned = @methods.select { |item| mentions.include?(item["bare_name"]) }
+      mentioned = @methods.select { |item| mentions.include?(mention(item)) }
       # Almost every test builds its object with `.new`, so a changed
       # constructor is the related method only when nothing else points.
-      constructors, named = mentioned.partition { |item| item["bare_name"] == "initialize" }
+      constructors, named = mentioned.partition { |item| mention(item).end_with?(".new") }
       return [most_downstream(named), named] if named.any?
 
       via_caller = @methods.select { |item|
@@ -226,6 +234,10 @@ module JitCatch
       when "removed" then 1
       else 2
       end
+    end
+
+    def mention(item)
+      self.class.mention_of(item["name"].to_s)
     end
 
     def lowest(items)

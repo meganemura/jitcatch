@@ -355,9 +355,14 @@ module JitCatch
         pool = public_methods_of(head_idx, qualifier)
         pool = public_methods_of(base_idx, qualifier) if pool.empty?
         changed = methods.to_h { |method| [(method["new"] || method["old"]).qualified, method["change"]] }
-        listed = pool.map { |method|
-          { "name" => method.qualified, "role" => changed[method.qualified] || "unchanged" }
-        }.sort_by { |item| [item["role"] == "unchanged" ? 1 : 0, item["name"]] }
+        constructor = "#{qualifier}#initialize"
+        names = pool.map(&:qualified) - [constructor]
+        listed = names.map { |name| { "name" => name, "role" => changed[name] || "unchanged" } }
+        if [head_idx, base_idx].any? { |idx| idx["methods"].any? { |method| method.qualified == constructor } }
+          # A test builds the object with `.new`, which runs `initialize`.
+          listed << { "name" => "#{qualifier}.new", "role" => changed[constructor] || "unchanged" }
+        end
+        listed = listed.sort_by { |item| [item["role"] == "unchanged" ? 1 : 0, item["name"].end_with?(".new") ? 0 : 1, item["name"]] }
         next if listed.empty?
 
         { "class" => qualifier, "methods" => listed.first(ENTRY_CAP) }
