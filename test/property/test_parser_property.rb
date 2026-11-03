@@ -61,4 +61,20 @@ class TestParserProperty < Minitest::Test
       assert_equal [qualifier, singleton ? "." : "#", bare], JitCatch::SourceIndex.split_qualified(qualified)
     end
   end
+
+  def test_blobs_read_back_as_written
+    repo = Support::Repo.new
+    git = JitCatch::GitRepo.new(repo.dir)
+    Hegel.test do |tc|
+      texts = tc.draw(arrays(text(max_size: 30), max_size: 4))
+      paths = texts.each_with_index.map do |body, index|
+        File.join(repo.dir, "blob#{index}").tap { |path| File.binwrite(path, body) }
+      end
+      oids = paths.empty? ? [] : Open3.capture2("git", "-C", repo.dir, "hash-object", "-w", "--stdin-paths", stdin_data: paths.join("\n")).first.split
+      expected = oids.zip(texts).to_h { |oid, body| [oid, body.b.force_encoding(Encoding::UTF_8)] }
+      assert_equal expected, git.read_blobs(oids)
+    end
+  ensure
+    repo&.destroy
+  end
 end
