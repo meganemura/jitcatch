@@ -226,6 +226,27 @@ class TestAssessor < Minitest::Test
     }, out)
   end
 
+  # A dropped initialize leaves Exception#initialize, which Ruby defines in
+  # C, so its arity error shows the caller's line first and no changed
+  # method's line at all.
+  def test_an_arity_error_with_no_ruby_callee_frame_takes_the_caller_from_the_first_frame
+    doc = {
+      "methods" => [method("m01", "removed", "removed", "initialize", [], 1)],
+      "constants" => [],
+      "tests" => [
+        candidate("t01", "NewTest#test_a", %w[Calc.new], error("ArgumentError", "wrong number of arguments (given 2, expected 0..1)"),
+                  frames(".jitcatch/newtest.rb", 4)),
+        candidate("t02", "NewTest#test_b", %w[Calc.new], error("ArgumentError", "wrong number of arguments (given 2, expected 0..1)"),
+                  frames("lib/build.rb", 7))
+      ]
+    }
+    out = JitCatch::Assessor.apply(doc)["tests"].to_h { |test| [test["id"], test["tags"]] }
+    assert_equal({
+      "t01" => ["discard:signature_change", "error:ArgumentError", "touches:changed_method"],
+      "t02" => ["caller:unchanged:lib/build.rb:7", "error:ArgumentError", "report", "touches:changed_method"]
+    }, out)
+  end
+
   def test_a_keyword_or_arity_error_inside_assert_raises_is_a_signature_change
     raised = ->(message) { failure("[Unsupported] exception expected, not\nClass: <ArgumentError>\nMessage: <#{message.inspect}>\n---Backtrace---") }
     at_scale = frames(".jitcatch/scale_test.rb", 4) + frames("lib/calc.rb", 40) + frames(".jitcatch/scale_test.rb", 4)

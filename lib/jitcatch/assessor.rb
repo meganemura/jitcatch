@@ -245,7 +245,6 @@ module JitCatch
     end
 
     def missing_symbol(message)
-      message = message.to_s
       if (match = message.match(/undefined method [`']([^`']+)[`']/))
         match[1]
       elsif (match = message.match(/undefined local variable or method [`']([^`']+)[`']/))
