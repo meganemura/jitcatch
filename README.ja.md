@@ -157,6 +157,7 @@ jitcatch run --repo DIR BASE HEAD TESTS_DIR
 | `--coverage FILE` | `context` | 既存テストの grep の代わりにこのファイルを使う。JSON は `"format": "jitcatch-coverage-v1"` と `tests` 配列を持つ。例は `examples/coverage/jitcatch-coverage-v1.sample.json`。 |
 | `--reruns N` | `run` | base で通り head で落ちたあとの、head での追加実行回数。既定は 2。`0` でフレーク検査をしない。 |
 | `--timeout SEC` | `run` | テストファイルを止めるまでの秒数。既定は 10。最小は 1。 |
+| `--workers N` | `run` | 同時に実行するテストファイルの数。ワーカーごとに base と head の worktree を持つ。既定は 1。N によらずレポートは同じになる。 |
 | `--env NAME` | `run` | この環境変数を今の環境からテストのプロセスへ渡す。複数の名前は繰り返して渡す。実行結果には値ではなく名前を記録する。 |
 
 | コマンド | 引数 |
@@ -303,9 +304,10 @@ CLI を使わない場合は、`skills/jitcatch` をエージェントの skills
   文字列とコメントの中の語は言及にならない。
   `send("total")` のように文字列で渡したメソッド名も言及にならない。
   別のファイルのヘルパーは読まない。
-- ファイルは 1 つずつ実行する。
+- `--workers` を渡さなければ、ファイルは 1 つずつ実行する。
   1 つのファイルの base 側と head 側は、それぞれの worktree で同時に走る。
   そのため、worktree の外の決まったパスに書くテストや、決まったポートで待ち受けるテストは、もう一方の側とぶつかることがある。
+  `--workers` を渡すと、ほかのファイルともぶつかることがある。
   リポジトリの既存スイートは走らない。
   worktree を追加できる git リポジトリが要る。
 - アサーションのバックトレースはテストの中で止まりがちなので、ライブラリの行はテストが言及した名前から探す。

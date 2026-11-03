@@ -18,12 +18,14 @@ module JitCatch
     BUNDLE_CHECK = 'begin; require "bundler/setup"; rescue Exception => e; $stderr.puts e.message; exit 1; end; ' \
       'begin; require "minitest"; rescue LoadError; $stderr.puts %(minitest is not in the bundle: add gem "minitest" to the Gemfile); exit 1; end'
     Result = Data.define(:tests, :file_error, :timed_out, :exit_code)
+    # One worker's two checkouts. A worker runs one file at a time in them.
+    Pair = Data.define(:base, :head)
 
-    def self.run(repo, base_ref, head_ref, tests_dir, reruns: 2, timeout: 10, env: [])
-      new(repo, base_ref, head_ref, tests_dir, reruns: reruns, timeout: timeout, env: env).run
+    def self.run(repo, base_ref, head_ref, tests_dir, reruns: 2, timeout: 10, env: [], workers: 1)
+      new(repo, base_ref, head_ref, tests_dir, reruns: reruns, timeout: timeout, env: env, workers: workers).run
     end
 
-    def initialize(repo, base_ref, head_ref, tests_dir, reruns:, timeout:, env:)
+    def initialize(repo, base_ref, head_ref, tests_dir, reruns:, timeout:, env:, workers:)
       @git = repo.is_a?(GitRepo) ? repo : GitRepo.new(repo)
       @base_ref = base_ref
       @head_ref = head_ref
@@ -31,35 +33,32 @@ module JitCatch
       @reruns = reruns
       @timeout = timeout
       @env_names = env.uniq.sort
+      @workers = workers
+      raise UsageError, "--workers must be at least 1" unless workers.is_a?(Integer) && workers >= 1
       raise UsageError, "tests directory not found: #{tests_dir}" unless File.directory?(@tests_dir)
     end
 
     def run
       change = Changes.between(@git, @base_ref, @head_ref)
       files, omitted = candidate_files
-      rows = []
       parent = Dir.mktmpdir("jitcatch-")
-      base_dir = File.join(parent, "base")
-      head_dir = File.join(parent, "head")
+      pairs = (1..[@workers, files.size].min.clamp(1, nil)).map { |n|
+        Pair.new(base: File.join(parent, n.to_s, "base"), head: File.join(parent, n.to_s, "head"))
+      }
       begin
-        if @git.empty_tree?(change["base"])
-          FileUtils.mkdir_p(base_dir)
-        else
-          @git.worktree_add(base_dir, change["base"])
-        end
-        @git.worktree_add(head_dir, change["head"])
-        install(base_dir)
-        install(head_dir)
-        normalizer = build_normalizer([base_dir, head_dir, @git.dir])
-        base_bundle = Thread.new { bundle_status(base_dir, normalizer) }
-        head_bundle = bundle_status(head_dir, normalizer)
+        # One at a time: git takes a lock on the repository for each add.
+        pairs.each { |pair| check_out(pair, change) }
+        normalizer = build_normalizer([*pairs.flat_map { |pair| [pair.base, pair.head] }, @git.dir])
+        first = pairs.first
+        base_bundle = Thread.new { bundle_status(first.base, normalizer) }
+        head_bundle = bundle_status(first.head, normalizer)
         bundle = { "base" => base_bundle.value, "head" => head_bundle }
-        files.each do |relative|
-          rows.concat(classify_file(relative, base_dir, head_dir, normalizer, change))
-        end
+        rows = classify_files(files, pairs, normalizer, change)
       ensure
-        @git.worktree_remove(base_dir)
-        @git.worktree_remove(head_dir)
+        pairs.each do |pair|
+          @git.worktree_remove(pair.base)
+          @git.worktree_remove(pair.head)
+        end
         @git.worktree_prune
         FileUtils.remove_entry(parent) if parent && File.directory?(parent)
       end
@@ -83,6 +82,35 @@ module JitCatch
     end
 
     private
+
+    def check_out(pair, change)
+      if @git.empty_tree?(change["base"])
+        FileUtils.mkdir_p(pair.base)
+      else
+        @git.worktree_add(pair.base, change["base"])
+      end
+      @git.worktree_add(pair.head, change["head"])
+      install(pair.base)
+      install(pair.head)
+    end
+
+    # Each worker takes the next file and runs it in its own pair, so the
+    # rows do not depend on which worker ran which file.
+    def classify_files(files, pairs, normalizer, change)
+      queue = Queue.new
+      files.each { |relative| queue << relative }
+      queue.close
+      threads = pairs.map { |pair|
+        Thread.new do
+          found = []
+          while (relative = queue.pop)
+            found.concat(classify_file(relative, pair.base, pair.head, normalizer, change))
+          end
+          found
+        end
+      }
+      threads.flat_map(&:value)
+    end
 
     def classify_file(relative, base_dir, head_dir, normalizer, change)
       source = File.read(File.join(@tests_dir, relative), mode: "r:bom|utf-8")

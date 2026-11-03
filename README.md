@@ -120,6 +120,7 @@ jitcatch run --repo DIR BASE HEAD TESTS_DIR
 | `--coverage FILE` | `context` | Replace the grep of existing tests with this file. The JSON has `"format": "jitcatch-coverage-v1"` and a `tests` array. See `examples/coverage/jitcatch-coverage-v1.sample.json`. |
 | `--reruns N` | `run` | Extra runs on head after a pass-on-base / fail-on-head result. The default is 2. `0` skips the flake check. |
 | `--timeout SEC` | `run` | Seconds before a test file is killed. The default is 10. The minimum is 1. |
+| `--workers N` | `run` | Test files that run at the same time, each worker in its own base and head worktrees. The default is 1. The report is the same for every N. |
 | `--env NAME` | `run` | Pass this variable from your environment to the test processes. Repeat it for more names. The run records the names, not the values. |
 
 | Command | Arguments |
@@ -212,7 +213,7 @@ Without the CLI, copy or symlink `skills/jitcatch` into the agent's skills direc
 - A test of a new feature fails on base and is not a candidate.
 - The related id can sit one step away from the line that caused the failure.
 - A mention is a method call, a constant, or a symbol in that test method or in a method of the same file that it calls, directly or through other such methods. `Owner.new` mentions `Owner#initialize`. Words in strings and comments are not mentions, and neither is a method name passed as a string, as in `send("total")`. A helper in another file is not read.
-- Files run one at a time. The base run and the head run of one file run at the same time, each in its own worktree, so a test that writes a fixed path outside the worktree or listens on a fixed port can collide with its other side. The repository's existing suite is not run. The repository has to be able to add worktrees.
+- Files run one at a time unless you pass `--workers`. The base run and the head run of one file run at the same time, each in its own worktree, so a test that writes a fixed path outside the worktree or listens on a fixed port can collide with its other side, and with other files under `--workers`. The repository's existing suite is not run. The repository has to be able to add worktrees.
 - An assertion backtrace usually stops in the test, so a library line is found from names the test mentions.
 
 ## Development

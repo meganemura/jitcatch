@@ -487,6 +487,30 @@ class TestRunner < Minitest::Test
     end
   end
 
+  def test_the_run_does_not_depend_on_the_worker_count
+    with_repo do |repo|
+      repo.write("lib/calc.rb", BASE_CALC)
+      repo.commit("Initial calc", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/calc.rb", HEAD_CALC)
+      repo.commit("Tweak calc helpers.", date: "2026-02-12T00:00:00Z")
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, {
+        "a_double_test.rb" => candidate_source("DoubleTest", "test_double", "assert_equal 4, Calc.new.double(2)"),
+        "b_add_test.rb" => candidate_source("AddTest", "test_add", "assert_equal 3, Calc.new.add(1, 2)"),
+        "c_path_test.rb" => candidate_source("PathTest", "test_path", "assert_equal 4, Calc.new.double(2), File.expand_path(__dir__)"),
+        "d_load_test.rb" => "require \"minitest/autorun\"\nrequire \"calc\"\nCalc.new.add(1, 2)\n",
+        "e_pass_test.rb" => candidate_source("PassTest", "test_label", "assert Calc.new.label")
+      })
+
+      docs = [1, 3].map { |workers| JitCatch::Runner.run(repo.dir, "base", "HEAD", tests, reruns: 1, workers: workers) }
+
+      assert_equal docs[0], docs[1]
+      assert_equal %w[candidate candidate candidate candidate no_signal], docs[0]["tests"].map { |test| test["classification"] }
+      assert_raises(JitCatch::UsageError) { JitCatch::Runner.run(repo.dir, "base", "HEAD", tests, workers: 0) }
+    end
+  end
+
   def test_runs_at_most_forty_files
     with_repo do |repo|
       repo.write("lib/flag.rb", "module Flag; end\n")

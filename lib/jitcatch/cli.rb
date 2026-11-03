@@ -44,7 +44,7 @@ module JitCatch
     end
 
     def command_run(argv)
-      opts, positional = parse_options(argv, %i[repo reruns timeout env])
+      opts, positional = parse_options(argv, %i[repo reruns timeout env workers])
       return write_help if opts[:help]
       raise UsageError, "usage: jitcatch run BASE HEAD TESTS_DIR" unless positional.size == 3
 
@@ -55,7 +55,8 @@ module JitCatch
         positional[2],
         reruns: opts.fetch(:reruns, 2),
         timeout: opts.fetch(:timeout, 10),
-        env: opts.fetch(:env, [])
+        env: opts.fetch(:env, []),
+        workers: opts.fetch(:workers, 1)
       )
       doc = Assessor.apply(raw)
       $stdout.write(opts[:json] ? Render.dump(Render.run_json(doc)) : Render.run_text(doc))
@@ -99,7 +100,7 @@ module JitCatch
 
           opts[name] = case name
           when :reruns then integer_option(arg, value)
-          when :timeout then seconds_option(arg, value)
+          when :timeout, :workers then positive_option(arg, value)
           else value
           end
         else
@@ -115,11 +116,11 @@ module JitCatch
       value.to_i
     end
 
-    def seconds_option(flag, value)
-      seconds = integer_option(flag, value)
-      raise UsageError, "#{flag} must be >= 1" if seconds < 1
+    def positive_option(flag, value)
+      number = integer_option(flag, value)
+      raise UsageError, "#{flag} must be >= 1" if number < 1
 
-      seconds
+      number
     end
 
     def env_option(flag, value)
@@ -147,7 +148,7 @@ module JitCatch
 
         Usage:
           jitcatch context [--json] [--repo DIR] [--coverage FILE] BASE HEAD
-          jitcatch run [--json] [--repo DIR] [--reruns N] [--timeout SEC] [--env NAME]... BASE HEAD TESTS_DIR
+          jitcatch run [--json] [--repo DIR] [--reruns N] [--timeout SEC] [--workers N] [--env NAME]... BASE HEAD TESTS_DIR
           jitcatch assess [--json] RUN.json
 
         context   Short brief of changed methods, old/new source, call sites, and tests.

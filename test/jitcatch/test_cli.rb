@@ -49,7 +49,7 @@ class TestCLI < Minitest::Test
           end
         RUBY
       })
-      run_out, run_err, run_status = cli("run", "--repo", repo.dir, "--reruns", "0", "base", "HEAD", tests)
+      run_out, run_err, run_status = cli("run", "--repo", repo.dir, "--reruns", "0", "--workers", "2", "base", "HEAD", tests)
       assert_equal 0, run_status, run_err
       assert_includes run_out, "counts "
       assert_includes run_out, "jitcatch run"
@@ -95,6 +95,7 @@ class TestCLI < Minitest::Test
         %w[run --coverage c.json base HEAD t] => "unknown option: --coverage",
         %w[run --reruns x base HEAD t] => "--reruns requires an integer",
         %w[run --timeout 0 base HEAD t] => "--timeout must be >= 1",
+        %w[run --workers 0 base HEAD t] => "--workers must be >= 1",
         %w[run --env 1X base HEAD t] => "--env needs a variable name, not 1X",
         %w[run --env LANG base HEAD t] => "--env cannot pass LANG: jitcatch sets it",
         %w[run --env BUNDLE_GEMFILE base HEAD t] => "--env cannot pass BUNDLE_GEMFILE: jitcatch sets it",

@@ -73,10 +73,10 @@ Each file:
 
 ```sh
 jitcatch run --repo DIR BASE HEAD TESTS_DIR
-jitcatch run --json --repo DIR --reruns 2 --timeout 10 BASE HEAD TESTS_DIR
+jitcatch run --json --repo DIR --reruns 2 --timeout 10 --workers 2 BASE HEAD TESTS_DIR
 ```
 
-`--reruns` defaults to 2: that many extra runs on head for a pass-on-base / fail-on-head result. `0` skips the flake check. `--timeout` defaults to 10 seconds per process (minimum 1). `run` takes no `--coverage`: its report lists no existing tests. `--env NAME` passes one variable from your environment, and you can repeat it. The report lists the names on an `env` line. The text report already includes the assess section. Save the `--json` document if you will call `assess` later.
+`--reruns` defaults to 2: that many extra runs on head for a pass-on-base / fail-on-head result. `0` skips the flake check. `--timeout` defaults to 10 seconds per process (minimum 1). `run` takes no `--coverage`: its report lists no existing tests. `--workers N` runs N files at the same time, each in its own pair of worktrees; the default is 1. Pass `--workers 2` when the candidate files do not write the same fixed path or listen on the same port. On 40 files that took the run from 9.7 to 6.2 seconds on 4 CPUs, and 4 workers were no faster than 2. The report is the same for every N. `--env NAME` passes one variable from your environment, and you can repeat it. The report lists the names on an `env` line. The text report already includes the assess section. Save the `--json` document if you will call `assess` later.
 
 When either worktree has a `Gemfile`, the report prints `bundle base ok` or `bundle head failed: <message>` before `tests:`. A `failed` side cannot load its bundle, usually because a locked gem is not installed, or its bundle has no `minitest`. Every file on that side then fails to load. Install the gems (`bundle install` at that revision), or run from a copy of the repository whose `Gemfile` lists `minitest`, and run again before you judge any row.
 
