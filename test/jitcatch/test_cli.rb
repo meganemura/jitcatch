@@ -55,7 +55,7 @@ class TestCLI < Minitest::Test
       assert_includes run_out, "jitcatch run"
 
       json_run, json_run_err, json_run_status = cli(
-        "run", "--json", "--repo", repo.dir, "--reruns", "0", "--env", "B_VAR", "--env", "A_VAR", "--env", "B_VAR", "base", "HEAD", tests
+        "run", "--json", "--repo", repo.dir, "--reruns", "0", "--timeout", "1", "--workers", "1", "--env", "B_VAR", "--env", "A_VAR", "--env", "B_VAR", "base", "HEAD", tests
       )
       assert_equal 0, json_run_status, json_run_err
       assert_equal %w[A_VAR B_VAR], JSON.parse(json_run)["env"]
