@@ -302,7 +302,7 @@ class TestRSpecRunner < Minitest::Test
 
       row = execute(repo, tests)["tests"].fetch(0)
 
-      assert_equal "expected KeyError, got #<ArgumentError: #{"x" * 200} wrapped k> with backtrace:", row["head"]["message"]
+      assert_equal "expected KeyError, got #<ArgumentError: #{"x" * 200} wrapped k>", row["head"]["message"]
       rerun = Shellwords.split(row["rerun"]).map { |part| part.sub("{tests}/", "#{tests}/") }
       out, _status = Open3.capture2e(*rerun, chdir: repo.dir)
       assert_includes out, "#{"x" * 200} wrapped k>"

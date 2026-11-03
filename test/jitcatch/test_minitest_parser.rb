@@ -86,4 +86,26 @@ class TestMinitestParser < Minitest::Test
     silent = JitCatch::MinitestParser.parse("", "")
     assert_equal [{}, false, "minitest summary not found"], [silent["tests"], silent["summary"], silent["file_error"]["message"]]
   end
+  def test_an_assert_raises_message_keeps_no_backtrace_header
+    stdout = <<~OUT
+      ArTest#test_raises = 0.00 s = F
+
+        1) Failure:
+      ArTest#test_raises [/w/.jitcatch/ar_test.rb:4]:
+      [KeyError] exception expected, not
+      Class: <ArgumentError>
+      Message: <"wrapped k">
+      ---Backtrace---
+      /w/lib/a.rb:2:in 'A.f'
+      /w/.jitcatch/ar_test.rb:4:in 'block in ArTest#test_raises'
+      ---------------
+
+      1 runs, 1 assertions, 1 failures, 0 errors, 0 skips
+    OUT
+
+    result = JitCatch::MinitestParser.parse(stdout, "", normalizer: ->(text) { text.gsub("/w/", "{worktree}/") })["tests"].fetch("ArTest#test_raises")
+
+    assert_equal %([KeyError] exception expected, not\nClass: <ArgumentError>\nMessage: <"wrapped k">), result["message"]
+    assert_equal [{ "file" => ".jitcatch/ar_test.rb", "line" => 4 }, { "file" => "lib/a.rb", "line" => 2 }, { "file" => ".jitcatch/ar_test.rb", "line" => 4 }], result["backtrace"]
+  end
 end

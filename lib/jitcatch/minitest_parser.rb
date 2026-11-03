@@ -77,7 +77,14 @@ module JitCatch
       frames << Failure.frame(match[2], match[3]) if match[2]
       message_lines = []
       error_class = kind == "Failure" ? "Minitest::Assertion" : nil
+      quoting = false
       block.each do |line|
+        # assert_raises prints the frames of the error it got between these
+        # two lines. The frames move to the backtrace, so the lines go too.
+        if line == "---Backtrace---" || (quoting && line.match?(/\A-+\z/))
+          quoting = !quoting
+          next
+        end
         if (frame = line.match(Failure::FRAME))
           frames << Failure.frame(frame[1], frame[2])
           next

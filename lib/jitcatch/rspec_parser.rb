@@ -16,8 +16,10 @@ module JitCatch
     # --backtrace keeps gem frames, which tell a gem's error from the code's,
     # but RSpec's own frames say nothing about the code under test.
     OWN_FRAME = %r{/gems/rspec-(?:core|expectations|mocks|support)-[^/]+/|\A-e\z}.freeze
-    # A raise_error failure repeats the backtrace of the error it got.
+    # A raise_error failure repeats the backtrace of the error it got, after
+    # this phrase. The frames move to the backtrace, so the phrase goes too.
     QUOTED_FRAME = /\A\s*# \S.*:\d+:in /.freeze
+    QUOTED_HEADER = / with backtrace:\s*\z/.freeze
     # The backtrace goes on past the error's own frames into the error it
     # was raised from: this line, the class, then the message and the
     # frames indented under it.
@@ -73,7 +75,8 @@ module JitCatch
       own = frames(backtrace.take(at || backtrace.size))
       # The expectation's line comes first, then the frames of the error it
       # got, as Minitest prints an assert_raises failure.
-      Failure.result(FAILURES.include?(error_class) ? "fail" : "error", error_class, lines.join, [*own.first(1), *frames(quoted), *own.drop(1)],
+      message = quoted.empty? ? lines.join : lines.join.sub(QUOTED_HEADER, "")
+      Failure.result(FAILURES.include?(error_class) ? "fail" : "error", error_class, message, [*own.first(1), *frames(quoted), *own.drop(1)],
         cause: at && cause(backtrace.drop(at + 1)))
     end
 

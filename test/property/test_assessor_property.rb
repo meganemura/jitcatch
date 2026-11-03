@@ -114,10 +114,10 @@ class TestAssessorProperty < Minitest::Test
       when "bare" then { "status" => "error", "error_class" => error_class, "message" => message, "backtrace" => raised }
       when "minitest"
         { "status" => "fail", "error_class" => "Minitest::Assertion", "backtrace" => [at, *raised],
-          "message" => "[KeyError] exception expected, not\nClass: <#{error_class}>\nMessage: <#{message.inspect}>\n---Backtrace---" }
+          "message" => "[KeyError] exception expected, not\nClass: <#{error_class}>\nMessage: <#{message.inspect}>" }
       else
         { "status" => "fail", "error_class" => "RSpec::Expectations::ExpectationNotMetError", "backtrace" => [at, *raised],
-          "message" => "expected KeyError, got #<#{error_class}: #{message}> with backtrace:" }
+          "message" => "expected KeyError, got #<#{error_class}: #{message}>" }
       end
       test = { "id" => "t01", "name" => "T#test_a", "mentions" => [], "classification" => "candidate", "base" => { "status" => "pass" }, "head" => head }
       row = JitCatch::Assessor.apply({ "methods" => METHODS, "constants" => [], "tests" => [test] })["tests"].fetch(0)

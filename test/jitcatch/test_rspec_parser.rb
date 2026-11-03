@@ -66,13 +66,13 @@ class TestRSpecParser < Minitest::Test
     assert_equal [{ "file" => "lib/calc.rb", "line" => 4 }, { "file" => ".jitcatch/calc_spec.rb", "line" => 13 }], boom["backtrace"]
   end
 
-  def test_drops_the_backtrace_a_raise_error_message_carries
+  def test_drops_the_backtrace_and_its_header_from_a_raise_error_message
     message = "expected KeyError, got #<ArgumentError: wrong number of arguments (given 1, expected 2)> with backtrace:\n  # ./lib/calc.rb:1:in 'Calc#add'\n  # #{RSPEC_FRAME}"
     examples = [example("1:1", "Calc raises", "failed", 3, exception: { "class" => "RSpec::Expectations::ExpectationNotMetError", "message" => message, "backtrace" => [] })]
 
     result = JitCatch::RSpecParser.parse(report(examples), "", "")["tests"].fetch("Calc raises")
 
-    assert_equal "expected KeyError, got #<ArgumentError: wrong number of arguments (given 1, expected 2)> with backtrace:", result["message"]
+    assert_equal "expected KeyError, got #<ArgumentError: wrong number of arguments (given 1, expected 2)>", result["message"]
   end
 
   def test_an_error_with_a_cause_names_the_cause_and_keeps_only_its_own_frames

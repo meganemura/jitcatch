@@ -255,7 +255,7 @@ class TestAssessor < Minitest::Test
   end
 
   def test_a_keyword_or_arity_error_inside_assert_raises_is_a_signature_change
-    raised = ->(message) { failure("[Unsupported] exception expected, not\nClass: <ArgumentError>\nMessage: <#{message.inspect}>\n---Backtrace---") }
+    raised = ->(message) { failure("[Unsupported] exception expected, not\nClass: <ArgumentError>\nMessage: <#{message.inspect}>") }
     at_scale = frames(".jitcatch/scale_test.rb", 4) + frames("lib/calc.rb", 40) + frames(".jitcatch/scale_test.rb", 4)
     doc = {
       "methods" => [

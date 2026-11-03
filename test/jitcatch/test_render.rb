@@ -216,7 +216,7 @@ constants: (none)
   end
 
   def test_an_assert_raises_failure_shows_the_class_and_message_that_came
-    message = "[KeyError] exception expected, not\nClass: <ArgumentError>\nMessage: <\"wrapped k\">\n---Backtrace---\nlib/a.rb:1:in 'A.f'\n---------------"
+    message = "[KeyError] exception expected, not\nClass: <ArgumentError>\nMessage: <\"wrapped k\">"
 
     assert_equal ["[KeyError] exception expected, not", "Class: <ArgumentError>", "Message: <\"wrapped k\">"],
       JitCatch::Render.message_lines({ "message" => message })

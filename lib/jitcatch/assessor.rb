@@ -121,7 +121,7 @@ module JitCatch
           return Raised.new(match[1], undump(match[2]), frames(test).drop(1))
         end
       when "RSpec::Expectations::ExpectationNotMetError"
-        if (match = message.match(/\Aexpected .*, got #<([\w:]+): (.*)>(?: with backtrace:)?$/))
+        if (match = message.match(/\Aexpected .*, got #<([\w:]+): (.*)>$/))
           return Raised.new(match[1], match[2], frames(test).drop(1))
         end
       end
