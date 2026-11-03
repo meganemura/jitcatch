@@ -205,6 +205,7 @@ class TestChanges < Minitest::Test
         end
       RUBY
       repo.write("lib/extra.rb", "class Model\n  def extra\n    1\n  end\nend\n")
+      repo.write("lib/label.rb", "class Label\n  def text\n    \"Ops Unsupported\"\n  end\nend\n")
       repo.commit("base", date: "2026-02-11T00:00:00Z")
       repo.branch("base")
       repo.write("lib/model.rb", <<~RUBY)
@@ -223,7 +224,8 @@ class TestChanges < Minitest::Test
       doc = JitCatch::Changes.between(repo.dir, "base", "HEAD")
       assert_equal [["added", "Model::Ops", "module Ops"], ["removed", "Model::Unsupported", "class Unsupported < StandardError; end"]],
         doc["constants"].map { |const| [const["change"], const["name"], const["old_source"] || const["new_source"]] }
-      assert_equal [["Model#check", "modified"], ["Model#more", "added"]], doc["methods"].map { |method| method.values_at("name", "change") }
+      assert_equal [["Model#check", "modified"], ["Model#more", "added"]], doc["methods"].map { |method| method.values_at("name", "change") },
+        "a method that only names a namespace is not affected"
       check = doc["methods"].find { |method| method["name"] == "Model#check" }
       assert_equal [check["id"]], doc["constants"].find { |const| const["name"] == "Model::Unsupported" }["readers"]
     end
