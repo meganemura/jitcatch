@@ -227,6 +227,7 @@ module JitCatch
       rows.each do |row|
         method = row["method_id"] || "-"
         lines << "  #{row["candidate_id"]} #{row["name"]} base=#{row["base_status"]} head=#{row["head_status"]} #{method} #{row["tags"].join(",")}"
+        lines << "    related guess: #{method} of #{row["method_ids"].join(",")}" if row["method_ids"].size > 1
         row["message_lines"].each { |line| lines << "    #{line}" }
       end
       lines
@@ -242,6 +243,7 @@ module JitCatch
           "base_status" => test.dig("base", "status"),
           "head_status" => test.dig("head", "status"),
           "method_id" => test["method_id"],
+          "method_ids" => Array(test["method_ids"]),
           "tags" => test["tags"],
           "disposition" => test["disposition"],
           "message_first_line" => test.dig("head", "message_first_line").to_s,

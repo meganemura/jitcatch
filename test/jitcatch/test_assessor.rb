@@ -126,6 +126,34 @@ class TestAssessor < Minitest::Test
     assert_includes out["tests"][2]["tags"], "touches:changed_method"
   end
 
+  def test_an_id_reached_only_through_unchanged_callers_is_marked_a_guess
+    doc = {
+      "methods" => [
+        method("m01", "modified", "same", "changed_constants", ["Calc#build", "Calc.between"], 1),
+        method("m02", "modified", "same", "changed_namespaces", ["Calc#build", "Calc#changed_constants", "Calc.between"], 10),
+        method("m03", "modified", "same", "index_ref", ["Calc#build", "Calc.between"], 20),
+        method("m04", "modified", "same", "render", ["Calc#show"], 30)
+      ],
+      "constants" => [],
+      "tests" => [
+        candidate("t01", "ChangesTest#test_visibility", %w[between build], failure("Expected: 1\n  Actual: 2")),
+        candidate("t02", "ShowTest#test_show", %w[show], failure("Expected: 1\n  Actual: 2")),
+        candidate("t03", "IndexTest#test_index", %w[between index_ref], failure("Expected: 1\n  Actual: 2"))
+      ]
+    }
+
+    rows = JitCatch::Assessor.apply(doc)["tests"].to_h { |test| [test["id"], test.values_at("method_id", "method_ids", "tags")] }
+
+    assert_equal ["m02", %w[m01 m02 m03], %w[assertion related:guess report touches:unchanged_caller]], rows["t01"]
+    assert_equal ["m04", %w[m04], %w[assertion report touches:unchanged_caller]], rows["t02"]
+    assert_equal ["m03", %w[m03], %w[assertion report touches:changed_method touches:unchanged_caller]], rows["t03"]
+    text = JitCatch::Render.assess_text(JitCatch::Assessor.apply(doc))
+    assert_includes text,
+      "  c01 ChangesTest#test_visibility base=pass head=fail m02 assertion,related:guess,report,touches:unchanged_caller\n" \
+      "    related guess: m02 of m01,m02,m03\n"
+    assert_equal 1, text.scan("related guess:").size, "a row with one related method prints no guess line"
+  end
+
   def test_candidate_ids_follow_test_ids_and_other_rows_carry_nulls
     stale = { "method_id" => "m09", "tags" => ["report"], "disposition" => "reported", "candidate_id" => "c09" }
     doc = {
@@ -139,7 +167,7 @@ class TestAssessor < Minitest::Test
     out = JitCatch::Assessor.apply(doc)["tests"].to_h { |test| [test["id"], test] }
     assert_equal ["c01", nil, ["assertion", "report"]], out["t01"].values_at("candidate_id", "method_id", "tags")
     assert_equal "c02", out["t02"]["candidate_id"]
-    assert_equal [nil, nil, [], "no_signal"], %w[candidate_id method_id tags disposition].map { |key| out["t03"].fetch(key) }
+    assert_equal [nil, nil, [], [], "no_signal"], %w[candidate_id method_id method_ids tags disposition].map { |key| out["t03"].fetch(key) }
   end
 
   def test_rules_need_the_error_class_and_the_removed_name
@@ -171,7 +199,7 @@ class TestAssessor < Minitest::Test
       "t01" => ["m04", ["discard:signature_change", "error:NoMethodError"]],
       "t02" => ["m02", ["error:NoMethodError", "report"]],
       "t03" => ["m01", ["error:RuntimeError", "report"]],
-      "t04" => ["m03", ["discard:signature_change", "error:ArgumentError", "touches:changed_method"]],
+      "t04" => ["m03", ["discard:signature_change", "error:ArgumentError", "related:guess", "touches:changed_method"]],
       "t05" => ["m03", ["error:ArgumentError", "report", "touches:changed_method"]],
       "t06" => [nil, ["assertion", "report"]],
       "t07" => ["m02", ["assertion", "report", "touches:changed_method"]],

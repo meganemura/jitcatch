@@ -20,13 +20,16 @@ module JitCatch
       tests = Array(@doc["tests"]).map { |test| strip(test) }
       tests.each do |test|
         if test["classification"] == "candidate"
-          method = related_method(test)
+          method, pool = related_method(test)
           reason = discard_reason(test, method)
           test["method_id"] = method&.dig("id")
+          test["method_ids"] = pool.map { |item| item["id"] }.sort
           test["disposition"] = reason ? "discarded" : "reported"
           test["tags"] = tags_for(test, method, reason)
+          test["tags"] = (test["tags"] + ["related:guess"]).sort if pool.size > 1
         else
           test["method_id"] = nil
+          test["method_ids"] = []
           test["disposition"] = test["classification"]
           test["tags"] = []
         end
@@ -41,7 +44,7 @@ module JitCatch
     private
 
     def strip(test)
-      test.reject { |key, _| %w[method_id tags disposition candidate_id].include?(key) }
+      test.reject { |key, _| %w[method_id method_ids tags disposition candidate_id].include?(key) }
     end
 
     def assign_candidate_ids(tests)
@@ -130,28 +133,33 @@ module JitCatch
       frame && frame["file"].to_s[%r{(?:\A|/)gems/([^/]+?)-\d[^/]*/}, 1]
     end
 
+    # The pick and every changed method the same evidence points at. Two or
+    # more in the pool means the evidence cannot tell them apart, so the
+    # pick is a guess: a test that names only unchanged callers reaches
+    # every changed method below them.
     def related_method(test)
       head = test["head"] || {}
       symbol = missing_symbol(head)
       if symbol
         hits = @methods.select { |item| item["bare_name"] == symbol }
-        return lowest(hits) if hits.any?
+        return [lowest(hits), hits] if hits.any?
       end
       framed = @methods.select { |item| frame_hits?(test, item) }
-      return lowest(framed) if framed.any?
+      return [lowest(framed), framed] if framed.any?
 
       mentions = Array(test["mentions"])
       mentioned = @methods.select { |item| mentions.include?(item["bare_name"]) }
       # Almost every test builds its object with `.new`, so a changed
       # constructor is the related method only when nothing else points.
       constructors, named = mentioned.partition { |item| item["bare_name"] == "initialize" }
-      return most_downstream(named) if named.any?
+      return [most_downstream(named), named] if named.any?
 
       via_caller = @methods.select { |item|
         upstream = Array(item["reachable_from"]).map { |name| bare(name) }
         (mentions & upstream).any?
       }
-      most_downstream(via_caller.empty? ? constructors : via_caller)
+      pool = via_caller.empty? ? constructors : via_caller
+      [most_downstream(pool), pool]
     end
 
     def method_from_backtrace(test)

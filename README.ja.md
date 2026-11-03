@@ -84,7 +84,8 @@ intent:
 ```
 counts generated=13 no_signal=8 fail_on_base=3 candidates=2 flaky=0 discarded=0 reported=2
 assess:
-  c01 ThresholdTotalTest#test_at_threshold_total_includes_the_volume_discount base=pass head=fail m05 assertion,report,touches:unchanged_caller
+  c01 ThresholdTotalTest#test_at_threshold_total_includes_the_volume_discount base=pass head=fail m05 assertion,related:guess,report,touches:unchanged_caller
+    related guess: m05 of m02,m04,m05
     Expected: 9720
     Actual: 10800
   c02 VolumeBoundaryTest#test_threshold_is_inclusive base=pass head=fail m05 assertion,report,touches:changed_method
@@ -212,6 +213,9 @@ gem の中から始まったエラーには `touches:changed_method` を付け�
 `touches:unchanged_caller` は、diff が編集していない入口を通り、その入口から変更メソッドへ届いている。
 `discard:signature_change`、`discard:load_error`、`discard:timeout` は、候補を除いたルールの名前である。
 関連 id（`m05`、無ければ `-`）は、経路上に変更メソッドが複数あるときの、最も下流の変更メソッドである。
+`related:guess` は、id を選んだ根拠が複数の変更メソッドを指している。
+たとえば、テストが変更されていない呼び出し元だけを含み、その呼び出し元から複数の変更メソッドへ届くときである。
+その行の次の行 `related guess: m05 of m02,m04,m05` が候補をすべて並べ、`--json` では `method_ids` が同じものを持つ。
 
 ## どう残すか
 
