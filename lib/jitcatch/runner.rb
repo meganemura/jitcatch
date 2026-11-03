@@ -90,8 +90,8 @@ module JitCatch
           next unless row["classification"] == "candidate"
           next if row["name"].end_with?("#load")
 
-          again = rerun.tests[row["name"]]
-          row["classification"] = "flaky" if again.nil? || failure_key(again) != failure_key(row["head"])
+          again = rerun.tests[row["name"]] || missing_result
+          row["classification"] = "flaky" if failure_key(again) != failure_key(row["head"])
         end
         break if rows.none? { |row| row["classification"] == "candidate" }
       end

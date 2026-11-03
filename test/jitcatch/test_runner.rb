@@ -222,6 +222,12 @@ class TestRunner < Minitest::Test
                 assert_equal 6, Calc.new.triple(2)
               end
             end
+
+            if Calc.instance_method(:add).arity == 2
+              def test_add_two
+                assert_equal 3, Calc.new.add(1, 2)
+              end
+            end
           end
         RUBY
         "guard_test.rb" => <<~RUBY
@@ -234,10 +240,11 @@ class TestRunner < Minitest::Test
         RUBY
       })
 
-      doc = execute(repo, tests)
+      doc = execute(repo, tests, reruns: 1)
 
       rows = doc["tests"].map { |test| [test["name"], test["disposition"], test["base"]["status"], test["head"]["status"]] }
       assert_equal [
+        ["TripleTest#test_add_two", "reported", "pass", "error"],
         ["TripleTest#test_triple", "fail_on_base", "error", "pass"],
         ["guard_test.rb#load", "reported", "pass", "error"]
       ], rows.sort
