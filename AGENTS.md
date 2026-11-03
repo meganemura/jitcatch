@@ -21,7 +21,9 @@ They cover the assessor's counts and ids, the call edges a receiver names, the d
 
 CI (`.github/workflows/ci.yml`) runs `test/run.rb` on Ruby 3.3 with no bundle, and both suites on Ruby 4.0.
 
-`test/jitcatch/test_rspec_runner.rb` runs the real `rspec-core` on a Rails-shaped fixture (`.rspec`, `spec/spec_helper.rb`, `spec/rails_helper.rb`, no Rails gem). `rspec-core` is not a dependency of jitcatch, so those tests skip on a Ruby that does not have it installed, which includes CI today. Run them locally on a Ruby with `rspec` installed. `test/jitcatch/test_rspec_parser.rb` reads recorded RSpec json reports and needs no gem.
+`test/jitcatch/test_rspec_runner.rb` runs the real `rspec-core` on a Rails-shaped fixture (`.rspec`, `spec/spec_helper.rb`, `spec/rails_helper.rb`, no Rails gem). `rspec-core` is not a dependency of jitcatch, so those tests skip on a Ruby that does not have it installed, which includes CI today. Run them locally on a Ruby with `rspec` installed.
+
+To run jitcatch on its own commits with RSpec candidates, the bundle of both sides needs `rspec-core`. In a scratch clone, commit `gem "rspec-core"` and `gem "rspec-expectations"` (and `bundle lock --local`) on top of the base, cherry-pick the commits under review onto it, and pass that commit and the new tip as `BASE` and `HEAD`. The diff is then the same as the real one. Point a separate branch at that commit before you cherry-pick: a `BASE` branch that moved with the cherry-picks is the same commit as `HEAD`. `test/jitcatch/test_rspec_parser.rb` reads recorded RSpec json reports and needs no gem.
 
 The engine tests build temporary git repositories and cover context, execution, flakes, timeouts, and signature-change discards. `test/jitcatch/test_shop_demo.rb` runs `script/setup_shop` in a temp directory and compares `context` and `run` to `examples/runs/*/context.txt` and `run.txt`, byte for byte.
 
@@ -43,7 +45,7 @@ BUNDLE_GEMFILE=/path/to/Gemfile bundle exec mutineer run --since origin/queue \
   lib/jitcatch/assessor.rb --test test/jitcatch/test_assessor.rb --test test/jitcatch/test_render.rb
 ```
 
-`--only 'JitCatch::Assessor#related_method'` scores one method, which also works on an archive of the base revision for a before score. `test/jitcatch/test_runner.rb` builds git repositories and takes about a minute per run, so scope `runner.rb`, `changes.rb`, and `git_repo.rb` with `--since` or `--only`. mutineer writes `.mutineer/` at the root, which git ignores.
+`--only 'JitCatch::Assessor#related_method'` scores one method, which also works on an archive of the base revision for a before score. `test/jitcatch/test_runner.rb` builds git repositories and takes about a minute per run, so scope `runner.rb`, `changes.rb`, and `git_repo.rb` with `--since` or `--only`. mutineer writes `.mutineer/` at the root, which git ignores. To score a source with the property tests too (`--test test/property/test_assessor_property.rb`), add `gem "hegeltest"` to that outside Gemfile.
 
 ## Invariants
 
