@@ -7,11 +7,7 @@ module JitCatch
     ISSUE = /^\s+\d+\) (Failure|Error|Skip):\s*$/.freeze
     SUMMARY = /^\d+ runs, \d+ assertions, \d+ failures, \d+ errors, \d+ skips$/.freeze
     HEADER = /^(\S+?)(?:\s+\[(.+):(\d+)\])?:\s*$/.freeze
-    FRAME = /^\s*(.+):(\d+):in [`']([^`']*)[`']/.freeze
     LETTERS = { "." => "pass", "F" => "fail", "E" => "error", "S" => "skip" }.freeze
-    # The runner writes this where a worktree root was, so a message still
-    # shows that a path stood there. Frames drop it to match the diff's paths.
-    WORKTREE = "{worktree}/"
 
     def self.parse(stdout, stderr, normalizer: ->(text) { text })
       new(normalizer.call(stdout.to_s), normalizer.call(stderr.to_s)).parse
@@ -28,7 +24,7 @@ module JitCatch
         line = raw.delete_suffix("\n")
         next unless (match = line.match(VERBOSE))
 
-        tests[match[1]] = blank_result(LETTERS.fetch(match[2]))
+        tests[match[1]] = Failure.passed(LETTERS.fetch(match[2]))
       end
 
       issues(stdout_lines).each do |issue|
@@ -36,17 +32,11 @@ module JitCatch
       end
 
       summary = stdout_lines.any? { |line| line.match?(SUMMARY) }
-      file_error = summary ? nil : error_from_streams
+      file_error = summary ? nil : Failure.from_streams(@stdout, @stderr)
       if !summary && tests.empty? && file_error.nil?
-        file_error = {
-          "status" => "error",
-          "error_class" => "RuntimeError",
-          "message" => "minitest summary not found",
-          "message_first_line" => "minitest summary not found",
-          "backtrace" => []
-        }
+        file_error = Failure.result("error", "RuntimeError", "minitest summary not found", [])
       end
-      { "tests" => tests, "summary" => summary, "file_error" => file_error }
+      { "tests" => tests, "lines" => {}, "summary" => summary, "file_error" => file_error }
     end
 
     private
@@ -82,14 +72,13 @@ module JitCatch
       match = header.match(HEADER)
       return nil unless match
 
-      name = match[1]
       frames = []
-      frames << { "file" => match[2].delete_prefix(WORKTREE), "line" => match[3].to_i } if match[2]
+      frames << Failure.frame(match[2], match[3]) if match[2]
       message_lines = []
       error_class = kind == "Failure" ? "Minitest::Assertion" : nil
       block.each do |line|
-        if (frame = line.match(FRAME))
-          frames << { "file" => frame[1].delete_prefix(WORKTREE), "line" => frame[2].to_i }
+        if (frame = line.match(Failure::FRAME))
+          frames << Failure.frame(frame[1], frame[2])
           next
         end
         if error_class.nil? && (err = line.match(/\A([A-Za-z0-9_:]+):\s*(.*)\z/))
@@ -100,62 +89,7 @@ module JitCatch
         message_lines << line
       end
       status = { "Failure" => "fail", "Error" => "error", "Skip" => "skip" }.fetch(kind)
-      message = message_lines.join("\n").strip
-      message = message.lines.first(20).join.rstrip
-      {
-        "name" => name,
-        "result" => {
-          "status" => status,
-          "error_class" => error_class,
-          "message" => message,
-          "message_first_line" => first_line(message),
-          "backtrace" => frames.first(15)
-        }
-      }
-    end
-
-    def error_from_streams
-      text = @stderr.strip
-      text = @stdout.strip if text.empty?
-      return nil if text.empty?
-
-      error_class = if text.include?("LoadError") || text.include?("cannot load such file")
-        "LoadError"
-      elsif text.include?("SyntaxError") || text.include?("syntax error")
-        "SyntaxError"
-      elsif (match = text.match(/\(([A-Za-z0-9_:]+)\)\s*\z/))
-        match[1]
-      else
-        "RuntimeError"
-      end
-      frames = []
-      text.each_line do |line|
-        next unless (frame = line.match(FRAME))
-
-        frames << { "file" => frame[1].delete_prefix(WORKTREE), "line" => frame[2].to_i }
-      end
-      message = text.lines.map(&:strip).reject(&:empty?).first.to_s
-      {
-        "status" => "error",
-        "error_class" => error_class,
-        "message" => message,
-        "message_first_line" => first_line(message),
-        "backtrace" => frames.first(15)
-      }
-    end
-
-    def blank_result(status)
-      {
-        "status" => status,
-        "error_class" => nil,
-        "message" => "",
-        "message_first_line" => "",
-        "backtrace" => []
-      }
-    end
-
-    def first_line(message)
-      message.to_s.lines.map(&:strip).reject(&:empty?).first.to_s[0, 180]
+      { "name" => match[1], "result" => Failure.result(status, error_class, message_lines.join("\n"), frames) }
     end
   end
 end

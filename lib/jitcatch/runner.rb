@@ -13,11 +13,9 @@ module JitCatch
     # Names jitcatch sets itself, so --env cannot pass them.
     RESERVED_ENV = (FIXED_ENV.keys + ["BUNDLE_GEMFILE"]).freeze
     # Rescuing in the child keeps Bundler's own message and drops its backtrace.
-    # Minitest is a bundled gem, so under Bundler only a Gemfile that lists it
-    # can load it.
-    BUNDLE_CHECK = 'begin; require "bundler/setup"; rescue Exception => e; $stderr.puts e.message; exit 1; end; ' \
-      'begin; require "minitest"; rescue LoadError; $stderr.puts %(minitest is not in the bundle: add gem "minitest" to the Gemfile); exit 1; end'
-    Result = Data.define(:tests, :file_error, :timed_out, :exit_code)
+    BUNDLE_SETUP = 'begin; require "bundler/setup"; rescue Exception => e; $stderr.puts e.message; exit 1; end'
+    # `lines` maps an RSpec example's name to the line it starts on.
+    Result = Data.define(:tests, :lines, :file_error, :timed_out, :exit_code)
     # One worker's two checkouts. A worker runs one file at a time in them.
     Pair = Data.define(:base, :head)
 
@@ -50,10 +48,13 @@ module JitCatch
         pairs.each { |pair| check_out(pair, change) }
         normalizer = build_normalizer([*pairs.flat_map { |pair| [pair.base, pair.head] }, @git.dir])
         first = pairs.first
-        base_bundle = Thread.new { bundle_status(first.base, normalizer) }
-        head_bundle = bundle_status(first.head, normalizer)
+        frameworks = files.map { |relative| Framework.for(relative) }.uniq
+        base_bundle = Thread.new { bundle_status(first.base, normalizer, frameworks) }
+        head_bundle = bundle_status(first.head, normalizer, frameworks)
         bundle = { "base" => base_bundle.value, "head" => head_bundle }
         rows = classify_files(files, pairs, normalizer, mention_names(change))
+        bundled = gemfile?(first.head)
+        rows.each { |row| row["rerun"] = rerun_command(row, bundled) }
       ensure
         pairs.each do |pair|
           @git.worktree_remove(pair.base)
@@ -141,16 +142,18 @@ module JitCatch
     def rows_for(relative, base_run, head_run, index, known)
       if file_level?(base_run) || file_level?(head_run)
         name = file_level_name(relative, base_run, head_run)
-        [build_row(relative, name, side_result(base_run), side_result(head_run), mentions_for(index, name, known))]
+        [build_row(relative, name, nil, side_result(base_run), side_result(head_run), mentions_for(index, name, nil, known))]
       else
         names = (base_run.tests.keys | head_run.tests.keys).sort
         names.map { |name|
+          line = head_run.lines[name] || base_run.lines[name]
           build_row(
             relative,
             name,
+            line,
             base_run.tests[name],
             head_run.tests[name],
-            mentions_for(index, name, known)
+            mentions_for(index, name, line, known)
           )
         }
       end
@@ -182,12 +185,13 @@ module JitCatch
       }
     end
 
-    def build_row(relative, name, base_result, head_result, mentions)
+    def build_row(relative, name, line, base_result, head_result, mentions)
       base_result = missing_result if base_result.nil?
       head_result = missing_result if head_result.nil?
       {
         "file" => relative.tr("\\", "/"),
         "name" => name,
+        "line" => line,
         "mentions" => mentions,
         "classification" => classify(base_result, head_result),
         "base" => base_result,
@@ -221,17 +225,17 @@ module JitCatch
     end
 
     def execute(worktree, relative, normalizer)
+      framework = Framework.for(relative)
       stdout_path = File.join(worktree, ".jitcatch-stdout")
       stderr_path = File.join(worktree, ".jitcatch-stderr")
+      report_path = File.join(worktree, Framework::REPORT)
+      FileUtils.rm_f(report_path)
       cmd = [
         RbConfig.ruby,
         *("-rbundler/setup" if gemfile?(worktree)),
         "-I#{File.join(worktree, "lib")}",
         "-I#{worktree}",
-        File.join(".jitcatch", relative),
-        "-v",
-        "--seed",
-        "1"
+        *framework.arguments(File.join(".jitcatch", relative))
       ]
       status, stdout, stderr, timed_out = run_process(
         cmd,
@@ -241,12 +245,13 @@ module JitCatch
         env: child_env(worktree)
       )
       if timed_out
-        return Result.new(tests: {}, file_error: nil, timed_out: true, exit_code: nil)
+        return Result.new(tests: {}, lines: {}, file_error: nil, timed_out: true, exit_code: nil)
       end
 
-      parsed = MinitestParser.parse(stdout, stderr, normalizer: normalizer)
+      parsed = framework.parse(File.file?(report_path) ? read_text(report_path) : nil, stdout, stderr, normalizer)
       Result.new(
         tests: parsed["tests"],
+        lines: parsed["lines"],
         file_error: parsed["file_error"],
         timed_out: false,
         exit_code: status&.exitstatus
@@ -295,11 +300,12 @@ module JitCatch
 
     # One check per side, so a missing locked gem is said once instead of as a
     # load error on every candidate file.
-    def bundle_status(worktree, normalizer)
+    def bundle_status(worktree, normalizer, frameworks)
       return { "status" => "none", "message" => "" } unless gemfile?(worktree)
 
+      check = [BUNDLE_SETUP, *frameworks.map(&:bundle_check)].join("; ")
       status, _stdout, stderr, timed_out = run_process(
-        [RbConfig.ruby, "-e", BUNDLE_CHECK],
+        [RbConfig.ruby, "-e", check],
         chdir: worktree,
         stdout_path: File.join(worktree, ".jitcatch-stdout"),
         stderr_path: File.join(worktree, ".jitcatch-stderr"),
@@ -322,10 +328,7 @@ module JitCatch
 
     def candidate_files
       all = Dir.glob("**/*.rb", base: @tests_dir).sort
-      named = all.select { |path|
-        base = File.basename(path)
-        base.match?(/\Atest_.+\.rb\z/) || base.end_with?("_test.rb")
-      }
+      named = all.select { |path| Framework.named?(path) }
       list = named.empty? ? all : named
       omitted = 0
       if list.size > FILE_CAP
@@ -353,9 +356,17 @@ module JitCatch
 
     # Mentions are taken from the test method and the same-file helpers it
     # calls, so a neighbor test in the same file does not change its tags.
-    def mentions_for(index, test_name, known)
-      referenced = index.referenced_names(test_name)
+    def mentions_for(index, test_name, line, known)
+      referenced = (line && index.example_references(line)) || index.referenced_names(test_name)
       known.filter_map { |bare, names| bare if names.any? { |name| referenced.include?(name) } }
+    end
+
+    # A file-level row (`file#load`, `file#timeout`) reruns the whole file.
+    def rerun_command(row, bundled)
+      file_level = row["line"].nil? && row["name"].start_with?("#{File.basename(row["file"])}#")
+      name = file_level ? nil : row["name"]
+      command = Framework.for(row["file"]).rerun(row["file"], name, row["line"])
+      bundled ? "bundle exec #{command}" : command
     end
 
     def assign_test_ids(rows)
@@ -377,7 +388,7 @@ module JitCatch
       ordered = roots.compact.map { |root| File.expand_path(root).sub(%r{/+\z}, "") }.uniq.sort_by { |item| -item.length }
       lambda do |text|
         out = text.to_s.gsub("\r\n", "\n")
-        ordered.each { |root| out = out.gsub("#{root}/", MinitestParser::WORKTREE) }
+        ordered.each { |root| out = out.gsub("#{root}/", Failure::WORKTREE) }
         out = out.gsub("#{prefix}/", "{ruby}/") unless prefix.empty?
         out
       end

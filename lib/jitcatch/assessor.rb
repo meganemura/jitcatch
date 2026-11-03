@@ -84,14 +84,15 @@ module JitCatch
       nil
     end
 
-    # assert_raises turns an unexpected ArgumentError into an assertion
-    # failure, so the call that no longer fits its method looks like a
-    # claim the test made.
+    # assert_raises and RSpec's raise_error turn an unexpected ArgumentError
+    # into an assertion failure, so the call that no longer fits its method
+    # looks like a claim the test made.
     def arity_error?(head)
       message = head["message"].to_s
       case head["error_class"]
       when "ArgumentError" then message.match?(/\A(?:#{ARITY})/)
       when "Minitest::Assertion" then message.match?(/exception expected, not\nClass: <ArgumentError>\nMessage: <"(?:#{ARITY})/)
+      when "RSpec::Expectations::ExpectationNotMetError" then message.match?(/\Aexpected .*, got #<ArgumentError: (?:#{ARITY})/)
       else false
       end
     end
@@ -101,7 +102,7 @@ module JitCatch
       tags = []
       tags << (reason ? "discard:#{reason}" : "report")
       tags << "assertion" if head["status"] == "fail"
-      if head["error_class"] && head["error_class"] != "Minitest::Assertion"
+      if head["error_class"] && head["status"] != "fail"
         tags << "error:#{head["error_class"]}"
       end
       tags.concat(touch_tags(test, method))

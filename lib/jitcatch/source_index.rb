@@ -31,6 +31,21 @@ module JitCatch
     # to it in the class names the same constant.
     Receiver = Data.define(:kind, :const)
     UNKNOWN_RECEIVER = Receiver.new(kind: "unknown", const: nil)
+    # A block given to an RSpec call: a `group` (describe, context), an
+    # `example` (it, specify), or a `setup` (let, subject, before). Code in
+    # an example or a setup block is referred to under `key`, and so are a
+    # group's arguments.
+    SpecBlock = Data.define(:kind, :key, :start_line, :end_line) do
+      def covers?(line)
+        (start_line..end_line).cover?(line)
+      end
+    end
+    SPEC_KINDS = {
+      "group" => %i[describe context feature example_group shared_examples shared_examples_for shared_context xdescribe xcontext fdescribe fcontext],
+      "example" => %i[it specify example scenario its focus fit fspecify fexample xit xspecify xexample skip pending],
+      "setup" => %i[let let! subject subject! before after around prepend_before append_before prepend_after append_after]
+    }.flat_map { |kind, names| names.map { |name| [name, kind] } }.to_h.freeze
+    DESCRIBED_METHOD = /\A[#.]([a-z_][\w]*[?!=]?)\z/
 
     attr_reader :methods, :constants, :namespaces, :calls, :private_constants, :attributes, :parse_error
 
@@ -52,6 +67,9 @@ module JitCatch
       @references = Hash.new { |hash, key| hash[key] = [] }
       @ivar_classes = Hash.new { |hash, key| hash[key] = [] }
       @parse_error = nil
+      @spec_blocks = []
+      @defined = Hash.new { |hash, key| hash[key] = [] }
+      @described = []
     end
 
     def parse
@@ -94,17 +112,26 @@ module JitCatch
       start = @methods.find { |method| method.qualified == qualified }
       return @references.values.flatten.uniq.sort unless start
 
-      by_bare = @methods.group_by(&:bare_name)
-      calls = @calls.group_by(&:enclosing)
-      reached = [start.qualified]
-      reached.each do |name|
-        calls.fetch(name, []).each do |call|
-          by_bare.fetch(call.bare_name, []).each do |helper|
-            reached << helper.qualified unless reached.include?(helper.qualified)
-          end
-        end
-      end
-      reached.flat_map { |name| @references.fetch(name, []) }.uniq.sort
+      names_reached_from([start.qualified])
+    end
+
+    # The names an RSpec example starting on that line refers to: its own
+    # block, the `let`, `subject`, and hook blocks of the groups around it,
+    # the arguments of those groups, and the same-file helpers all of them
+    # call. A group described as `"#total"` or `".build"` names that method.
+    # Nil when no example starts on the line.
+    def example_references(line)
+      example = @spec_blocks.find { |block| block.kind == "example" && block.start_line == line }
+      return nil unless example
+
+      groups = @spec_blocks.select { |block| block.kind == "group" && block.covers?(line) }
+      setups = @spec_blocks.select { |block|
+        next false unless block.kind == "setup"
+
+        parent = @spec_blocks.select { |group| group.kind == "group" && group.covers?(block.start_line) }.max_by(&:start_line)
+        parent.nil? || groups.include?(parent)
+      }
+      names_reached_from([example, *groups, *setups].map(&:key))
     end
 
     # Code outside the namespace cannot name a private constant, so no method
@@ -118,6 +145,21 @@ module JitCatch
     end
 
     private
+
+    def names_reached_from(keys)
+      helpers = @methods.group_by(&:bare_name).transform_values { |list| list.map(&:qualified) }
+      @defined.each { |bare, names| helpers[bare] = (helpers.fetch(bare, []) + names).uniq }
+      calls = @calls.group_by(&:enclosing)
+      reached = keys.dup
+      reached.each do |name|
+        calls.fetch(name, []).each do |call|
+          helpers.fetch(call.bare_name, []).each do |helper|
+            reached << helper unless reached.include?(helper)
+          end
+        end
+      end
+      reached.flat_map { |name| @references.fetch(name, []) }.uniq.sort
+    end
 
     def scan_body(node, qualifier, visibility, singleton)
       vis = visibility
@@ -365,8 +407,11 @@ module JitCatch
       when Prism::DefNode
         singleton = singleton_context || !node.receiver.nil?
         qname = self.class.qualify(qualifier, node.name.to_s, singleton)
+        @defined[node.name.to_s] << qname unless @defined[node.name.to_s].include?(qname)
         node.compact_child_nodes.each { |child| walk(child, qualifier, singleton_context, qname) }
       when Prism::CallNode
+        return walk_spec_block(node, qualifier, singleton_context, enclosing) if spec_block?(node)
+
         if node.name
           @calls << self.class::Call.new(
             file: @file,
@@ -377,7 +422,7 @@ module JitCatch
           )
           refer(enclosing, node.name)
           record_attributes(node, qualifier) unless singleton_context
-          owner = constructor_owner(node)
+          owner = constructor_owner(node) || described_owner(node)
           refer(enclosing, "#{owner}.new") if owner
           named = reflective_name(node)
           refer(enclosing, named) if named
@@ -404,6 +449,37 @@ module JitCatch
       else
         node.compact_child_nodes.each { |child| walk(child, qualifier, singleton_context, enclosing) }
       end
+    end
+
+    def spec_block?(node)
+      return false unless node.block.is_a?(Prism::BlockNode) && SPEC_KINDS.key?(node.name)
+
+      node.receiver.nil? || (node.receiver.is_a?(Prism::ConstantReadNode) && node.receiver.name == :RSpec)
+    end
+
+    def walk_spec_block(node, qualifier, singleton_context, enclosing)
+      kind = SPEC_KINDS.fetch(node.name)
+      block = SpecBlock.new(kind: kind, key: "#{kind}:#{node.location.start_line}", start_line: node.location.start_line, end_line: node.location.end_line)
+      @spec_blocks << block
+      arguments = Array(node.arguments&.arguments)
+      arguments.each { |arg| walk(arg, qualifier, singleton_context, block.key) }
+      described = kind == "group" ? arguments.first : nil
+      if described.is_a?(Prism::StringNode) && (match = described.unescaped.match(DESCRIBED_METHOD))
+        refer(block.key, match[1])
+      end
+      return walk(node.block, qualifier, singleton_context, block.key) unless kind == "group"
+
+      @described.push(const_name(described) || @described.last)
+      walk(node.block, qualifier, singleton_context, enclosing)
+      @described.pop
+    end
+
+    # `described_class.new` builds the constant the enclosing group describes.
+    def described_owner(node)
+      return nil unless node.name == :new && node.receiver.is_a?(Prism::CallNode)
+      return nil unless node.receiver.name == :described_class && node.receiver.receiver.nil?
+
+      @described.last
     end
 
     def refer(enclosing, name)

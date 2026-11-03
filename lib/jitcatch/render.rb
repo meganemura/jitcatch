@@ -201,7 +201,8 @@ module JitCatch
 
     def test_line(test)
       method = test["method_id"] ? " #{test["method_id"]}" : ""
-      "#{test["id"]} #{test["disposition"]} #{test["name"]} #{test["file"]}#{method}"
+      place = test["line"] ? "#{test["file"]}:#{test["line"]}" : test["file"]
+      "#{test["id"]} #{test["disposition"]} #{test["name"]} #{place}#{method}"
     end
 
     def rerun_lines(test)
@@ -236,6 +237,7 @@ module JitCatch
         lines << "  #{row["candidate_id"]} #{row["name"]} base=#{row["base_status"]} head=#{row["head_status"]} #{method} #{row["tags"].join(",")}"
         lines << "    related guess: #{method} of #{row["method_ids"].join(",")}" if row["method_ids"].size > 1
         row["message_lines"].each { |line| lines << "    #{line}" }
+        lines << "    rerun: #{row["rerun"]}" if row["rerun"]
       end
       lines
     end
@@ -246,7 +248,9 @@ module JitCatch
           "candidate_id" => test["candidate_id"],
           "id" => test["id"],
           "file" => test["file"],
+          "line" => test["line"],
           "name" => test["name"],
+          "rerun" => test["rerun"],
           "base_status" => test.dig("base", "status"),
           "head_status" => test.dig("head", "status"),
           "method_id" => test["method_id"],
@@ -266,6 +270,11 @@ module JitCatch
       lines = head["message"].to_s.lines.map(&:strip).reject(&:empty?)
       if lines[1]&.match?(/\AActual:/)
         lines.first(2)
+      elsif lines[0]&.start_with?("expected: ") && lines[1]&.start_with?("got: ")
+        # RSpec's eq and eql print each side on its own line.
+        expected = lines[0].delete_prefix("expected: ")
+        actual = lines[1].delete_prefix("got: ")
+        [expected, actual].all? { |text| text.length <= LONG_LINE } ? lines.first(2) : changed_pair(expected, actual)
       elsif lines[0] == "--- expected" && lines[1] == "+++ actual"
         # Minitest prints a unified diff when either side spans lines or is
         # long; its header says nothing, so show the first removed and added line.
