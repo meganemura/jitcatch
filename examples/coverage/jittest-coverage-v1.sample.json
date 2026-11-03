@@ -1,0 +1,12 @@
+{
+  "format": "jittest-coverage-v1",
+  "tests": [
+    {
+      "id": "TestCart#test_volume_discount_above_threshold",
+      "file": "test/test_cart.rb",
+      "lines": {
+        "lib/shop/cart.rb": [30, 31, 32, 33, 34]
+      }
+    }
+  ]
+}
