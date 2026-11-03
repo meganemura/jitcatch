@@ -130,7 +130,7 @@ module JitCatch
           next if row["name"].end_with?("#load")
 
           again = rerun.tests[row["name"]] || missing_result
-          (row["reruns"] ||= []) << again.slice("status", "error_class", "message_first_line")
+          (row["reruns"] ||= []) << again.slice("status", "error_class", "message_first_line", "message")
           row["classification"] = "flaky" if failure_key(again) != failure_key(row["head"])
         end
         break if rows.none? { |row| row["classification"] == "candidate" }
@@ -207,11 +207,11 @@ module JitCatch
       end
     end
 
-    # The uncut line is compared: message_first_line is cut at a fixed width,
-    # and a temp name of another length moves the cut.
+    # The whole message is compared: an assertion's first line names the
+    # expected value, and the value that moves between runs is on a later line.
     def failure_key(result)
-      line = result["message"].to_s.lines.map(&:strip).reject(&:empty?).first.to_s
-      message = temp_roots.reduce(line) { |text, root| Text.mask_temp_names(text, root) }
+      lines = result["message"].to_s.lines.map(&:strip).reject(&:empty?).join("\n")
+      message = temp_roots.reduce(lines) { |text, root| Text.mask_temp_names(text, root) }
       [result["status"], result["error_class"].to_s, message].join("\x1f")
     end
 

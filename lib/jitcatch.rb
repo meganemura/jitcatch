@@ -50,6 +50,10 @@ module JitCatch
       text.gsub(%r{(?<![\w./-])#{Regexp.escape(root)}/[^/\s"'`:]+}, "{tmp}")
     end
 
+    def message_lines(message)
+      message.to_s.lines.map(&:strip).reject(&:empty?)
+    end
+
     def indent(text, spaces)
       pad = " " * spaces
       return "#{pad}(none)" if text.nil? || text.empty?

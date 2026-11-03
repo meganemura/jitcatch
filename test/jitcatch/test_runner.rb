@@ -134,8 +134,39 @@ class TestRunner < Minitest::Test
       assert_equal 1, doc["counts"]["flaky"]
       assert_equal 0, doc["counts"]["candidates"]
       assert_equal "flaky", doc["tests"].fetch(0)["disposition"]
-      assert_equal [{ "status" => "pass", "error_class" => nil, "message_first_line" => "" }], doc["tests"].fetch(0)["reruns"]
+      assert_equal [{ "status" => "pass", "error_class" => nil, "message_first_line" => "", "message" => "" }], doc["tests"].fetch(0)["reruns"]
       assert_includes JitCatch::Render.run_text(doc), "    rerun 1: pass\n"
+    end
+  end
+
+  def test_a_rerun_whose_actual_value_moves_is_flaky
+    with_repo do |repo|
+      repo.write("lib/flag.rb", "module Flag; def self.ok; true; end; end\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/flag.rb", "module Flag\n  def self.ok\n    true\n  end\nend\n")
+      repo.commit("Reformat only.", date: "2026-02-12T00:00:00Z")
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, {
+        "count_test.rb" => <<~RUBY
+          require "minitest/autorun"
+          require "flag"
+
+          class CountTest < Minitest::Test
+            def test_count
+              n = File.exist?("count") ? Integer(File.read("count")) : 0
+              File.write("count", (n + 1).to_s)
+              assert_equal 0, File.basename(Dir.pwd) == "head" ? n + 1 : n
+            end
+          end
+        RUBY
+      })
+
+      doc = execute(repo, tests, reruns: 2)
+
+      row = doc["tests"].fetch(0)
+      assert_equal "flaky", row["disposition"], row["reruns"].inspect
+      assert_includes JitCatch::Render.run_text(doc), "    rerun 1: fail Minitest::Assertion Actual: 2\n"
     end
   end
 

@@ -205,8 +205,11 @@ module JitCatch
     end
 
     def rerun_lines(test)
+      head = Text.message_lines(test.dig("head", "message"))
       Array(test["reruns"]).each_with_index.map do |rerun, index|
-        outcome = [rerun["status"], rerun["error_class"], rerun["message_first_line"]].reject { |part| part.to_s.empty? }
+        # The first line that moved says why the row is flaky.
+        moved = Text.message_lines(rerun["message"]).find { |line| !head.include?(line) }
+        outcome = [rerun["status"], rerun["error_class"], moved || rerun["message_first_line"]].reject { |part| part.to_s.empty? }
         "    rerun #{index + 1}: #{outcome.join(" ")}"
       end
     end
