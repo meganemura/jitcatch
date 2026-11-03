@@ -205,6 +205,19 @@ class TestAssessor < Minitest::Test
     }, out)
   end
 
+  def test_a_test_that_names_a_changed_constant_touches_it
+    doc = {
+      "methods" => [],
+      "constants" => [{ "id" => "k01", "change" => "modified", "name" => "Geo::SCALE", "bare_name" => "SCALE" }],
+      "tests" => [
+        candidate("t01", "GeoTest#test_a", ["SCALE"], failure("Expected: 2\n  Actual: 3")),
+        candidate("t02", "GeoTest#test_b", ["scale"], failure("Expected: 2\n  Actual: 3"))
+      ]
+    }
+    out = JitCatch::Assessor.apply(doc)["tests"].to_h { |test| [test["id"], test["tags"]] }
+    assert_equal({ "t01" => ["assertion", "report", "touches:changed_constant"], "t02" => ["assertion", "report"] }, out)
+  end
+
   def test_removed_constants_match_by_bare_name_full_name_or_suffix
     doc = {
       "methods" => [],

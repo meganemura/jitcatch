@@ -75,6 +75,50 @@ class TestRender < Minitest::Test
     TEXT
   end
 
+  def test_run_text_prints_reruns_under_a_flaky_row_and_a_hint_under_a_timeout
+    fail_line = { "status" => "fail", "error_class" => "Minitest::Assertion", "message_first_line" => "Expected: 1" }
+    doc = JitCatch::Assessor.apply({
+      "version" => "0.1.0", "base" => "b", "head" => "h", "reruns" => 2, "timeout_s" => 7, "tests" => [
+        { "id" => "t01", "file" => "a_test.rb", "name" => "A#test_a", "classification" => "flaky",
+          "base" => { "status" => "pass" }, "head" => fail_line, "reruns" => [fail_line, { "status" => "pass", "error_class" => nil, "message_first_line" => "" }] },
+        { "id" => "t02", "file" => "b_test.rb", "name" => "b_test.rb#timeout", "classification" => "fail_on_base",
+          "base" => { "status" => "timeout" }, "head" => { "status" => "timeout" } },
+        { "id" => "t03", "file" => "c_test.rb", "name" => "C#test_c", "classification" => "no_signal",
+          "base" => { "status" => "pass" }, "head" => { "status" => "pass" }, "reruns" => [fail_line] }
+      ]
+    })
+    assert_includes JitCatch::Render.run_text(doc), <<~TEXT.chomp
+      tests:
+        t01 flaky A#test_a a_test.rb
+          rerun 1: fail Minitest::Assertion Expected: 1
+          rerun 2: pass
+        t02 fail_on_base b_test.rb#timeout b_test.rb
+          hint: base timed out after 7s; raise --timeout if the file needs longer
+          hint: head timed out after 7s; raise --timeout if the file needs longer
+        t03 no_signal C#test_c c_test.rb
+      counts generated=3
+    TEXT
+  end
+
+  def test_context_text_lists_dependencies_only_when_one_changed
+    doc = {
+      "version" => "0.1.0", "base" => "b", "head" => "h", "existing_tests_via" => "grep",
+      "intent" => [], "files" => [], "constants" => [], "methods" => [], "entrypoints" => [], "parse_errors" => [],
+      "dependencies" => [{ "gem" => "rack", "old" => "3.0.0", "new" => nil }]
+    }
+    assert_includes JitCatch::Render.context_text(doc), "  (none)
+dependencies:
+  rack 3.0.0 -> (none)
+constants: (none)
+"
+    assert_includes JitCatch::Render.context_text(doc.merge("dependencies" => [])), "  (none)
+constants: (none)
+"
+    assert_includes JitCatch::Render.context_text(doc.reject { |key, _| key == "dependencies" }), "  (none)
+constants: (none)
+"
+  end
+
   def test_context_text_reports_parse_errors_and_no_entry_points
     doc = {
       "version" => "0.1.0", "base" => "b", "head" => "h", "existing_tests_via" => "grep",
