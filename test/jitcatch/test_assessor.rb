@@ -104,6 +104,28 @@ class TestAssessor < Minitest::Test
     assert_equal out["counts"], again["counts"]
   end
 
+  def test_a_constructor_mention_ranks_below_a_named_method_and_a_caller
+    doc = {
+      "methods" => [
+        method("m01", "modified", "same", "initialize", [], 1),
+        method("m02", "modified", "same", "rate", ["Calc#total"], 10)
+      ],
+      "constants" => [],
+      "tests" => [
+        candidate("t01", "RateTest#test_rate", %w[initialize rate], failure("Expected: 1\n  Actual: 2")),
+        candidate("t02", "TotalTest#test_total", %w[initialize total], failure("Expected: 1\n  Actual: 2")),
+        candidate("t03", "NewTest#test_new", %w[initialize], failure("Expected: 1\n  Actual: 2"))
+      ]
+    }
+
+    out = JitCatch::Assessor.apply(doc)
+
+    assert_equal %w[m02 m02 m01], out["tests"].map { |test| test["method_id"] }
+    assert_includes out["tests"][1]["tags"], "touches:unchanged_caller"
+    refute_includes out["tests"][1]["tags"], "touches:changed_method"
+    assert_includes out["tests"][2]["tags"], "touches:changed_method"
+  end
+
   def test_candidate_ids_follow_test_ids_and_other_rows_carry_nulls
     stale = { "method_id" => "m09", "tags" => ["report"], "disposition" => "reported", "candidate_id" => "c09" }
     doc = {

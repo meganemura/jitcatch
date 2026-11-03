@@ -142,13 +142,16 @@ module JitCatch
 
       mentions = Array(test["mentions"])
       mentioned = @methods.select { |item| mentions.include?(item["bare_name"]) }
-      return most_downstream(mentioned) if mentioned.any?
+      # Almost every test builds its object with `.new`, so a changed
+      # constructor is the related method only when nothing else points.
+      constructors, named = mentioned.partition { |item| item["bare_name"] == "initialize" }
+      return most_downstream(named) if named.any?
 
       via_caller = @methods.select { |item|
         upstream = Array(item["reachable_from"]).map { |name| bare(name) }
         (mentions & upstream).any?
       }
-      most_downstream(via_caller)
+      most_downstream(via_caller.empty? ? constructors : via_caller)
     end
 
     def method_from_backtrace(test)

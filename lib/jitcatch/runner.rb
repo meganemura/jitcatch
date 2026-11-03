@@ -84,7 +84,7 @@ module JitCatch
 
     def classify_file(relative, base_dir, head_dir, normalizer, change)
       source = File.read(File.join(@tests_dir, relative), mode: "r:bom|utf-8")
-      known = known_names(change)
+      known = mention_patterns(change)
       index = SourceIndex.parse(source, file: relative)
       base_run = execute(base_dir, relative, normalizer)
       head_run = execute(head_dir, relative, normalizer)
@@ -318,21 +318,30 @@ module JitCatch
       [list, omitted]
     end
 
-    def known_names(change)
+    # Each bare name a test can mention, with the pattern that finds it. A
+    # test runs `Owner#initialize` by writing `Owner.new`.
+    def mention_patterns(change)
       names = change["methods"].map { |method| method["bare_name"] }
       names += change["entrypoints"].flat_map { |entry|
         entry["methods"].map { |method| SourceIndex.split_qualified(method["name"]).last }
       }
       names += change["constants"].map { |const| const["bare_name"] }
-      names.compact.uniq.sort
+      owners = change["methods"].filter_map { |method|
+        SourceIndex.split_qualified(method["name"]).first.split("::").last if method["bare_name"] == "initialize"
+      }.uniq
+      names.compact.uniq.sort.reject(&:empty?).to_h do |bare|
+        pattern = /\b#{Regexp.escape(bare)}\b/
+        pattern = Regexp.union(pattern, *owners.map { |owner| /\b#{Regexp.escape(owner)}\.new\b/ }) if bare == "initialize"
+        [bare, pattern]
+      end
     end
 
     # Mentions are taken from the individual test method so a neighbor in the
     # same file does not change this test's tags.
-    def mentions_for(index, test_name, known, source)
+    def mentions_for(index, test_name, patterns, source)
       method = index.methods.find { |item| item.qualified == test_name }
       text = method ? method.source : source
-      known.select { |bare| !bare.empty? && text.match?(/\b#{Regexp.escape(bare)}\b/) }
+      patterns.filter_map { |bare, pattern| bare if text.match?(pattern) }
     end
 
     def assign_test_ids(rows)

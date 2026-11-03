@@ -562,6 +562,34 @@ class TestRunner < Minitest::Test
     end
   end
 
+  def test_a_test_that_calls_new_mentions_initialize
+    with_repo do |repo|
+      repo.write("lib/price.rb", "class Price\n  def initialize(cents)\n    @cents = cents\n  end\n\n  def cents\n    @cents\n  end\nend\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/price.rb", "class Price\n  def initialize(cents)\n    @cents = cents + 1\n  end\n\n  def cents\n    @cents\n  end\nend\n")
+      repo.commit("Rework price.", date: "2026-02-12T00:00:00Z")
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, {
+        "price_test.rb" => <<~TEST
+          require "minitest/autorun"
+          require "price"
+
+          class PriceTest < Minitest::Test
+            def test_new_keeps_the_cents
+              assert_equal 3, Price.new(3).cents
+            end
+          end
+        TEST
+      })
+
+      row = execute(repo, tests)["tests"].fetch(0)
+
+      assert_equal [%w[cents initialize], "m01"], row.values_at("mentions", "method_id")
+      assert_includes row["tags"], "touches:changed_method"
+    end
+  end
+
   def test_candidate_process_gets_only_the_allowlisted_environment
     with_repo do |repo|
       repo.write("lib/flag.rb", "module Flag; def self.ok; true; end; end\n")

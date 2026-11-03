@@ -199,6 +199,8 @@ bin/jitcatch assess --json run.json
 
 タグはヒントであり、判断そのものではない。
 `touches:changed_method` は、テストが diff の変更したメソッド名を含んでいる。
+`Owner.new` は `Owner#initialize` の名前として数える。
+変更したコンストラクタが関連メソッドになるのは、テストがほかの変更メソッドの名前を含まず、その呼び出し元も通らないときだけである。
 `touches:changed_constant` は、テストが diff の変更した定数名を含んでいる。
 `touches:changed_dependency` は、ロックしたバージョンが変わった gem の中からエラーが出た。
 gem の中から始まったエラーには `touches:changed_method` を付けない。

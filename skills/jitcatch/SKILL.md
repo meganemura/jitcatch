@@ -90,7 +90,7 @@ Judge only rows whose disposition is `reported`.
 
 Tags are hints, not a verdict. They are sorted:
 
-- `touches:changed_method` — the test names a method the diff changed.
+- `touches:changed_method` — the test names a method the diff changed. `Owner.new` names `Owner#initialize`. Almost every test builds its object, so a changed constructor becomes the related id only when the test names no other changed method and reaches none through `reachable_from`.
 - `touches:changed_dependency` — the error came from inside a gem that `dependencies:` lists: the first frame outside the candidate file is in that gem. An error whose first such frame is in any gem gets no `touches:changed_method`.
 - `touches:changed_constant` — the test names a constant the diff changed, added, or removed. The row's `mentions` lists the bare names of changed methods and constants the test method names.
 - `touches:unchanged_caller` — the test goes through an entry point the diff did not edit, and that entry point reaches a changed method.
