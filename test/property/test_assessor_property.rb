@@ -96,4 +96,37 @@ class TestAssessorProperty < Minitest::Test
       assert_equal expected, JitCatch::Assessor.mention_of("#{segments.join("::")}#{sep}#{bare}")
     end
   end
+
+  # A broken call is discarded only from the candidate file, and the
+  # verdict does not depend on whether assert_raises or raise_error caught
+  # the error.
+  def test_a_broken_call_is_discarded_only_from_the_test_and_however_it_was_caught
+    Hegel.test do |tc|
+      call = { "file" => tc.draw(sampled_from(%w[.jitcatch/a_test.rb lib/a.rb lib/b.rb])), "line" => tc.draw(integers(min_value: 1, max_value: 30)) }
+      arity = tc.draw(booleans)
+      message = arity ? "wrong number of arguments (given 1, expected 2)" : "undefined method 'gone' for an instance of B"
+      error_class = arity ? "ArgumentError" : "NoMethodError"
+      # Ruby puts the callee's own line first for an arity error.
+      raised = arity ? [{ "file" => "lib/a.rb", "line" => 10 }, call] : [call]
+      raised << { "file" => ".jitcatch/a_test.rb", "line" => 4 }
+      at = { "file" => ".jitcatch/a_test.rb", "line" => 4 }
+      head = case tc.draw(sampled_from(%w[bare minitest rspec]))
+      when "bare" then { "status" => "error", "error_class" => error_class, "message" => message, "backtrace" => raised }
+      when "minitest"
+        { "status" => "fail", "error_class" => "Minitest::Assertion", "backtrace" => [at, *raised],
+          "message" => "[KeyError] exception expected, not\nClass: <#{error_class}>\nMessage: <#{message.inspect}>\n---Backtrace---" }
+      else
+        { "status" => "fail", "error_class" => "RSpec::Expectations::ExpectationNotMetError", "backtrace" => [at, *raised],
+          "message" => "expected KeyError, got #<#{error_class}: #{message}> with backtrace:" }
+      end
+      test = { "id" => "t01", "name" => "T#test_a", "mentions" => [], "classification" => "candidate", "base" => { "status" => "pass" }, "head" => head }
+      row = JitCatch::Assessor.apply({ "methods" => METHODS, "constants" => [], "tests" => [test] })["tests"].fetch(0)
+
+      from_test = call["file"].start_with?(".jitcatch/")
+      assert_equal from_test ? "discarded" : "reported", row["disposition"], row["tags"].inspect
+      changed = call["file"] == "lib/a.rb" && (10..12).cover?(call["line"])
+      expected = from_test ? [] : ["caller:#{changed ? "changed" : "unchanged"}:#{call["file"]}:#{call["line"]}"]
+      assert_equal expected, row["tags"].grep(/\Acaller:/)
+    end
+  end
 end
