@@ -32,6 +32,7 @@ module JitCatch
       @constants = []
       @namespaces = []
       @module_functions = []
+      @private_constants = []
       @calls = []
       @parse_error = nil
     end
@@ -46,6 +47,7 @@ module JitCatch
       scan_body(result.value, "", :public, false)
       walk(result.value, "", false, nil)
       rename_module_function_callers
+      hide_private_constants
       self
     end
 
@@ -114,6 +116,8 @@ module JitCatch
 
         return handle_module_function(stmt, qualifier, visibility) if stmt.receiver.nil? && stmt.name == :module_function
 
+        record_private_constants(stmt, qualifier) if stmt.receiver.nil? && stmt.name == :private_constant
+
         handle_class_visibility(stmt, qualifier) if stmt.receiver.nil? && CLASS_VISIBILITY.key?(stmt.name)
         visibility
       else
@@ -163,6 +167,23 @@ module JitCatch
 
         @module_functions << method.qualified
         method.with(kind: "singleton", visibility: "public", qualified: self.class.qualify(qualifier, bare, true))
+      end
+    end
+
+    def record_private_constants(stmt, qualifier)
+      (stmt.arguments&.arguments || []).each do |arg|
+        @private_constants << join_qual(qualifier, arg.unescaped.to_s) if arg.is_a?(Prism::SymbolNode) || arg.is_a?(Prism::StringNode)
+      end
+    end
+
+    # Code outside the namespace cannot name a private constant, so no method
+    # under it is an entry point, whatever its own visibility says.
+    def hide_private_constants
+      return if @private_constants.empty?
+
+      @methods.map! do |method|
+        hidden = @private_constants.any? { |name| method.qualifier == name || method.qualifier.start_with?("#{name}::") }
+        hidden ? method.with(visibility: "private") : method
       end
     end
 

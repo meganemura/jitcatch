@@ -213,6 +213,38 @@ class TestSourceIndex < Minitest::Test
     assert_equal "Util.one", index.calls.find { |call| call.bare_name == "two" }.enclosing
   end
 
+  def test_methods_under_a_private_constant_are_private
+    source = <<~RUBY
+      module A
+        module B
+          def self.x = 1
+
+          class Deep
+            def y = 2
+          end
+        end
+        private_constant :B
+
+        Impl = Class.new do
+          def z = 3
+        end
+        private_constant "Impl"
+
+        module Open
+          def self.w = 4
+        end
+
+        module Bee
+          def self.v = 5
+        end
+      end
+    RUBY
+    index = JitCatch::SourceIndex.parse(source, file: "lib/a.rb")
+    assert_equal({ "A::B.x" => "private", "A::B::Deep#y" => "private", "A::Impl#z" => "private",
+                   "A::Open.w" => "public", "A::Bee.v" => "public" },
+      index.methods.to_h { |method| [method.qualified, method.visibility] })
+  end
+
   def test_methods_in_a_block_given_to_a_constant_belong_to_that_constant
     source = <<~RUBY
       module Geo
