@@ -54,6 +54,39 @@ class TestRender < Minitest::Test
     ], JitCatch::Render.assess_text(doc).split("assess:\n").last.lines(chomp: true)
   end
 
+  def test_a_long_diff_line_shows_the_differing_hash_keys_or_the_first_differing_column
+    long_hash = ->(t04) { "{" + (1..6).map { |n| %("t0#{n}" => ["m0#{n}", ["discard:signature_change", "error:ArgumentError"]]) }.join(", ").sub(%("m04"), t04) + "}" }
+    expected = long_hash.call(%("m04"))
+    actual = long_hash.call(%("m03")).sub(%(, "t06" => ["m06", ["discard:signature_change", "error:ArgumentError"]]), %(, "t07" => 1))
+    text = "a" * 150
+    diffs = {
+      "t01" => "--- expected\n+++ actual\n@@ -1 +1 @@\n-#{expected}\n+#{actual}\n",
+      "t02" => "--- expected\n+++ actual\n@@ -1 +1 @@\n-\"#{text}b#{text}\"\n+\"#{text}c#{text}\"\n"
+    }
+    doc = JitCatch::Assessor.apply({
+      "version" => "0.1.0", "base" => "b", "head" => "h",
+      "tests" => diffs.map { |id, message|
+        { "id" => id, "name" => "A#test_#{id}", "classification" => "candidate", "base" => { "status" => "pass" },
+          "head" => { "status" => "fail", "error_class" => "Minitest::Assertion", "message" => message } }
+      }
+    })
+
+    window = "a" * 30
+    assert_equal [
+      "  c01 A#test_t01 base=pass head=fail - assertion,report",
+      "    hash keys differ: \"t04\", \"t06\", \"t07\"",
+      %(    -"t04" => ["m04", ["discard:signature_change", "error:ArgumentError"]]),
+      %(    +"t04" => ["m03", ["discard:signature_change", "error:ArgumentError"]]),
+      %(    -"t06" => ["m06", ["discard:signature_change", "error:ArgumentError"]]),
+      %(    +"t07" => 1),
+      "  c02 A#test_t02 base=pass head=fail - assertion,report",
+      "    -...#{window}b#{window}...",
+      "    +...#{window}c#{window}...",
+      "        #{" " * 30}^ column 152"
+    ], JitCatch::Render.assess_text(doc).split("assess:\n").last.lines(chomp: true)
+    assert_equal diffs.values, JitCatch::Render.assess_json(doc)["candidates"].map { |row| row["message"] }
+  end
+
   def test_run_text_names_omitted_files_and_an_empty_run
     doc = JitCatch::Assessor.apply({
       "version" => "0.1.0", "base" => "b", "head" => "h", "reruns" => 2, "timeout_s" => 10,

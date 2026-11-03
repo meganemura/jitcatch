@@ -55,7 +55,7 @@ The brief ends with one `entrypoints <Const>:` section for each class or module 
 
 Write 3 to 6 Minitest files in a scratch directory you can delete.
 
-A catching test states a behavior the old code already satisfies. Aim it at a changed or affected method, and at unchanged callers that reach that method (`reachable_from`). Prefer a boundary, a rounding case, or an error path the diff could disturb. One claim per test method. A test that only describes the new feature fails on base and is not evidence. Assert on one field, not on a whole returned Hash: a whole-Hash test (such as a branchout characterization test) fails on any added key, and its row prints one long line per side, so you have to find the difference by eye.
+A catching test states a behavior the old code already satisfies. Aim it at a changed or affected method, and at unchanged callers that reach that method (`reachable_from`). Prefer a boundary, a rounding case, or an error path the diff could disturb. One claim per test method. A test that only describes the new feature fails on base and is not evidence. Assert on one field, not on a whole returned Hash: a whole-Hash test (such as a branchout characterization test) fails on any added key, even one the intent asked for.
 
 The `mentions` and the `touches:` tags read the test method's body and the bodies of the methods in the same file that it calls, directly or through other such methods. A helper in another file (`require "test/support/..."`) is not read, so call the changed method or its public caller from the candidate file. Prefer a public entry point over `send(:private_helper)`: a private helper can move between base and head, and the test then fails on base.
 
@@ -106,7 +106,7 @@ Tags are hints, not a verdict. They are sorted:
 
 ## Judge
 
-For each reported row, compare the failure (the message lines, usually expected and actual, and the related id) with the intent and with the diff in the brief. When Minitest printed a diff, the two lines are its first removed line (`-`, expected) and first added line (`+`, actual). The whole message is `head.message` in the `--json` document.
+For each reported row, compare the failure (the message lines, usually expected and actual, and the related id) with the intent and with the diff in the brief. When Minitest printed a diff, the two lines are its first removed line (`-`, expected) and first added line (`+`, actual). When either line is longer than 100 characters and both are one Hash literal, the row prints `hash keys differ:` and one `-` and `+` line for each of the first 4 keys whose values differ. Otherwise it prints 61 characters around the first column that differs, with a `^ column N` line under it. The whole message is `head.message` in the `run --json` document and `message` in the `assess --json` document.
 
 - **likely-regression** — behavior changed, and the intent does not ask for that change.
 - **intended** — the intent explicitly wants that behavior.

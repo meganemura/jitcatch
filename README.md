@@ -134,7 +134,7 @@ To review the first commit, pass `ROOT^` as `BASE`. The parent of a root commit 
 
 When `BASE` is not an ancestor of `HEAD`, the diff also undoes the commits only `BASE` has. `context` and `run` then print a `warning:` line under `head` that counts those commits and names the merge base to pass as `BASE` instead.
 
-`assess` reprints the counts and the candidate rows. It applies the same rules as `run`.
+`assess` reprints the counts and the candidate rows. It applies the same rules as `run`. A row shows the first line of the failure, or the expected and actual lines of a Minitest diff. When one of those is longer than 100 characters, the row shows the Hash entries that differ, or a window around the first column that differs with a `^ column N` marker. `--json` keeps the whole message.
 
 ```sh
 bin/jitcatch run --json --repo examples/shop --reruns 2 --timeout 10 base regression examples/runs/regression/tests > run.json

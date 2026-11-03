@@ -176,6 +176,9 @@ jitcatch run --repo DIR BASE HEAD TESTS_DIR
 
 `assess` は件数と候補の行を再出力する。
 掛けるルールは `run` と同じである。
+行には失敗の最初の行か、Minitest の差分の期待行と実際行が出る。
+そのどちらかが 100 文字を超えると、値の違う Hash のエントリか、最初に違う桁のまわりと `^ column N` の印を出す。
+`--json` はメッセージ全体を残す。
 
 ```sh
 bin/jitcatch run --json --repo examples/shop --reruns 2 --timeout 10 base regression examples/runs/regression/tests > run.json

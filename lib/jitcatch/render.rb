@@ -4,6 +4,10 @@ module JitCatch
   module Render
     module_function
 
+    LONG_LINE = 100
+    WINDOW = 30
+    DIFF_KEYS = 4
+
     def context_text(doc)
       lines = []
       lines << "jitcatch context"
@@ -247,6 +251,7 @@ module JitCatch
           "tags" => test["tags"],
           "disposition" => test["disposition"],
           "message_first_line" => test.dig("head", "message_first_line").to_s,
+          "message" => test.dig("head", "message").to_s,
           "message_lines" => message_lines(test["head"])
         }
       }
@@ -262,10 +267,57 @@ module JitCatch
         # Minitest prints a unified diff when either side spans lines or is
         # long; its header says nothing, so show the first removed and added line.
         changed = lines.drop(2)
-        [changed.find { |line| line.start_with?("-") }, changed.find { |line| line.start_with?("+") }].compact
+        removed = changed.find { |line| line.start_with?("-") }
+        added = changed.find { |line| line.start_with?("+") }
+        removed && added ? changed_pair(removed[1..], added[1..]) : [removed, added].compact
       else
         lines.first(1)
       end
+    end
+
+    # A long line, such as a whole Hash on one line, is hard to compare by
+    # eye. Show the Hash entries that differ, or else a window around the
+    # first column that differs. `message` in `--json` keeps the full text.
+    def changed_pair(expected, actual)
+      return ["-#{expected}", "+#{actual}"] if [expected, actual].all? { |text| text.length <= LONG_LINE }
+
+      hash_entry_lines(expected, actual) || column_lines(expected, actual)
+    end
+
+    def hash_entry_lines(expected, actual)
+      old_entries = hash_entries(expected)
+      new_entries = hash_entries(actual)
+      return nil unless old_entries && new_entries
+
+      keys = (old_entries.keys + new_entries.keys).uniq.reject { |key| old_entries[key] == new_entries[key] }
+      return nil if keys.empty?
+
+      lines = ["hash keys differ: #{keys.first(DIFF_KEYS).join(", ")}#{" (+#{keys.size - DIFF_KEYS} more)" if keys.size > DIFF_KEYS}"]
+      keys.first(DIFF_KEYS).each do |key|
+        old_entry = "#{key} => #{old_entries[key]}" if old_entries.key?(key)
+        new_entry = "#{key} => #{new_entries[key]}" if new_entries.key?(key)
+        lines.concat(old_entry && new_entry ? changed_pair(old_entry, new_entry) : [old_entry && "-#{old_entry}", new_entry && "+#{new_entry}"].compact)
+      end
+      lines
+    end
+
+    # The entries of a Hash literal as written by `inspect`, keyed by the
+    # key's text, or nil when the text is not one Hash literal.
+    def hash_entries(text)
+      result = Prism.parse(text)
+      body = result.success? ? result.value.statements.body : []
+      return nil unless body.size == 1 && body.first.is_a?(Prism::HashNode)
+      return nil unless body.first.elements.all?(Prism::AssocNode)
+
+      body.first.elements.to_h { |assoc| [assoc.key.slice.delete_suffix(":"), assoc.value.slice] }
+    end
+
+    def column_lines(expected, actual)
+      column = (0...[expected.length, actual.length].min).find { |index| expected[index] != actual[index] } || [expected.length, actual.length].min
+      start = [column - WINDOW, 0].max
+      lead = start.zero? ? "" : "..."
+      window = ->(text) { "#{lead}#{text[start, (2 * WINDOW) + 1]}#{"..." if text.length > start + (2 * WINDOW) + 1}" }
+      ["-#{window.call(expected)}", "+#{window.call(actual)}", "#{" " * (1 + lead.length + column - start)}^ column #{column + 1}"]
     end
 
     def finish(lines)
