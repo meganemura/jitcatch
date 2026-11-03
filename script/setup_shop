@@ -1,0 +1,105 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Build examples/shop (or DEST) with a fixed git history:
+#   base        cart pricing, threshold 10000 cents
+#   regression  SAVE5 coupon, plus an unmentioned off-by-one at the threshold
+#   intended    threshold lowered to 5000 cents, and the message says so
+
+require "fileutils"
+require "open3"
+require "rbconfig"
+
+ROOT = File.expand_path("..", __dir__)
+SOURCE = File.join(ROOT, "examples/fixtures/shop")
+DEST = File.expand_path(ARGV[0] || File.join(ROOT, "examples/shop"))
+
+BASE_MESSAGE = <<~MSG.strip
+  Initial cart pricing.
+
+  Prices are integer cents. A volume discount of 10% applies when the
+  subtotal reaches 10000 cents. Tax is 8%, rounded half up.
+MSG
+
+REGRESSION_MESSAGE = <<~MSG.strip
+  Add SAVE5 coupon (500 cents off before tax).
+
+  Apply the coupon with Cart#apply_coupon. SAVE5 subtracts 500 cents
+  from the taxable amount before tax. Unknown codes raise
+  Shop::UnknownCoupon.
+MSG
+
+INTENDED_MESSAGE = <<~MSG.strip
+  Lower the volume-discount threshold from 10000 to 5000 cents.
+
+  Orders of 5000 cents or more now receive 10% off. This is an
+  intentional behavior change. Tax rounding is unchanged.
+MSG
+
+def git(dir, *args, env: {})
+  stdout, stderr, status = Open3.capture3(ENV.to_h.merge(env), "git", "--no-pager", "-C", dir, *args)
+  abort "git #{args.first} failed: #{stderr}" unless status.success?
+
+  stdout
+end
+
+def fill(dir, variant)
+  Dir.children(dir).each do |child|
+    next if child == ".git"
+
+    FileUtils.rm_rf(File.join(dir, child))
+  end
+  source = File.join(SOURCE, variant)
+  Dir.children(source).sort.each do |child|
+    FileUtils.cp_r(File.join(source, child), dir)
+  end
+end
+
+def commit(dir, message, date)
+  git dir, "add", "-A"
+  env = {
+    "GIT_AUTHOR_NAME" => "jittest",
+    "GIT_AUTHOR_EMAIL" => "jittest@example.local",
+    "GIT_AUTHOR_DATE" => date,
+    "GIT_COMMITTER_NAME" => "jittest",
+    "GIT_COMMITTER_EMAIL" => "jittest@example.local",
+    "GIT_COMMITTER_DATE" => date
+  }
+  git dir, "commit", "-m", message, env: env
+end
+
+def run_existing_tests(dir, ref)
+  git dir, "checkout", "--quiet", ref
+  stdout, stderr, status = Open3.capture3(RbConfig.ruby, "test/test_cart.rb", chdir: dir)
+  return if status.success?
+
+  abort "existing tests failed on #{ref}:\n#{stdout}#{stderr}"
+end
+
+FileUtils.rm_rf(DEST)
+FileUtils.mkdir_p(DEST)
+git DEST, "init", "-b", "main"
+git DEST, "config", "user.email", "jittest@example.local"
+git DEST, "config", "user.name", "jittest"
+git DEST, "config", "commit.gpgsign", "false"
+git DEST, "config", "core.autocrlf", "false"
+
+fill DEST, "base"
+commit DEST, BASE_MESSAGE, "2026-02-11T00:00:00Z"
+git DEST, "branch", "base"
+
+fill DEST, "regression"
+commit DEST, REGRESSION_MESSAGE, "2026-02-12T00:00:00Z"
+git DEST, "branch", "regression"
+
+git DEST, "checkout", "--quiet", "-B", "intended", "base"
+fill DEST, "intended"
+commit DEST, INTENDED_MESSAGE, "2026-02-13T00:00:00Z"
+
+%w[base regression intended].each { |ref| run_existing_tests(DEST, ref) }
+git DEST, "checkout", "--quiet", "regression"
+
+puts "shop fixture: #{DEST}"
+%w[base regression intended].each do |ref|
+  puts "#{ref} #{git(DEST, "rev-parse", ref).strip}"
+end

@@ -1,0 +1,28 @@
+jitcatch run
+version 0.1.0
+base cf7f35144524b7a0606df29197ac609b2f17773f
+head f2f5f6c3778bca3f65d06728583ca9e089523dfc
+reruns 2
+timeout_s 10
+tests:
+  t01 fail_on_base CouponTest#test_save5_comes_off_before_tax coupon_test.rb
+  t02 fail_on_base CouponTest#test_save5_floors_taxable_at_zero coupon_test.rb
+  t03 fail_on_base CouponTest#test_unknown_coupon_raises coupon_test.rb
+  t04 no_signal GuardsTest#test_rejects_blank_sku guards_test.rb
+  t05 no_signal GuardsTest#test_rejects_negative_price guards_test.rb
+  t06 no_signal GuardsTest#test_rejects_zero_qty guards_test.rb
+  t07 no_signal RoundingTest#test_nineteen_cents_tax_rounds_half_up rounding_test.rb
+  t08 no_signal RoundingTest#test_twelve_cents_tax_rounds_half_up rounding_test.rb
+  t09 no_signal ThresholdTotalTest#test_above_threshold_total_is_unchanged threshold_total_test.rb
+  t10 reported ThresholdTotalTest#test_at_threshold_total_includes_the_volume_discount threshold_total_test.rb m05
+  t11 no_signal VolumeBoundaryTest#test_just_above_threshold_keeps_volume_discount volume_boundary_test.rb
+  t12 no_signal VolumeBoundaryTest#test_just_below_threshold_has_no_volume_discount volume_boundary_test.rb
+  t13 reported VolumeBoundaryTest#test_threshold_is_inclusive volume_boundary_test.rb m05
+counts generated=13 no_signal=8 fail_on_base=3 candidates=2 flaky=0 discarded=0 reported=2
+assess:
+  c01 ThresholdTotalTest#test_at_threshold_total_includes_the_volume_discount base=pass head=fail m05 assertion,report,touches:unchanged_caller
+    Expected: 9720
+    Actual: 10800
+  c02 VolumeBoundaryTest#test_threshold_is_inclusive base=pass head=fail m05 assertion,report,touches:changed_method
+    Expected: 1000
+    Actual: 0

@@ -1,0 +1,24 @@
+jitcatch run
+version 0.1.0
+base cf7f35144524b7a0606df29197ac609b2f17773f
+head f8505c45e71a6f219d1e0dfa26728c296b4d2d42
+reruns 2
+timeout_s 10
+tests:
+  t01 fail_on_base NewThresholdTest#test_five_thousand_receives_volume_discount new_threshold_test.rb
+  t02 no_signal ThresholdTest#test_above_old_threshold_total_is_unchanged threshold_test.rb
+  t03 no_signal ThresholdTest#test_below_five_thousand_has_no_discount threshold_test.rb
+  t04 reported ThresholdTest#test_between_old_and_new_threshold_total_had_no_discount threshold_test.rb m01
+  t05 reported ThresholdTest#test_five_thousand_had_no_discount threshold_test.rb m01
+  t06 no_signal ThresholdTest#test_ten_thousand_still_receives_the_discount threshold_test.rb
+  t07 no_signal UnchangedTest#test_nineteen_cents_tax_rounds_half_up unchanged_test.rb
+  t08 no_signal UnchangedTest#test_rejects_zero_qty unchanged_test.rb
+  t09 no_signal UnchangedTest#test_twelve_cents_tax_rounds_half_up unchanged_test.rb
+counts generated=9 no_signal=6 fail_on_base=1 candidates=2 flaky=0 discarded=0 reported=2
+assess:
+  c01 ThresholdTest#test_between_old_and_new_threshold_total_had_no_discount base=pass head=fail m01 assertion,report,touches:unchanged_caller
+    Expected: 8100
+    Actual: 7290
+  c02 ThresholdTest#test_five_thousand_had_no_discount base=pass head=fail m01 assertion,report,touches:changed_method
+    Expected: 0
+    Actual: 500

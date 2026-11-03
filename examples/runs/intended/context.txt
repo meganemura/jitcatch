@@ -1,0 +1,35 @@
+jitcatch context
+version 0.1.0
+base cf7f35144524b7a0606df29197ac609b2f17773f
+head f8505c45e71a6f219d1e0dfa26728c296b4d2d42
+existing_tests grep
+intent:
+  Lower the volume-discount threshold from 10000 to 5000 cents.
+  Orders of 5000 cents or more now receive 10% off. This is an
+  intentional behavior change. Tax rounding is unchanged.
+files:
+  M lib/shop/cart.rb
+constants:
+  [k01] modified Shop::Cart::VOLUME_THRESHOLD_CENTS lib/shop/cart.rb:7
+    old: VOLUME_THRESHOLD_CENTS = 10_000
+    new: VOLUME_THRESHOLD_CENTS = 5_000
+    readers: m01
+methods:
+  [m01] affected Shop::Cart#volume_discount_cents lib/shop/cart.rb:30-34 signature=same visibility=public via=k01
+    callsites: lib/shop/cart.rb:37 Shop::Cart#taxable_cents
+    reachable_from: Shop::Cart#tax_cents, Shop::Cart#taxable_cents, Shop::Cart#total_cents
+    tests: test/test_cart.rb grep
+    source:
+      def volume_discount_cents
+        return 0 if subtotal_cents < VOLUME_THRESHOLD_CENTS
+      
+        Money.percent(subtotal_cents, VOLUME_PERCENT)
+      end
+entrypoints Shop::Cart:
+  Shop::Cart#volume_discount_cents affected
+  Shop::Cart#add unchanged
+  Shop::Cart#initialize unchanged
+  Shop::Cart#subtotal_cents unchanged
+  Shop::Cart#tax_cents unchanged
+  Shop::Cart#taxable_cents unchanged
+  Shop::Cart#total_cents unchanged
