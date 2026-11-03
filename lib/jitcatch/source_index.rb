@@ -31,6 +31,7 @@ module JitCatch
       @methods = []
       @constants = []
       @namespaces = []
+      @module_functions = []
       @calls = []
       @parse_error = nil
     end
@@ -44,6 +45,7 @@ module JitCatch
 
       scan_body(result.value, "", :public, false)
       walk(result.value, "", false, nil)
+      rename_module_function_callers
       self
     end
 
@@ -111,6 +113,8 @@ module JitCatch
       when Prism::CallNode
         return handle_visibility(stmt, qualifier, visibility, singleton) if visibility_modifier?(stmt)
 
+        return handle_module_function(stmt, qualifier, visibility) if stmt.receiver.nil? && stmt.name == :module_function
+
         handle_class_visibility(stmt, qualifier) if stmt.receiver.nil? && CLASS_VISIBILITY.key?(stmt.name)
         visibility
       else
@@ -137,6 +141,32 @@ module JitCatch
       visibility
     end
 
+    # `module_function` makes the public method `Mod.name` that callers use;
+    # the private instance copy it also makes is not listed.
+    def handle_module_function(stmt, qualifier, visibility)
+      args = stmt.arguments&.arguments || []
+      return :module_function if args.empty?
+
+      args.each do |arg|
+        case arg
+        when Prism::DefNode
+          record_method(arg, qualifier, :module_function, false)
+        when Prism::SymbolNode, Prism::StringNode
+          to_module_function(qualifier, arg.unescaped.to_s)
+        end
+      end
+      visibility
+    end
+
+    def to_module_function(qualifier, bare)
+      @methods.map! do |method|
+        next method unless method.qualifier == qualifier.to_s && method.bare_name == bare && method.kind == "instance"
+
+        @module_functions << method.qualified
+        method.with(kind: "singleton", visibility: "public", qualified: self.class.qualify(qualifier, bare, true))
+      end
+    end
+
     def handle_class_visibility(stmt, qualifier)
       visibility = CLASS_VISIBILITY.fetch(stmt.name)
       (stmt.arguments&.arguments || []).each do |arg|
@@ -153,8 +183,10 @@ module JitCatch
       # `def self.foo` stays public; bare `private` does not apply to it.
       # Visibility inside `class << self` still applies to receiver-less defs.
       explicit_receiver = !node.receiver.nil?
-      singleton = singleton_context || explicit_receiver
-      visibility = :public if explicit_receiver && !explicit
+      module_function = visibility == :module_function && !explicit_receiver && !singleton_context
+      singleton = singleton_context || explicit_receiver || module_function
+      visibility = :public if (explicit_receiver && !explicit) || visibility == :module_function
+      @module_functions << self.class.qualify(qualifier, node.name.to_s, false) if module_function
       bare = node.name.to_s
       params = node.parameters&.location&.slice.to_s.gsub(/\s+/, "")
       @methods << self.class::Method.new(
@@ -209,6 +241,15 @@ module JitCatch
         end_line: node.location.end_line,
         source: @lines[node.location.start_line - 1].to_s.strip
       )
+    end
+
+    # The walk names an enclosing method by its `def`, which reads as an
+    # instance method; a module function is listed as `Mod.name`.
+    def rename_module_function_callers
+      return if @module_functions.empty?
+
+      renamed = @module_functions.to_h { |name| [name, name.sub(/#(?=[^#]*\z)/, ".")] }
+      @calls.map! { |call| renamed.key?(call.enclosing) ? call.with(enclosing: renamed[call.enclosing]) : call }
     end
 
     def constant_target(node, qualifier)

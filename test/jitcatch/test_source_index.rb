@@ -167,6 +167,45 @@ class TestSourceIndex < Minitest::Test
     }, visibility)
   end
 
+  def test_module_function_makes_a_public_module_method
+    source = <<~RUBY
+      module Text
+        def plain
+          1
+        end
+
+        module_function
+
+        def mask(text)
+          clean(text)
+        end
+
+        private
+
+        def hidden
+          2
+        end
+      end
+
+      module Util
+        def one
+          1
+        end
+        module_function :one
+
+        def two
+          2
+        end
+      end
+    RUBY
+    index = JitCatch::SourceIndex.parse(source, file: "lib/text.rb")
+    assert_equal({ "Text#plain" => "public", "Text.mask" => "public", "Text#hidden" => "private",
+                   "Util.one" => "public", "Util#two" => "public" },
+      index.methods.to_h { |method| [method.qualified, method.visibility] })
+    assert_equal "singleton", index.methods.find { |method| method.qualified == "Text.mask" }.kind
+    assert_equal "Text.mask", index.calls.find { |call| call.bare_name == "clean" }.enclosing
+  end
+
   def test_methods_in_a_block_given_to_a_constant_belong_to_that_constant
     source = <<~RUBY
       module Geo
