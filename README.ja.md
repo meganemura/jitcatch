@@ -158,7 +158,7 @@ bin/jitcatch assess --json run.json
 
 ## どう残すか
 
-`context` は 2 つのリビジョンを diff し、ハンクを Prism でメソッドに対応づける。変更メソッドは `m01`、`m02` と付く。変わった定数は `k01` で、その定数を読むだけで本体が変わっていないメソッドは `affected`（`via=k01`）になる。各メソッドには、旧ソースと新ソース、ライブラリ内の呼び出し、そこへ届く入口（`reachable_from`）、それに言及している既存テストが出る。言及しているテストがないときは `entry_point_tests` が出る。`reachable_from` のうち public な入口について、そのクラスを書き、入口と同じ名前のメソッドを呼んでいるテストファイルである。`--coverage` を渡すと、grep の代わりに JSON の行リストを使う。
+`context` は 2 つのリビジョンを diff し、ハンクを Prism でメソッドに対応づける。変更メソッドは `m01`、`m02` と付く。変わった定数は `k01` で、その定数を読むだけで本体が変わっていないメソッドは `affected`（`via=k01`）になる。片方の側にしか無いクラスやモジュールも定数として `added` か `removed` になり、ソースには宣言の行が出る。各メソッドには、旧ソースと新ソース、ライブラリ内の呼び出し、そこへ届く入口（`reachable_from`）、それに言及している既存テストが出る。言及しているテストがないときは `entry_point_tests` が出る。`reachable_from` のうち public な入口について、そのクラスを書き、入口と同じ名前のメソッドを呼んでいるテストファイルである。`--coverage` を渡すと、grep の代わりに JSON の行リストを使う。
 
 `run` はリビジョンごとに git worktree を作り、スクラッチディレクトリをその worktree の `.jitcatch/` へコピーし、ファイルごとに 1 プロセスで実行する。
 
@@ -170,7 +170,7 @@ ruby -Ilib -I. .jitcatch/<file> -v --seed 1
 
 実行されるのは `*_test.rb` か `test_*.rb` である。その名前が 1 つも無いときは、すべての `.rb` を実行する。上限は 40 ファイル。base で通り、head で失敗、エラー、またはタイムアウトになったテストが候補になる。`--reruns` は候補を head で繰り返す。1 回でも結果が違えば `flaky` である。比べる前に一時ディレクトリ直下の名前を伏せるので、メッセージにある `Dir.mktmpdir` のパスは違いにならない。テキストの報告は `flaky` の行の下に各再実行の結果を出し、JSON の行は `reruns` に持つ。タイムアウトは再実行しない。
 
-候補を `discarded` にするルールは 3 つある。head での `LoadError`、タイムアウト、そして diff が消したかシグネチャを書き換えた名前に対する `NameError`、`NoMethodError`、引数個数の `ArgumentError` である。コードが意図して起こす `ArgumentError`（`qty must be > 0` のようなもの）は `reported` のまま残る。
+候補を `discarded` にするルールは 3 つある。head での `LoadError`、タイムアウト、そして diff が消したかシグネチャを書き換えた名前に対する `NameError`、`NoMethodError`、引数個数の `ArgumentError` である。消えたクラスやモジュールも消えた名前に数える。コードが意図して起こす `ArgumentError`（`qty must be > 0` のようなもの）は `reported` のまま残る。
 
 同じリポジトリと同じテストなら、出力は同じバイトになる。順序は固定で、テキストに時刻は無く、worktree の絶対パスは除かれる。
 

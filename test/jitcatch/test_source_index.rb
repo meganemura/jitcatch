@@ -69,6 +69,8 @@ class TestSourceIndex < Minitest::Test
     limit = index.constants.find { |const| const.bare_name == "LIMIT" }
     assert_equal "Shop::Cart::LIMIT", limit.qualified
     assert_equal "LIMIT = 10", limit.source
+    assert_equal [["Shop", "", "module Shop"], ["Shop::Cart", "Shop", "class Cart"]],
+      index.namespaces.map { |const| [const.qualified, const.qualifier, const.source] }
 
     call = index.calls.find { |item| item.bare_name == "total" }
     assert_equal "Shop::Cart#add", call.enclosing

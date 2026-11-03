@@ -174,6 +174,36 @@ class TestRunner < Minitest::Test
     end
   end
 
+  def test_discards_a_name_error_on_a_removed_nested_class
+    with_repo do |repo|
+      repo.write("lib/model.rb", "class Model\n  class Unsupported < StandardError; end\n\n  def check(op)\n    raise Unsupported, op unless op == \"+\"\n  end\nend\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/model.rb", "class Model\n  def check(op)\n    raise ArgumentError, op unless op == \"+\"\n  end\nend\n")
+      repo.commit("Raise ArgumentError.", date: "2026-02-12T00:00:00Z")
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, {
+        "model_test.rb" => <<~RUBY
+          require "minitest/autorun"
+          require "model"
+
+          class ModelTest < Minitest::Test
+            def test_unsupported
+              assert_raises(Model::Unsupported) { Model.new.check("*") }
+            end
+          end
+        RUBY
+      })
+
+      doc = execute(repo, tests)
+
+      row = doc["tests"].fetch(0)
+      assert_equal "NameError", row["head"]["error_class"]
+      assert_equal "discarded", row["disposition"]
+      assert_includes row["tags"], "discard:signature_change"
+    end
+  end
+
   def test_reruns_judge_only_candidates_and_run_every_rerun
     with_repo do |repo|
       repo.write("lib/calc.rb", BASE_CALC)

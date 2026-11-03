@@ -70,6 +70,7 @@ module JitCatch
     def index_ref(sha, label)
       methods = []
       constants = []
+      namespaces = []
       calls = []
       errors = []
       sources = {}
@@ -85,9 +86,10 @@ module JitCatch
         end
         methods.concat(index.methods)
         constants.concat(index.constants)
+        namespaces.concat(index.namespaces)
         calls.concat(index.calls)
       end
-      { "methods" => methods, "constants" => constants, "calls" => calls, "errors" => errors, "sources" => sources }
+      { "methods" => methods, "constants" => constants, "namespaces" => namespaces, "calls" => calls, "errors" => errors, "sources" => sources }
     end
 
     def changed_methods(base_idx, head_idx, hunks)
@@ -153,7 +155,23 @@ module JitCatch
 
         found << { "change" => change, "old" => old_c, "new" => new_c, "readers" => [] }
       end
-      found
+      found + changed_namespaces(base_idx, head_idx, hunks)
+    end
+
+    # A class or module counts only when the other side defines it nowhere,
+    # so a file that reopens an existing namespace adds nothing. Its body
+    # changes show up as the methods and constants inside it.
+    def changed_namespaces(base_idx, head_idx, hunks)
+      old_names = base_idx["namespaces"].map(&:qualified)
+      new_names = head_idx["namespaces"].map(&:qualified)
+      removed = base_idx["namespaces"].reject { |node| new_names.include?(node.qualified) }
+      added = head_idx["namespaces"].reject { |node| old_names.include?(node.qualified) }
+      found = removed.uniq(&:qualified).filter_map { |node|
+        { "change" => "removed", "old" => node, "new" => nil, "readers" => [], "namespace" => true } if hunks[node.file]
+      }
+      found + added.uniq(&:qualified).filter_map { |node|
+        { "change" => "added", "old" => nil, "new" => node, "readers" => [], "namespace" => true } if hunks[node.file]
+      }
     end
 
     def attach_affected(methods, constants, base_idx, head_idx)
@@ -161,6 +179,8 @@ module JitCatch
 
       known = methods.to_h { |item| [identity(item["new"] || item["old"]), item] }
       constants.each do |const|
+        next if const["namespace"]
+
         bare = (const["new"] || const["old"]).bare_name
         pattern = /\b#{Regexp.escape(bare)}\b/
         head_idx["methods"].each do |method|

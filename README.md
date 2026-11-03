@@ -158,7 +158,7 @@ A tag is a hint, not the judgment. `touches:changed_method` means the test names
 
 ## How it filters
 
-`context` diffs the two revisions and maps hunks onto methods with Prism. Changed methods are `m01`, `m02`, and so on. A changed constant is `k01`, and a method that did not itself change but reads that constant is `affected` (`via=k01`). Each method block has the old and new source, call sites in the library, the entry points that reach it (`reachable_from`), and existing tests that mention it. When no test mentions it, `entry_point_tests` lists the test files that name the class of a public entry point in `reachable_from` and call a method of that entry point's name. `--coverage` uses the line lists in the JSON file instead of the grep.
+`context` diffs the two revisions and maps hunks onto methods with Prism. Changed methods are `m01`, `m02`, and so on. A changed constant is `k01`. A class or module that only one side defines anywhere is a constant too, `added` or `removed`, shown by its header line. A method that did not itself change but reads that constant is `affected` (`via=k01`). Each method block has the old and new source, call sites in the library, the entry points that reach it (`reachable_from`), and existing tests that mention it. When no test mentions it, `entry_point_tests` lists the test files that name the class of a public entry point in `reachable_from` and call a method of that entry point's name. `--coverage` uses the line lists in the JSON file instead of the grep.
 
 `run` adds a git worktree for each revision, copies the scratch directory to `.jitcatch/` in that worktree, and runs each file in its own process:
 
@@ -170,7 +170,7 @@ When a revision has a `Gemfile`, its files run with `-rbundler/setup` and `BUNDL
 
 Files named `*_test.rb` or `test_*.rb` run. When none have those names, every `.rb` file runs. At most 40 files run. A test that passes on base and fails, errors, or times out on head is a candidate. `--reruns` repeats candidates on head. One disagreement makes the test `flaky`. The comparison masks the name directly under the temp directory, so a `Dir.mktmpdir` path in a message is not a disagreement. The text report prints each rerun under a `flaky` row, and the JSON row keeps them in `reruns`. A timeout is not rerun.
 
-Three rules then turn a candidate into `discarded`: a `LoadError` on head, a timeout, or a `NameError`, `NoMethodError`, or arity `ArgumentError` on a name the diff removed or whose signature it rewrote. An `ArgumentError` the code raises on purpose, such as `qty must be > 0`, stays `reported`.
+Three rules then turn a candidate into `discarded`: a `LoadError` on head, a timeout, or a `NameError`, `NoMethodError`, or arity `ArgumentError` on a name the diff removed or whose signature it rewrote. A removed class or module counts as a removed name. An `ArgumentError` the code raises on purpose, such as `qty must be > 0`, stays `reported`.
 
 The same repository and the same tests produce the same bytes. Order is fixed, the text has no timestamps, and absolute worktree paths are removed.
 

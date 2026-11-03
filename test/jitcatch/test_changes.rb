@@ -193,6 +193,42 @@ class TestChanges < Minitest::Test
     end
   end
 
+  def test_a_class_or_module_that_only_one_side_defines_is_a_constant
+    with_repo do |repo|
+      repo.write("lib/model.rb", <<~RUBY)
+        class Model
+          class Unsupported < StandardError; end
+
+          def check(op)
+            raise Unsupported, op unless op == "+"
+          end
+        end
+      RUBY
+      repo.write("lib/extra.rb", "class Model\n  def extra\n    1\n  end\nend\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/model.rb", <<~RUBY)
+        class Model
+          module Ops
+          end
+
+          def check(op)
+            raise ArgumentError, op unless op == "+"
+          end
+        end
+      RUBY
+      repo.write("lib/more.rb", "class Model\n  def more\n    2\n  end\nend\n")
+      repo.commit("Drop Unsupported.", date: "2026-02-12T00:00:00Z")
+
+      doc = JitCatch::Changes.between(repo.dir, "base", "HEAD")
+      assert_equal [["added", "Model::Ops", "module Ops"], ["removed", "Model::Unsupported", "class Unsupported < StandardError; end"]],
+        doc["constants"].map { |const| [const["change"], const["name"], const["old_source"] || const["new_source"]] }
+      assert_equal [["Model#check", "modified"], ["Model#more", "added"]], doc["methods"].map { |method| method.values_at("name", "change") }
+      check = doc["methods"].find { |method| method["name"] == "Model#check" }
+      assert_equal [check["id"]], doc["constants"].find { |const| const["name"] == "Model::Unsupported" }["readers"]
+    end
+  end
+
   def test_whole_files_added_and_removed_and_a_changed_signature
     with_repo do |repo|
       repo.write("lib/old.rb", "module Old\n  LIMIT = 1\n\n  def self.gone\n    LIMIT\n  end\nend\n")
@@ -205,7 +241,7 @@ class TestChanges < Minitest::Test
       repo.commit("Replace Old with New.", date: "2026-02-12T00:00:00Z")
 
       doc = JitCatch::Changes.between(repo.dir, "base", "HEAD")
-      assert_equal [["k01", "added", "New::LIMIT"], ["k02", "removed", "Old::LIMIT"]],
+      assert_equal [["k01", "added", "New"], ["k02", "added", "New::LIMIT"], ["k03", "removed", "Old"], ["k04", "removed", "Old::LIMIT"]],
         doc["constants"].map { |const| const.values_at("id", "change", "name") }
       assert_equal [["Calc#add", "modified", "changed"], ["Old.gone", "removed", "removed"]],
         doc["methods"].map { |method| method.values_at("name", "change", "signature") }

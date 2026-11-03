@@ -10,7 +10,11 @@ intent:
   Shop::UnknownCoupon.
 files:
   M lib/shop/cart.rb
-constants: (none)
+constants:
+  [k01] added Shop::UnknownCoupon lib/shop/cart.rb:6
+    old: (none)
+    new: class UnknownCoupon < StandardError
+    readers: m02
 methods:
   [m01] added Shop::Cart#apply_coupon lib/shop/cart.rb:29-32 signature=added visibility=public
     callsites: (none)

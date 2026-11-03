@@ -17,7 +17,7 @@ module JitCatch
     )
     Call = Data.define(:file, :bare_name, :line, :enclosing)
 
-    attr_reader :methods, :constants, :calls, :parse_error
+    attr_reader :methods, :constants, :namespaces, :calls, :parse_error
 
     def self.parse(source, file:)
       new(source, file).parse
@@ -29,6 +29,7 @@ module JitCatch
       @file = file.tr("\\", "/")
       @methods = []
       @constants = []
+      @namespaces = []
       @calls = []
       @parse_error = nil
     end
@@ -86,11 +87,11 @@ module JitCatch
 
     def scan_statement(stmt, qualifier, visibility, singleton)
       case stmt
-      when Prism::ClassNode
-        scan_body(stmt, join_qual(qualifier, const_name(stmt.constant_path)), :public, false)
-        visibility
-      when Prism::ModuleNode
-        scan_body(stmt, join_qual(qualifier, const_name(stmt.constant_path)), :public, false)
+      when Prism::ClassNode, Prism::ModuleNode
+        name = const_name(stmt.constant_path)
+        nested = join_qual(qualifier, name)
+        record_namespace(stmt, nested) if name
+        scan_body(stmt, nested, :public, false)
         visibility
       when Prism::SingletonClassNode
         scan_body(stmt, qualifier, :public, true)
@@ -177,6 +178,21 @@ module JitCatch
         start_line: start_line,
         end_line: end_line,
         source: source.strip
+      )
+    end
+
+    # The header line stands for the source: the body belongs to the methods
+    # and constants inside it.
+    def record_namespace(node, qualified)
+      bare = qualified.split("::").last
+      @namespaces << self.class::Constant.new(
+        file: @file,
+        bare_name: bare,
+        qualifier: qualified.delete_suffix(bare).delete_suffix("::"),
+        qualified: qualified,
+        start_line: node.location.start_line,
+        end_line: node.location.end_line,
+        source: @lines[node.location.start_line - 1].to_s.strip
       )
     end
 

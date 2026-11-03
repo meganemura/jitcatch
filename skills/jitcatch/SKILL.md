@@ -35,7 +35,7 @@ jitcatch context --repo DIR --coverage FILE BASE HEAD
 
 Omit `--repo` when the working directory is the repository.
 
-Read `intent:` first. Then the changed files, constants (`k01`, …), and methods (`m01`, …). Each method has a change kind, signature, visibility, call sites, `reachable_from`, existing tests, and the old and new source. A method marked `affected` did not change its body. It reads a constant that did (`via=k01`).
+Read `intent:` first. Then the changed files, constants (`k01`, …), and methods (`m01`, …). Each method has a change kind, signature, visibility, call sites, `reachable_from`, existing tests, and the old and new source. A method marked `affected` did not change its body. It reads a constant that did (`via=k01`). A class or module that only one side defines anywhere is listed as an `added` or `removed` constant, with its header line as the source. A file that reopens an existing class adds nothing.
 
 Methods in test files (under `test/` or `spec/`, or named `test_*.rb` or `*_test.rb`) are listed too, when the change edits tests. They are not targets for candidate tests. Skip them.
 
@@ -88,7 +88,7 @@ Tags are hints, not a verdict. They are sorted:
 
 - `touches:changed_method` — the test names a method the diff changed.
 - `touches:unchanged_caller` — the test goes through an entry point the diff did not edit, and that entry point reaches a changed method.
-- `discard:signature_change` — `NameError`, `NoMethodError`, or an arity `ArgumentError` on a symbol the diff removed or rewrote. An `ArgumentError` raised on purpose is kept.
+- `discard:signature_change` — `NameError`, `NoMethodError`, or an arity `ArgumentError` on a symbol the diff removed or rewrote, including a removed nested class such as `Model::Unsupported`. An `ArgumentError` raised on purpose is kept.
 - `discard:load_error` — `LoadError` on head. `discard:timeout` — the head run timed out. Timeouts are not rerun.
 - The related id (`m05`, or `-` when none) is the downstream modified method when several changed methods sit on the path. Read that method's old and new source before you judge.
 
