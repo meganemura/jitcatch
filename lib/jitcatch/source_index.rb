@@ -69,10 +69,10 @@ module JitCatch
 
     # The names a method refers to in code, with the same-file helpers it
     # calls: method calls, constant reads, and symbols. A constructor call
-    # is also listed as `Owner.new`. Strings and comments are not read. A
-    # name the file does not define as a method is read from the whole file.
-    def referenced_names(qualified = nil)
-      start = @methods.find { |method| method.qualified == qualified } if qualified
+    # is also listed as `Owner.new`. Strings and comments are not read. When
+    # the file defines no method by that name, the whole file is read.
+    def referenced_names(qualified)
+      start = @methods.find { |method| method.qualified == qualified }
       return @references.values.flatten.uniq.sort unless start
 
       by_bare = @methods.group_by(&:bare_name)
