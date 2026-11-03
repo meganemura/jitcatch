@@ -228,7 +228,8 @@ class TestAssessor < Minitest::Test
 
   # A dropped initialize leaves Exception#initialize, which Ruby defines in
   # C, so its arity error shows the caller's line first and no changed
-  # method's line at all.
+  # method's line at all. Ruby 3.3 and 4.0 print that line again for the
+  # caller's own frame, then the frame that called the caller.
   def test_an_arity_error_with_no_ruby_callee_frame_takes_the_caller_from_the_first_frame
     doc = {
       "methods" => [method("m01", "removed", "removed", "initialize", [], 1)],
@@ -237,13 +238,19 @@ class TestAssessor < Minitest::Test
         candidate("t01", "NewTest#test_a", %w[Calc.new], error("ArgumentError", "wrong number of arguments (given 2, expected 0..1)"),
                   frames(".jitcatch/newtest.rb", 4)),
         candidate("t02", "NewTest#test_b", %w[Calc.new], error("ArgumentError", "wrong number of arguments (given 2, expected 0..1)"),
-                  frames("lib/build.rb", 7))
+                  frames("lib/build.rb", 7)),
+        candidate("t03", "NewTest#test_c", %w[Calc.new], error("ArgumentError", "wrong number of arguments (given 2, expected 0..1)"),
+                  frames(".jitcatch/newtest.rb", 4) * 2),
+        candidate("t04", "NewTest#test_d", %w[Calc.new], error("ArgumentError", "wrong number of arguments (given 2, expected 0..1)"),
+                  (frames("lib/build.rb", 7) * 2) + frames(".jitcatch/newtest.rb", 9))
       ]
     }
     out = JitCatch::Assessor.apply(doc)["tests"].to_h { |test| [test["id"], test["tags"]] }
     assert_equal({
       "t01" => ["discard:signature_change", "error:ArgumentError", "touches:changed_method"],
-      "t02" => ["caller:unchanged:lib/build.rb:7", "error:ArgumentError", "report", "touches:changed_method"]
+      "t02" => ["caller:unchanged:lib/build.rb:7", "error:ArgumentError", "report", "touches:changed_method"],
+      "t03" => ["discard:signature_change", "error:ArgumentError", "touches:changed_method"],
+      "t04" => ["caller:unchanged:lib/build.rb:7", "error:ArgumentError", "report", "touches:changed_method"]
     }, out)
   end
 
