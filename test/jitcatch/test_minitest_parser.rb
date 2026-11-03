@@ -55,4 +55,34 @@ class TestMinitestParser < Minitest::Test
     assert_equal "LoadError", parsed["file_error"]["error_class"]
     assert_equal ".jitcatch/bad_test.rb", parsed["file_error"]["backtrace"].first["file"]
   end
+  def test_output_cut_off_inside_an_issue_block
+    long = (1..25).map { |n| "line #{n}" }.join("\n")
+    stdout = <<~OUT
+      DemoTest#test_ok = 0.00 s = .
+        1) Failure:
+
+        2) Failure:
+      DemoTest#test_long:
+      #{long}
+    OUT
+    parsed = JitCatch::MinitestParser.parse(stdout, "")
+    assert_equal ["pass", nil], parsed["tests"]["DemoTest#test_ok"].values_at("status", "error_class")
+    long_result = parsed["tests"]["DemoTest#test_long"]
+    assert_equal (1..20).map { |n| "line #{n}" }.join("\n"), long_result["message"]
+    assert_equal ["DemoTest#test_ok", "DemoTest#test_long"], parsed["tests"].keys
+    refute parsed["summary"]
+  end
+
+  def test_file_errors_from_each_stream
+    {
+      ["", "cannot load such file -- nope\n"] => "LoadError",
+      ["", "x.rb:3: syntax error, unexpected end-of-input\n"] => "SyntaxError",
+      ["boom (KeyError)\n", ""] => "KeyError",
+      ["", "something broke\n"] => "RuntimeError"
+    }.each do |(stdout, stderr), error_class|
+      assert_equal error_class, JitCatch::MinitestParser.parse(stdout, stderr)["file_error"]["error_class"], stderr + stdout
+    end
+    silent = JitCatch::MinitestParser.parse("", "")
+    assert_equal [{}, false, "minitest summary not found"], [silent["tests"], silent["summary"], silent["file_error"]["message"]]
+  end
 end

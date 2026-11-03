@@ -37,4 +37,35 @@ class TestDiffParser < Minitest::Test
       { "status" => "A", "file" => "lib/new.rb" }
     ], status
   end
+  def test_added_files_bare_counts_and_headerless_lines
+    diff = <<~DIFF
+      --- a/stray.rb
+      @@ -1 +1 @@
+      diff --git a/bin/tool b/bin/tool
+      old mode 100644
+      new mode 100755
+      diff --git a/lib/new.rb b/lib/new.rb
+      --- /dev/null
+      +++ b/lib/new.rb
+      @@ -0,0 +1,2 @@
+      diff --git a/lib/old.rb b/lib/old.rb
+      --- a/lib/old.rb
+      +++ /dev/null
+      @@ -3 +2,0 @@
+    DIFF
+    assert_equal [
+      { "old_path" => nil, "new_path" => nil, "hunks" => [] },
+      { "old_path" => nil, "new_path" => "lib/new.rb",
+        "hunks" => [{ "old_start" => 0, "old_count" => 0, "new_start" => 1, "new_count" => 2 }] },
+      { "old_path" => "lib/old.rb", "new_path" => nil,
+        "hunks" => [{ "old_start" => 3, "old_count" => 1, "new_start" => 2, "new_count" => 0 }] }
+    ], JitCatch::DiffParser.parse(diff)
+  end
+
+  def test_an_empty_side_of_a_hunk_overlaps_nothing
+    hunks = [{ "old_start" => 0, "old_count" => 0, "new_start" => 1, "new_count" => 2 }]
+    refute JitCatch::DiffParser.overlaps?(0, 5, hunks, "old")
+    assert JitCatch::DiffParser.overlaps?(2, 5, hunks, "new")
+    assert_equal [{ "status" => "M", "file" => "a.rb" }], JitCatch::DiffParser.name_status("\nM\ta.rb\n\n")
+  end
 end
