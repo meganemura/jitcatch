@@ -53,7 +53,7 @@ module JitCatch
         base_bundle = Thread.new { bundle_status(first.base, normalizer) }
         head_bundle = bundle_status(first.head, normalizer)
         bundle = { "base" => base_bundle.value, "head" => head_bundle }
-        rows = classify_files(files, pairs, normalizer, change)
+        rows = classify_files(files, pairs, normalizer, mention_names(change))
       ensure
         pairs.each do |pair|
           @git.worktree_remove(pair.base)
@@ -96,7 +96,7 @@ module JitCatch
 
     # Each worker takes the next file and runs it in its own pair, so the
     # rows do not depend on which worker ran which file.
-    def classify_files(files, pairs, normalizer, change)
+    def classify_files(files, pairs, normalizer, known)
       queue = Queue.new
       files.each { |relative| queue << relative }
       queue.close
@@ -104,7 +104,7 @@ module JitCatch
         Thread.new do
           found = []
           while (relative = queue.pop)
-            found.concat(classify_file(relative, pair.base, pair.head, normalizer, change))
+            found.concat(classify_file(relative, pair.base, pair.head, normalizer, known))
           end
           found
         end
@@ -112,9 +112,8 @@ module JitCatch
       threads.flat_map(&:value)
     end
 
-    def classify_file(relative, base_dir, head_dir, normalizer, change)
+    def classify_file(relative, base_dir, head_dir, normalizer, known)
       source = File.read(File.join(@tests_dir, relative), mode: "r:bom|utf-8")
-      known = mention_names(change)
       index = SourceIndex.parse(source, file: relative)
       # Each side runs in its own worktree, so the two can run at once.
       base_thread = Thread.new { execute(base_dir, relative, normalizer) }
