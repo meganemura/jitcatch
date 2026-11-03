@@ -184,7 +184,7 @@ jitcatch run --repo DIR BASE HEAD TESTS_DIR
 そのとき `context` と `run` は `head` の下に `warning:` 行を出す。
 その行は、そのコミットの数と、代わりに `BASE` に渡すマージベースを示す。
 
-`assess` は件数と候補の行を再出力する。
+`assess` は run の警告、件数、候補の行を再出力する。
 掛けるルールは `run` と同じである。
 行には失敗の最初の行か、Minitest の差分の期待行と実際行が出る。
 そのどちらかが 100 文字を超えると、値の違う Hash のエントリか、最初に違う桁のまわりと `^ column N` の印を出す。

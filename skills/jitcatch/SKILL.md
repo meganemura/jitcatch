@@ -158,7 +158,7 @@ jitcatch assess RUN.json
 jitcatch assess --json RUN.json
 ```
 
-`RUN.json` is the document from `jitcatch run --json`, not the text report. This reprints the counts and the candidate rows. It does not call a model, and it does not decide intended versus regression.
+`RUN.json` is the document from `jitcatch run --json`, not the text report. This reprints the run's warnings (such as `base is not an ancestor of head`), the counts, and the candidate rows. It does not call a model, and it does not decide intended versus regression.
 
 ## Report to the human
 

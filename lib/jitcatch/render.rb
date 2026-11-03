@@ -84,6 +84,7 @@ module JitCatch
       lines << "version #{doc["version"]}"
       lines << "base #{doc["base"]}"
       lines << "head #{doc["head"]}"
+      lines.concat(warning_lines(doc))
       lines << counts_line(doc["counts"])
       lines.concat(assess_body(doc))
       finish(lines)
@@ -95,6 +96,7 @@ module JitCatch
         "version" => doc["version"],
         "base" => doc["base"],
         "head" => doc["head"],
+        "warnings" => Array(doc["warnings"]),
         "counts" => doc["counts"],
         "candidates" => candidate_rows(doc)
       }

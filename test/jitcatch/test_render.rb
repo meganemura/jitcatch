@@ -212,6 +212,14 @@ constants: (none)
     assert_equal ["expected: 3"], JitCatch::Render.message_lines({ "message" => "expected: 3\nboom" })
   end
 
+  def test_assess_prints_the_warnings_of_the_run
+    doc = { "version" => "0.1.0", "base" => "b", "head" => "h", "warnings" => ["base is not an ancestor of head"], "tests" => [],
+            "counts" => { "generated" => 0, "no_signal" => 0, "fail_on_base" => 0, "candidates" => 0, "flaky" => 0, "discarded" => 0, "reported" => 0 } }
+
+    assert JitCatch::Render.assess_text(doc).start_with?("jitcatch assess\nversion 0.1.0\nbase b\nhead h\nwarning: base is not an ancestor of head\ncounts ")
+    assert_equal ["base is not an ancestor of head"], JitCatch::Render.assess_json(doc)["warnings"]
+  end
+
   def test_a_rerun_line_shows_the_first_message_line_that_moved
     test = { "head" => { "message" => "Expected: 0\n  Actual: 1" }, "reruns" => [{ "status" => "fail", "error_class" => "Minitest::Assertion", "message_first_line" => "Expected: 0", "message" => "Expected: 0\n  Actual: 2" }] }
 
