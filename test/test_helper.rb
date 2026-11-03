@@ -7,6 +7,7 @@ require "jitcatch"
 require "fileutils"
 require "open3"
 require "tmpdir"
+require "shellwords"
 require_relative "support/repo"
 
 module JitCatch
@@ -60,6 +61,14 @@ module JitCatch
         end
       RUBY
       repo.commit("Drop helper, offset scale.", date: "2026-02-12T00:00:00Z")
+    end
+
+    def with_env(values)
+      saved = values.keys.to_h { |key| [key, ENV[key]] }
+      values.each { |key, value| ENV[key] = value }
+      yield
+    ensure
+      saved&.each { |key, value| ENV[key] = value }
     end
 
     def write_tests(dir, files)

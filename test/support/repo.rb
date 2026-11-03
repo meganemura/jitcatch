@@ -8,8 +8,9 @@ module Support
   class Repo
     attr_reader :dir
 
-    def initialize
-      @dir = Dir.mktmpdir("jitcatch-repo-")
+    def initialize(dir = nil)
+      @dir = dir || Dir.mktmpdir("jitcatch-repo-")
+      FileUtils.mkdir_p(@dir)
       git("init", "-b", "main")
       git("config", "user.email", "jittest@example.local")
       git("config", "user.name", "jittest")

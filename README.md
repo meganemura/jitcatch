@@ -186,7 +186,7 @@ Three rules then turn a candidate into `discarded`: a `LoadError` on head, a tim
 
 The same repository and the same tests produce the same bytes. Order is fixed, the text has no timestamps, and a worktree's absolute root is written as `{worktree}/` in a message (as in `{worktree}/lib/cart.rb`) and dropped from a backtrace frame. Ruby's own prefix is written as `{ruby}/`.
 
-Each candidate row under `assess:` ends with a `rerun:` line, and every `--json` row has `rerun`. It runs that one test again from the repository root on the checkout you have, with `{tests}/` standing for the `TESTS_DIR` you passed: `rspec {tests}/cart_spec.rb:11`, or `ruby -Ilib -I. {tests}/cart_test.rb -n CartTest#test_total`, behind `bundle exec` when head has a `Gemfile`. A `<file>#load` or `<file>#timeout` row reruns the whole file.
+Each candidate row under `assess:` ends with a `rerun:` line, and every `--json` row has `rerun`. It runs that one test again from the repository root on the checkout you have, with `{tests}/` standing for the `TESTS_DIR` you passed: `ruby -Ilib -I. -e 'require "rspec/core"; RSpec::Core::RubyProject.instance_variable_set(:@project_root, Dir.pwd); exit(RSpec::Core::Runner.run(ARGV))' {tests}/cart_spec.rb:11`, or `ruby -Ilib -I. {tests}/cart_test.rb -n CartTest#test_total`, behind `bundle exec` when head has a `Gemfile`. A `<file>#load` or `<file>#timeout` row reruns the whole file. The RSpec line is not plain `rspec`: `rspec` puts `lib/` of the nearest directory that holds `spec/` first on the load path, so a checkout under a Rails app's `tmp/` would load the app's `lib/`. The line pins that directory to the working directory, and the run does the same in its worktrees.
 
 ## Install
 

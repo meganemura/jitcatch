@@ -58,14 +58,18 @@ module JitCatch
     module RSpec
       module_function
 
-      # `--backtrace` keeps the gem frames that tell a gem's error apart.
-      # Formatters given here replace the ones a `.rspec` file names.
-      LAUNCH = 'require "rspec/core"; exit(RSpec::Core::Runner.run(ARGV))'
+      # RSpec puts lib/ of the nearest directory that holds spec/ first on
+      # the load path, which under a Rails app's tmp/ is the app's lib/, not
+      # the checkout's. Pinning that directory to the working directory
+      # loads the checkout's lib/ in the run and in its rerun line alike.
+      LAUNCH = 'require "rspec/core"; RSpec::Core::RubyProject.instance_variable_set(:@project_root, Dir.pwd); exit(RSpec::Core::Runner.run(ARGV))'
 
       def names?(basename)
         basename.end_with?("_spec.rb")
       end
 
+      # `--backtrace` keeps the gem frames that tell a gem's error apart.
+      # Formatters given here replace the ones a `.rspec` file names.
       def arguments(path)
         ["-e", LAUNCH, "--", "--format", "json", "--out", REPORT, "--seed", "1", "--backtrace", "--no-color", path]
       end
@@ -78,8 +82,10 @@ module JitCatch
         'begin; require "rspec/core"; rescue LoadError; $stderr.puts %(rspec-core is not in the bundle: add gem "rspec" to the Gemfile); exit 1; end'
       end
 
+      # The same Ruby flags and launch as the run, so the rerun loads what
+      # the row loaded.
       def rerun(file, _name, line)
-        ["rspec", Minitest.quote("#{TESTS}#{file}#{":#{line}" if line}")].join(" ")
+        ["ruby", "-Ilib", "-I.", "-e", LAUNCH, "#{TESTS}#{file}#{":#{line}" if line}"].map { |part| Minitest.quote(part) }.join(" ")
       end
     end
   end

@@ -24,7 +24,8 @@ class TestFramework < Minitest::Test
   def test_a_rerun_names_one_test_or_the_whole_file
     assert_equal "ruby -Ilib -I. {tests}/a_test.rb -n A#test_b", JitCatch::Framework::Minitest.rerun("a_test.rb", "A#test_b", nil)
     assert_equal "ruby -Ilib -I. {tests}/a_test.rb", JitCatch::Framework::Minitest.rerun("a_test.rb", nil, nil)
-    assert_equal "rspec {tests}/a_spec.rb:7", JitCatch::Framework::RSpec.rerun("a_spec.rb", "A b", 7)
-    assert_equal "rspec {tests}/a_spec.rb", JitCatch::Framework::RSpec.rerun("a_spec.rb", nil, nil)
+    launch = %('require "rspec/core"; RSpec::Core::RubyProject.instance_variable_set(:@project_root, Dir.pwd); exit(RSpec::Core::Runner.run(ARGV))')
+    assert_equal "ruby -Ilib -I. -e #{launch} {tests}/a_spec.rb:7", JitCatch::Framework::RSpec.rerun("a_spec.rb", "A b", 7)
+    assert_equal "ruby -Ilib -I. -e #{launch} {tests}/a_spec.rb", JitCatch::Framework::RSpec.rerun("a_spec.rb", nil, nil)
   end
 end

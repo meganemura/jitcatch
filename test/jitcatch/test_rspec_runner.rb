@@ -146,12 +146,12 @@ class TestRSpecRunner < Minitest::Test
 
       total = doc["tests"].find { |test| test["name"] == "Cart#total sums the prices" }
       assert_equal "expected: 6", total["head"]["message_first_line"]
-      assert_equal "rspec {tests}/cart_spec.rb:11", total["rerun"]
-      assert_equal "rspec {tests}/broken_spec.rb", doc["tests"].find { |test| test["name"] == "broken_spec.rb#load" }["rerun"]
+      assert_equal JitCatch::Framework::RSpec.rerun("cart_spec.rb", nil, 11), total["rerun"]
+      assert_equal JitCatch::Framework::RSpec.rerun("broken_spec.rb", nil, nil), doc["tests"].find { |test| test["name"] == "broken_spec.rb#load" }["rerun"]
 
       text = JitCatch::Render.run_text(doc)
       assert_includes text, "reported Cart#total sums the prices cart_spec.rb:11 #{total["method_id"]}\n"
-      assert_includes text, "    expected: 6\n    got: 7\n    rerun: rspec {tests}/cart_spec.rb:11\n"
+      assert_includes text, "    expected: 6\n    got: 7\n    rerun: #{total["rerun"]}\n"
     end
   end
 
@@ -185,6 +185,36 @@ class TestRSpecRunner < Minitest::Test
         "helper rejects nil" => ["discarded", ["assertion", "discard:signature_change"]],
         "scale multiplies" => ["discarded", ["discard:signature_change", "error:ArgumentError"]]
       }, rows)
+    end
+  end
+
+  # RSpec puts lib/ of the nearest directory that holds spec/ first on the
+  # load path, so a repository under a Rails app's tmp/ would load the app's
+  # lib/ in the run's worktrees and in the rerun line.
+  def test_the_run_and_its_rerun_load_the_repository_s_lib_under_another_project
+    Dir.mktmpdir("jitcatch-outer-") do |outer|
+      FileUtils.mkdir_p(File.join(outer, "spec"))
+      FileUtils.mkdir_p(File.join(outer, "lib"))
+      File.write(File.join(outer, "lib", "price.rb"), "module Price\n  def self.cents = 100\nend\n")
+      repo = Support::Repo.new(File.join(outer, "tmp", "repo"))
+      repo.write("lib/price.rb", "module Price\n  def self.cents = 100\nend\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/price.rb", "module Price\n  def self.cents = 101\nend\n")
+      repo.commit("Add a cent.", date: "2026-02-12T00:00:00Z")
+      tests = File.join(outer, "candidates")
+      write_tests(tests, {
+        "price_spec.rb" => %(require "price"\n\nRSpec.describe(Price) { it("costs a dollar") { expect(Price.cents).to eq(100) } }\n)
+      })
+
+      doc = with_env("TMPDIR" => File.join(outer, "tmp")) { execute(repo, tests) }
+
+      row = doc["tests"].fetch(0)
+      assert_equal "reported", row["disposition"], row["head"]["message"]
+      words = Shellwords.split(row["rerun"]).map { |word| word.sub(JitCatch::Framework::TESTS, "#{tests}/") }
+      stdout, status = Open3.capture2e(*words, chdir: repo.dir)
+      refute status.success?, stdout
+      assert_includes stdout, "got: 101"
     end
   end
 
@@ -233,7 +263,7 @@ class TestRSpecRunner < Minitest::Test
 
       assert_equal({ "base" => { "status" => "ok", "message" => "" }, "head" => { "status" => "ok", "message" => "" } }, doc["bundle"])
       row = doc["tests"].fetch(0)
-      assert_equal ["Flag is on", "reported", "bundle exec rspec {tests}/flag_spec.rb:4"], row.values_at("name", "disposition", "rerun"), row["head"]["message"]
+      assert_equal ["Flag is on", "reported", "bundle exec #{JitCatch::Framework::RSpec.rerun("flag_spec.rb", nil, 4)}"], row.values_at("name", "disposition", "rerun"), row["head"]["message"]
     end
   end
 

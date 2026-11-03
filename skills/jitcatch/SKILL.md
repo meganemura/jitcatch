@@ -117,7 +117,7 @@ When either worktree has a `Gemfile`, the report prints `bundle base ok` or `bun
 
 Judge only rows whose disposition is `reported`.
 
-Each candidate row under `assess:` ends with `rerun:`, the command that runs that one test again from the repository root on the checkout you have (`--json` rows carry it as `rerun`). `{tests}/` stands for your `TESTS_DIR`. A Minitest row reads `ruby -Ilib -I. {tests}/cart_test.rb -n CartTest#test_total`, an RSpec row `rspec {tests}/cart_spec.rb:11`, both behind `bundle exec` when head has a `Gemfile`. Use it to rerun a row on head after you read the diff.
+Each candidate row under `assess:` ends with `rerun:`, the command that runs that one test again from the repository root on the checkout you have (`--json` rows carry it as `rerun`). `{tests}/` stands for your `TESTS_DIR`. A Minitest row reads `ruby -Ilib -I. {tests}/cart_test.rb -n CartTest#test_total`, an RSpec row `ruby -Ilib -I. -e 'require "rspec/core"; RSpec::Core::RubyProject.instance_variable_set(:@project_root, Dir.pwd); exit(RSpec::Core::Runner.run(ARGV))' {tests}/cart_spec.rb:11`, both behind `bundle exec` when head has a `Gemfile`. The RSpec line runs Ruby with the run's `-I` flags and pins RSpec's project root to the working directory, because `rspec` puts `lib/` of the nearest directory holding `spec/` first on the load path: a checkout under a Rails app's `tmp/` would load the app's `lib/`. Use it to rerun a row on head after you read the diff.
 
 | Bucket | Meaning |
 | --- | --- |
