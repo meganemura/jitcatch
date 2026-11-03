@@ -23,8 +23,6 @@ module JitCatch
       @timeout = timeout
       @coverage = coverage
       raise UsageError, "tests directory not found: #{tests_dir}" unless File.directory?(@tests_dir)
-      raise UsageError, "--reruns must be >= 0" if @reruns.negative?
-      raise UsageError, "--timeout must be >= 1" if @timeout < 1
     end
 
     def run
