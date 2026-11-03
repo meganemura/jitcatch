@@ -104,6 +104,77 @@ class TestAssessor < Minitest::Test
     assert_equal out["counts"], again["counts"]
   end
 
+  def test_candidate_ids_follow_test_ids_and_other_rows_carry_nulls
+    stale = { "method_id" => "m09", "tags" => ["report"], "disposition" => "reported", "candidate_id" => "c09" }
+    doc = {
+      "methods" => [],
+      "tests" => [
+        candidate("t02", "BTest#test_b", [], failure("b")),
+        { "id" => "t03", "name" => "CTest#test_c", "classification" => "no_signal", "base" => pass_result, "head" => pass_result }.merge(stale),
+        candidate("t01", "ATest#test_a", [], failure("a")).merge(stale)
+      ]
+    }
+    out = JitCatch::Assessor.apply(doc)["tests"].to_h { |test| [test["id"], test] }
+    assert_equal ["c01", nil, ["assertion", "report"]], out["t01"].values_at("candidate_id", "method_id", "tags")
+    assert_equal "c02", out["t02"]["candidate_id"]
+    assert_equal [nil, nil, [], "no_signal"], %w[candidate_id method_id tags disposition].map { |key| out["t03"].fetch(key) }
+  end
+
+  def test_rules_need_the_error_class_and_the_removed_name
+    doc = {
+      "methods" => [
+        method("m01", "removed", "removed", "gone", [], 1),
+        method("m02", "modified", "changed", "resize", [], 10).merge("old_start" => 20, "old_end" => 22),
+        method("m03", "modified", "same", "show", ["A#render"], 30),
+        method("m04", "modified", "removed", "shrink", [], 60),
+        method("m05", "modified", "changed", "scale", [], 40)
+      ],
+      "constants" => [],
+      "tests" => [
+        candidate("t01", "ShrinkTest#test_a", [], error("NoMethodError", "undefined method 'shrink' for an instance of Calc")),
+        candidate("t02", "ResizeTest#test_a", [], error("NoMethodError", "undefined method 'resize' for an instance of Calc")),
+        candidate("t03", "GoneTest#test_a", [], error("RuntimeError", "undefined method 'gone' for nil")),
+        candidate("t04", "ScaleTest#test_a", [], error("ArgumentError", "wrong number of arguments (given 1, expected 2)"),
+                  frames("lib/calc.rb", 41) + frames("lib/calc.rb", 31)),
+        candidate("t05", "ShowTest#test_a", [], error("ArgumentError", "wrong number of arguments (given 1, expected 2)"),
+                  frames("lib/calc.rb", 31)),
+        candidate("t06", "OtherFileTest#test_a", [], failure("x"), frames("lib/other.rb", 31)),
+        candidate("t07", "OldLinesTest#test_a", [], failure("x"), frames("lib/calc.rb", 21)),
+        candidate("t08", "SlowTest#test_a", [], { "status" => "timeout" }),
+        candidate("t09", "RenderTest#test_a", ["render"], failure("x"))
+      ]
+    }
+    out = JitCatch::Assessor.apply(doc)["tests"].to_h { |test| [test["id"], [test["method_id"], test["tags"]]] }
+    assert_equal({
+      "t01" => ["m04", ["discard:signature_change", "error:NoMethodError"]],
+      "t02" => ["m02", ["error:NoMethodError", "report"]],
+      "t03" => ["m01", ["error:RuntimeError", "report"]],
+      "t04" => ["m03", ["discard:signature_change", "error:ArgumentError", "touches:changed_method"]],
+      "t05" => ["m03", ["error:ArgumentError", "report", "touches:changed_method"]],
+      "t06" => [nil, ["assertion", "report"]],
+      "t07" => ["m02", ["assertion", "report", "touches:changed_method"]],
+      "t08" => [nil, ["discard:timeout"]],
+      "t09" => ["m03", ["assertion", "report", "touches:unchanged_caller"]]
+    }, out)
+  end
+
+  def test_removed_constants_match_by_bare_name_full_name_or_suffix
+    doc = {
+      "methods" => [],
+      "constants" => [
+        { "id" => "k01", "change" => "removed", "name" => "Calc::OLD", "bare_name" => "OLD" },
+        { "id" => "k02", "change" => "modified", "name" => "Calc::KEPT", "bare_name" => "KEPT" }
+      ],
+      "tests" => [
+        "OLD", "Calc::OLD", "Shop::Calc::OLD", "KEPT", "Calc::KEPT", "NEW"
+      ].each_with_index.map { |name, index|
+        candidate(format("t%02d", index + 1), "ConstTest#test_#{index}", [], error("NameError", "uninitialized constant #{name}"))
+      }
+    }
+    out = JitCatch::Assessor.apply(doc)["tests"].map { |test| test["disposition"] }
+    assert_equal %w[discarded discarded discarded reported reported reported], out
+  end
+
   def method(id, change, signature, bare, reachable, start_line)
     {
       "id" => id,
