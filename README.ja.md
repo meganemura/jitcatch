@@ -10,7 +10,7 @@ jitcatch は、変更の親で通り、その変更で落ちる Ruby のテス�
 
 Ruby 3.3 以降。追加の gem はない。`minitest` と `prism` は Ruby に付いている。`BASE` は親のリビジョン、`HEAD` は変更である。どちらもコミットを指す。未コミットのファイルは diff に入らない。
 
-Minitest のファイルはスクラッチディレクトリに自分で書く。`require "minitest/autorun"` のあと、リポジトリがライブラリを読むのと同じ `require` を書く。実行は jitcatch が行う。`reported` の各行を、意図と diff と照らして判断する。ブリーフの意図は `BASE` から `HEAD` までのコミットメッセージである。likely-regression は、振る舞いが変わり、意図がその変更を求めていないとき。intended は、意図がその変更を求めているとき。unclear は、意図だけでは決められないとき。
+Minitest のファイルはスクラッチディレクトリに自分で書く。`require "minitest/autorun"` のあと、リポジトリがライブラリを読むのと同じ `require` を書く。実行は jitcatch が行う。`reported` の各行を、意図と diff と照らして判断する。ブリーフの意図は `BASE` から `HEAD` までのコミットメッセージである。各メッセージの末尾で git がトレーラーとして読む行（`Co-Authored-By:` など）は含めない。likely-regression は、振る舞いが変わり、意図がその変更を求めていないとき。intended は、意図がその変更を求めているとき。unclear は、意図だけでは決められないとき。
 
 `examples/fixtures/shop` はセント単位のカートである。小計が 10000 セントに達すると 10% のボリューム割引が付く。税は 8% で、端数は half up。既存テストは 10000 セントちょうどを見ていない。`ruby script/setup_shop` は `examples/shop` に git の履歴を書く（このディレクトリは gitignore してある）。
 

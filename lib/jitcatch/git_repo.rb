@@ -28,8 +28,18 @@ module JitCatch
       git("diff", "--name-status", "--no-renames", "--end-of-options", base, head)
     end
 
-    def log_messages(base, head)
-      git("log", "--reverse", "--format=%B%x1e", "--end-of-options", "#{base}..#{head}")
+    # Oldest first. %(trailers) prints the block git itself parses as trailers,
+    # verbatim, so cutting it off the end of %B leaves the message without it.
+    def commit_messages(base, head)
+      raw = git("log", "--reverse", "--format=%B%x1f%(trailers)%x1e", "--end-of-options", "#{base}..#{head}")
+      raw.split("\x1e").filter_map do |record|
+        message, trailers = record.split("\x1f", 2)
+        next if trailers.nil?
+
+        message = message.rstrip
+        block = trailers.rstrip
+        block.empty? ? message : message.delete_suffix(block)
+      end
     end
 
     def ruby_files(ref)

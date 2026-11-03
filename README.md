@@ -10,7 +10,7 @@ The method follows Meta's catching JiT tests ([Harden and Catch](https://arxiv.o
 
 Ruby 3.3 or newer. No gems. `minitest` and `prism` ship with Ruby. `BASE` is the parent revision and `HEAD` is the change. Each must resolve to a commit. Uncommitted files are not in the diff.
 
-You write the Minitest files in a scratch directory: `require "minitest/autorun"`, then require the library the way the repository loads it. jitcatch runs those files. You judge each `reported` row against the intent and the diff. The intent in the brief is the commit messages from `BASE` to `HEAD`. likely-regression means the behavior changed and the intent does not ask for that change. intended means the intent asks for it. unclear means the intent is not enough to tell.
+You write the Minitest files in a scratch directory: `require "minitest/autorun"`, then require the library the way the repository loads it. jitcatch runs those files. You judge each `reported` row against the intent and the diff. The intent in the brief is the commit messages from `BASE` to `HEAD`, without the trailer lines git parses at the end of each message (such as `Co-Authored-By:`). likely-regression means the behavior changed and the intent does not ask for that change. intended means the intent asks for it. unclear means the intent is not enough to tell.
 
 `examples/fixtures/shop` is a cart priced in integer cents. A 10% volume discount applies once the subtotal reaches 10000 cents. Tax is 8%, rounded half up. The existing tests never check exactly 10000 cents. `ruby script/setup_shop` writes a git history at `examples/shop` (that directory is gitignored):
 

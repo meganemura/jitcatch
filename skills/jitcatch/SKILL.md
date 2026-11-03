@@ -23,7 +23,7 @@ Exit status 0 is success, including when catching tests were found. Exit status 
 
 Pass `--repo DIR` when that repository is not the working directory.
 
-Commit messages from `BASE` to `HEAD` are the intent the CLI can see (`git log BASE..HEAD`, oldest first, commits separated by `---`). Also read the pull request or the task when you have it. The tool does not.
+Commit messages from `BASE` to `HEAD` are the intent the CLI can see (`git log BASE..HEAD`, oldest first, commits separated by `---`). The CLI leaves out the trailer block that git parses at the end of each message (`Co-Authored-By:`, `Signed-off-by:`, and the like). Also read the pull request or the task when you have it. The tool does not.
 
 ## Context
 
@@ -35,7 +35,7 @@ jitcatch context --repo DIR --coverage FILE BASE HEAD
 
 Omit `--repo` when the working directory is the repository.
 
-Read `intent:` first. It prints whole commit messages, so trailer lines such as `Co-Authored-By:` appear there too. Then the changed files, constants (`k01`, …), and methods (`m01`, …). Each method has a change kind, signature, visibility, call sites, `reachable_from`, existing tests, and the old and new source. A method marked `affected` did not change its body. It reads a constant that did (`via=k01`).
+Read `intent:` first. Then the changed files, constants (`k01`, …), and methods (`m01`, …). Each method has a change kind, signature, visibility, call sites, `reachable_from`, existing tests, and the old and new source. A method marked `affected` did not change its body. It reads a constant that did (`via=k01`).
 
 `tests: (none)` means no test file names that method. A test that calls it through a `reachable_from` entry point still covers it, so look for tests of the entry points too.
 

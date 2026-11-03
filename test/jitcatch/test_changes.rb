@@ -71,6 +71,29 @@ class TestChanges < Minitest::Test
     end
   end
 
+  def test_intent_leaves_out_each_commit_trailer_block
+    with_repo do |repo|
+      repo.write("lib/box.rb", BOX)
+      repo.commit("Initial box", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/box.rb", BOX.sub("LIMIT = 10", "LIMIT = 5"))
+      repo.commit(<<~MSG, date: "2026-02-12T00:00:00Z")
+        Lower LIMIT.
+
+        Note: this paragraph is not the last one.
+
+        Co-Authored-By: Pair <pair@example.local>
+        Session: https://example.local/1
+      MSG
+      repo.write("lib/box.rb", BOX.sub("LIMIT = 10", "LIMIT = 4"))
+      repo.commit("Lower it again.\n\nReviewed-by: Rev <rev@example.local>\n", date: "2026-02-13T00:00:00Z")
+
+      doc = JitCatch::Changes.between(repo.dir, "base", "HEAD")
+
+      assert_equal ["Lower LIMIT.", "Note: this paragraph is not the last one.", "---", "Lower it again."], doc["intent"]
+    end
+  end
+
   def test_method_edit_includes_old_and_new_source_and_callsites
     with_repo do |repo|
       repo.write("lib/calc.rb", <<~RUBY)

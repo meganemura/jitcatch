@@ -321,8 +321,7 @@ module JitCatch
     end
 
     def intent_lines(base, head)
-      raw = @git.log_messages(base, head)
-      messages = raw.split("\x1e").filter_map do |message|
+      messages = @git.commit_messages(base, head).filter_map do |message|
         lines = message.lines.map(&:strip).reject(&:empty?)
         lines.empty? ? nil : lines
       end
