@@ -82,6 +82,93 @@ class TestChangesGraph < Minitest::Test
     end
   end
 
+  RECEIVERS = <<~RUBY
+    module Ns
+      class A
+        def strip
+          BODY
+        end
+
+        def self.build
+          BODY
+        end
+
+        def again
+          strip
+        end
+
+        def mine
+          self.strip
+        end
+
+        def remake
+          self.class.build
+        end
+
+        def self.sample
+          new.strip
+        end
+      end
+
+      class B
+        def text(line)
+          line.strip
+        end
+
+        def fresh
+          A.new.strip
+        end
+
+        def made
+          A.build
+        end
+
+        def qualified
+          Ns::A.build
+        end
+
+        def unknown_class
+          File.build
+        end
+
+        def chained
+          A.build.strip
+        end
+      end
+    end
+
+    class C
+      include Helpers
+
+      def run
+        helper
+      end
+    end
+
+    module Helpers
+      def helper
+        BODY
+      end
+    end
+  RUBY
+
+  def test_a_call_on_a_receiver_of_unknown_class_is_not_an_edge
+    with_repo do |repo|
+      repo.write("lib/ns.rb", RECEIVERS.gsub("BODY", "1"))
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/ns.rb", RECEIVERS.gsub("BODY", "2"))
+      repo.commit("Change the leaves.", date: "2026-02-12T00:00:00Z")
+
+      doc = JitCatch::Changes.between(repo.dir, "base", "HEAD")
+      reach = doc["methods"].to_h { |method| [method["name"], method["reachable_from"]] }
+
+      assert_equal %w[Ns::A#again Ns::A#mine Ns::A.sample Ns::B#fresh], reach.fetch("Ns::A#strip")
+      assert_equal %w[Ns::A#remake Ns::B#chained Ns::B#made Ns::B#qualified], reach.fetch("Ns::A.build")
+      assert_equal %w[C#run], reach.fetch("Helpers#helper")
+    end
+  end
+
   def test_parse_errors_and_oversized_files_are_not_indexed
     with_repo do |repo|
       big = "class Big\n  def size\n    1\n  end\nend\n#{"#" * 200_001}\n"

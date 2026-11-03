@@ -369,26 +369,49 @@ module JitCatch
       methods = idx["methods"]
       by_class = methods.group_by { |method| [method.qualifier, method.bare_name] }
       by_bare = methods.group_by(&:bare_name)
+      qualifiers = methods.to_h { |method| [method.qualifier, true] }
       edges = []
       idx["calls"].each do |call|
         next if call.enclosing.nil? || test_file?(call.file)
 
-        qualifier, _sep, _bare = SourceIndex.split_qualified(call.enclosing)
-        same = by_class[[qualifier, call.bare_name]] || []
-        instance = same.select { |method| method.kind == "instance" }
-        target = if instance.size == 1
-          instance.first
-        elsif same.size == 1
-          same.first
-        elsif by_bare[call.bare_name]&.size == 1
-          by_bare[call.bare_name].first
-        end
+        target = call_target(call, by_class, by_bare, qualifiers)
         next if target.nil? || target.qualified == call.enclosing
 
         edges << { "from" => call.enclosing, "to" => target.qualified, "file" => call.file, "line" => call.line }
       end
       edges.uniq { |edge| [edge["from"], edge["to"], edge["file"], edge["line"]] }
         .sort_by { |edge| [edge["file"], edge["line"], edge["from"], edge["to"]] }
+    end
+
+    # A call on a receiver the source does not name gets no edge: a bare
+    # name alone would send `line.strip` to any indexed `strip`. An implicit
+    # `self` call still falls back to a unique bare name, for methods a class
+    # gets from a module or a superclass.
+    def call_target(call, by_class, by_bare, qualifiers)
+      qualifier, _sep, _bare = SourceIndex.split_qualified(call.enclosing)
+      receiver = call.receiver
+      case receiver.kind
+      when "self"
+        same = by_class[[qualifier, call.bare_name]] || []
+        instance = same.select { |method| method.kind == "instance" }
+        if instance.size == 1
+          instance.first
+        elsif same.size == 1
+          same.first
+        elsif by_bare[call.bare_name]&.size == 1
+          by_bare[call.bare_name].first
+        end
+      when "singleton", "instance"
+        owner = receiver.const.nil? ? qualifier : resolve_constant(receiver.const, qualifier, qualifiers)
+        found = (by_class[[owner, call.bare_name]] || []).select { |method| method.kind == receiver.kind }
+        found.first if found.size == 1
+      end
+    end
+
+    # Ruby looks a constant up from the innermost enclosing namespace out.
+    def resolve_constant(const, qualifier, qualifiers)
+      parts = qualifier.split("::")
+      parts.size.downto(0).map { |n| [*parts.first(n), const].join("::") }.find { |name| qualifiers.key?(name) }
     end
 
     # The cap keeps the nearest callers; the kept names print sorted.

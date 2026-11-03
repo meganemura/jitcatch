@@ -21,7 +21,13 @@ module JitCatch
     Constant = Data.define(
       :file, :bare_name, :qualifier, :qualified, :start_line, :end_line, :source
     )
-    Call = Data.define(:file, :bare_name, :line, :enclosing)
+    Call = Data.define(:file, :bare_name, :line, :enclosing, :receiver)
+    # What a call is sent to, as far as the source names it: the enclosing
+    # object (`self`), a class or module itself (`singleton`), an instance
+    # of one (`instance`), or a value only a run would know (`unknown`).
+    # `const` is the constant as written, or nil for the enclosing class.
+    Receiver = Data.define(:kind, :const)
+    UNKNOWN_RECEIVER = Receiver.new(kind: "unknown", const: nil)
 
     attr_reader :methods, :constants, :namespaces, :calls, :private_constants, :parse_error
 
@@ -328,7 +334,8 @@ module JitCatch
             file: @file,
             bare_name: node.name.to_s,
             line: node.location.start_line,
-            enclosing: enclosing
+            enclosing: enclosing,
+            receiver: receiver_of(node.receiver)
           )
           refer(enclosing, node.name)
           owner = constructor_owner(node)
@@ -366,6 +373,28 @@ module JitCatch
 
       first = node.arguments&.arguments&.first
       first.unescaped if first.is_a?(Prism::StringNode)
+    end
+
+    def receiver_of(node)
+      case node
+      when nil, Prism::SelfNode
+        Receiver.new(kind: "self", const: nil)
+      when Prism::ConstantReadNode, Prism::ConstantPathNode
+        Receiver.new(kind: "singleton", const: const_name(node))
+      when Prism::CallNode
+        inner = receiver_of(node.receiver)
+        if node.name == :class && inner.kind == "self" && !node.receiver.nil?
+          Receiver.new(kind: "singleton", const: nil)
+        elsif node.name == :new && inner.kind == "singleton"
+          Receiver.new(kind: "instance", const: inner.const)
+        elsif node.name == :new && inner.kind == "self"
+          Receiver.new(kind: "instance", const: nil)
+        else
+          UNKNOWN_RECEIVER
+        end
+      else
+        UNKNOWN_RECEIVER
+      end
     end
 
     def constructor_owner(node)
