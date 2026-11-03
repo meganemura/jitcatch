@@ -1070,7 +1070,7 @@ class TestRunner < Minitest::Test
         ENV.update(saved)
       end
       assert_equal %w[pass pass pass], doc["tests"].map { |test| test["base"]["status"] }, doc["tests"].map { |test| test["base"]["message"] }.join("\n")
-      assert_equal %w[JITCATCH_PASS JITCATCH_UNSET], doc["env"]
+      assert_equal [%w[JITCATCH_PASS JITCATCH_UNSET], %w[JITCATCH_UNSET]], doc.values_at("env", "env_unset")
       assert_equal({ "base" => { "status" => "none", "message" => "" }, "head" => { "status" => "none", "message" => "" } }, doc["bundle"])
     end
   end

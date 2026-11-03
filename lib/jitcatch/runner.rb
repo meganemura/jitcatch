@@ -74,6 +74,7 @@ module JitCatch
         "reruns" => @reruns,
         "timeout_s" => @timeout,
         "env" => @env_names,
+        "env_unset" => @env_names.reject { |name| ENV.key?(name) },
         "bundle" => bundle,
         "test_files_omitted" => omitted,
         "dependencies" => change["dependencies"],

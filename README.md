@@ -124,7 +124,7 @@ jitcatch run --repo DIR BASE HEAD TESTS_DIR
 | `--reruns N` | `run` | Extra runs on head after a pass-on-base / fail-on-head result. The default is 2. `0` skips the flake check. |
 | `--timeout SEC` | `run` | Seconds before a test file is killed. The default is 10. The minimum is 1. |
 | `--workers N` | `run` | Test files that run at the same time, each worker in its own base and head worktrees. The default is 1. Each worker runs two Ruby processes at once, so more workers help only while CPUs are idle. The report is the same for every N. |
-| `--env NAME` | `run` | Pass this variable from your environment to the test processes. Repeat it for more names. The run records the names, not the values. |
+| `--env NAME` | `run` | Pass this variable from your environment to the test processes. Repeat it for more names. The run records the names, not the values, and lists a name that is not set on an `env_unset` line. |
 
 | Command | Arguments |
 | --- | --- |
