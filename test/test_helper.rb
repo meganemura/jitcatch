@@ -73,6 +73,35 @@ module JitCatch
       repo.commit("Drop helper, offset scale.", date: "2026-02-12T00:00:00Z")
     end
 
+    # Head changes three methods named `parse` and the `Failure.result` one
+    # of them calls, so a bare name cannot tell the test's callee apart.
+    def same_named_history(repo)
+      sources = lambda do |mark|
+        repo.write("lib/a.rb", <<~RUBY)
+          module Failure
+            def self.result(text) = text.to_s + "#{mark}"
+          end
+
+          class Index
+            def self.parse(text) = text.to_s + "#{mark}"
+          end
+
+          class Report
+            def self.parse(text) = Failure.result(text) + "#{mark}"
+          end
+
+          class Log
+            def self.parse(text) = text.to_s + "#{mark}"
+          end
+        RUBY
+      end
+      sources.call("")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      sources.call("!")
+      repo.commit("Mark every parse.", date: "2026-02-12T00:00:00Z")
+    end
+
     def with_env(values)
       saved = values.keys.to_h { |key| [key, ENV[key]] }
       values.each { |key, value| ENV[key] = value }

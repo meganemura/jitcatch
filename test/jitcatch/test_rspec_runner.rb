@@ -141,7 +141,7 @@ class TestRSpecRunner < Minitest::Test
 
       rows = doc["tests"].to_h { |test| [test["name"], test.values_at("disposition", "line", "tags", "mentions")] }
       assert_equal({
-        "broken_spec.rb#load" => ["discarded", nil, ["discard:load_error", "error:LoadError", "touches:changed_method"], %w[Cart.new discount label]],
+        "broken_spec.rb#load" => ["discarded", nil, ["discard:load_error", "error:LoadError", "touches:changed_method"], %w[Cart#label Cart.new discount label]],
         "Cart#label names the cart" => ["no_signal", 17, [], %w[Cart.new label]],
         "Cart#total sums the prices" => ["reported", 11, %w[assertion report touches:changed_method], %w[Cart.new total]],
         "Cart counts the prices" => ["discarded", 22, ["discard:signature_change", "error:NoMethodError", "touches:changed_method"], %w[Cart.new count]],
@@ -324,6 +324,25 @@ class TestRSpecRunner < Minitest::Test
       # Ruby 3.3 adds a `rescue in` frame on the same line as the error's own.
       assert_equal({ "file" => ".jitcatch/a_spec.rb", "line" => 4 }, doc["tests"].fetch(0)["head"]["backtrace"].last)
       assert_includes JitCatch::Render.run_text(doc), "    outer\n    cause: KeyError: inner k\n    rerun: "
+    end
+  end
+
+# The example's group or its receiver names the class whose `parse` it calls.
+def test_the_described_class_picks_the_related_method_among_same_named_ones
+  with_repo do |repo|
+    same_named_history(repo)
+    tests = File.join(repo.dir, "candidates")
+    write_tests(tests, {
+      "index_spec.rb" => %(require "a"\n\nRSpec.describe Index do\n  let(:result) { described_class.parse("x") }\n\n  it("keeps the text") { expect(result).to eq("x") }\nend\n),
+      "log_spec.rb" => %(require "a"\n\nRSpec.describe "a log" do\n  it("keeps the text") { expect(Log.parse("x")).to eq("x") }\nend\n)
+    })
+
+      doc = execute(repo, tests)
+      ids = doc["methods"].to_h { |method| [method["name"], method["id"]] }
+      rows = doc["tests"].to_h { |test| [test["file"], test.values_at("method_id", "method_ids")] }
+
+      assert_equal [ids.fetch("Index.parse"), [ids.fetch("Index.parse")]], rows.fetch("index_spec.rb")
+      assert_equal [ids.fetch("Log.parse"), [ids.fetch("Log.parse")]], rows.fetch("log_spec.rb")
     end
   end
 

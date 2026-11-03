@@ -129,4 +129,26 @@ class TestAssessorProperty < Minitest::Test
       assert_equal expected, row["tags"].grep(/\Acaller:/)
     end
   end
+
+  # Among changed methods that share a bare name, a class the test sends
+  # the name to keeps only that class's method. A class with no method of
+  # the name keeps them all, since the call may reach one by inheritance.
+  def test_a_named_receiver_keeps_only_its_class_s_method_of_the_name
+    Hegel.test do |tc|
+      owners = tc.draw(subsequences(%w[Index Report Log Deep::Index], min_size: 1))
+      methods = owners.each_with_index.map { |owner, index|
+        { "id" => format("m%02d", index + 1), "change" => "modified", "bare_name" => "parse", "name" => "#{owner}.parse",
+          "file" => "lib/a.rb", "start_line" => index * 10 + 1, "end_line" => index * 10 + 2, "reachable_from" => [] }
+      }
+      receiver = tc.draw(sampled_from(%w[Index Log Other]))
+      test = { "id" => "t01", "name" => "T#test_a", "mentions" => ["#{receiver}.parse", "parse"], "classification" => "candidate",
+               "base" => { "status" => "pass" }, "head" => { "status" => "fail", "error_class" => "Minitest::Assertion", "message" => "x", "backtrace" => [] } }
+      row = JitCatch::Assessor.apply({ "methods" => methods, "constants" => [], "tests" => [test] })["tests"].fetch(0)
+
+      on_receiver = methods.select { |method| method["name"].delete_suffix(".parse").split("::").last == receiver }
+      expected = (on_receiver.empty? ? methods : on_receiver).map { |method| method["id"] }
+      assert_equal expected, row["method_ids"]
+      assert_includes expected, row["method_id"]
+    end
+  end
 end

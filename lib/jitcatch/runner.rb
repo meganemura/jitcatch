@@ -352,7 +352,7 @@ module JitCatch
     # calls, so a neighbor test in the same file does not change its tags.
     def mentions_for(index, test_name, line, known)
       referenced = (line && index.example_references(line)) || index.referenced_names(test_name)
-      known & referenced
+      referenced.select { |name| known.include?(name) || known.include?(SourceIndex.split_qualified(name).last) }
     end
 
     # A file-level row (`file#load`, `file#timeout`) reruns the whole file.

@@ -63,6 +63,7 @@ module JitCatch
       Prism::BlockParameterNode, Prism::BlockLocalVariableNode, Prism::LocalVariableTargetNode,
       Prism::LocalVariableOperatorWriteNode, Prism::LocalVariableOrWriteNode, Prism::LocalVariableAndWriteNode
     ].freeze
+    SPEC_HELPERS = %i[let let! subject subject!].freeze
     DESCRIBED_METHOD = /\A[#.]([a-z_][\w]*[?!=]?)\z/
 
     attr_reader :methods, :constants, :namespaces, :calls, :private_constants, :parse_error
@@ -88,6 +89,7 @@ module JitCatch
       @spec_blocks = []
       @defined = Hash.new { |hash, key| hash[key] = [] }
       @described = []
+      @spec_helpers = []
     end
 
     def parse
@@ -98,6 +100,7 @@ module JitCatch
       end
 
       scan_body(result.value, "", :public, false)
+      @spec_helpers = spec_helper_names(result.value)
       walk(result.value, "", false, nil)
       type_instance_variables
       type_local_variables
@@ -129,7 +132,7 @@ module JitCatch
     # name, the whole file is read.
     def referenced_names(qualified)
       start = @methods.find { |method| method.qualified == qualified }
-      return @references.values.flatten.uniq.sort unless start
+      return (@references.values.flatten + receiver_names(@calls.map(&:enclosing))).uniq.sort unless start
 
       names_reached_from([start.qualified])
     end
@@ -177,7 +180,23 @@ module JitCatch
           end
         end
       end
-      reached.flat_map { |name| @references.fetch(name, []) }.uniq.sort
+      names = reached.flat_map { |name| @references.fetch(name, []) }
+      (names + receiver_names(reached)).uniq.sort
+    end
+
+    # `Index.parse` for a call whose receiver the source names as the class
+    # `Index` or as an instance of it, so a reader can tell it from another
+    # class's `parse`. A constructor is already listed as `Owner.new`.
+    def receiver_names(enclosings)
+      @calls.filter_map do |call|
+        receiver = call.receiver
+        next unless enclosings.include?(call.enclosing) && receiver.const && call.bare_name != "new"
+
+        case receiver.kind
+        when "singleton" then "#{receiver.const}.#{call.bare_name}"
+        when "instance" then "#{receiver.const}##{call.bare_name}"
+        end
+      end
     end
 
     def scan_body(node, qualifier, visibility, singleton)
@@ -508,7 +527,7 @@ module JitCatch
             enclosing: enclosing,
             receiver: receiver_of(node.receiver)
           )
-          refer(enclosing, node.name)
+          refer(enclosing, node.name) unless spec_helper_call?(node)
           owner = constructor_owner(node) || described_owner(node)
           refer(enclosing, "#{owner.split("::").last}.new") if owner
           named = reflective_name(node)
@@ -556,7 +575,7 @@ module JitCatch
       block = SpecBlock.new(kind: kind, key: "#{kind}:#{node.location.start_line}", start_line: node.location.start_line, end_line: node.location.end_line)
       @spec_blocks << block
       arguments = Array(node.arguments&.arguments)
-      arguments.each { |arg| walk(arg, qualifier, singleton_context, block.key) }
+      arguments.each { |arg| walk(arg, qualifier, singleton_context, block.key) unless spec_helper_name?(node, arg) }
       described = kind == "group" ? arguments.first : nil
       if described.is_a?(Prism::StringNode) && (match = described.unescaped.match(DESCRIBED_METHOD))
         refer(block.key, match[1])
@@ -566,6 +585,22 @@ module JitCatch
       @described.push(const_name(described) || @described.last)
       walk(node.block, qualifier, singleton_context, enclosing)
       @described.pop
+    end
+
+    # `let(:result)` and `subject(:result)` name a helper of the spec, so the
+    # symbol and a bare `result` call refer to the spec's own helper, not to
+    # a method `result` of the code under test.
+    def spec_helper_names(node)
+      own = node.is_a?(Prism::CallNode) && spec_helper_name?(node, node.arguments&.arguments&.first) ? [node.arguments.arguments.first.unescaped] : []
+      own + node.compact_child_nodes.flat_map { |child| spec_helper_names(child) }
+    end
+
+    def spec_helper_name?(node, arg)
+      SPEC_HELPERS.include?(node.name) && node.receiver.nil? && arg.is_a?(Prism::SymbolNode) && node.arguments.arguments.first.equal?(arg)
+    end
+
+    def spec_helper_call?(node)
+      node.receiver.nil? && node.arguments.nil? && @spec_helpers.include?(node.name.to_s)
     end
 
     # `described_class.new` builds the constant the enclosing group describes.
@@ -599,6 +634,10 @@ module JitCatch
       when Prism::LocalVariableReadNode
         Receiver.new(kind: "local", const: node.name.to_s)
       when Prism::CallNode
+        if node.name == :described_class && node.receiver.nil?
+          return @described.last ? Receiver.new(kind: "singleton", const: @described.last) : UNKNOWN_RECEIVER
+        end
+
         inner = receiver_of(node.receiver)
         if node.name == :class && inner.kind == "self" && !node.receiver.nil?
           Receiver.new(kind: "singleton", const: nil)

@@ -312,10 +312,10 @@ class TestSourceIndex < Minitest::Test
     RUBY
     index = JitCatch::SourceIndex.parse(source, file: "test/cart_test.rb")
 
-    assert_equal %w[- Cart Cart.new Shop Util assert_equal build items= label new public_send size total total= zero?],
+    assert_equal %w[- Cart Cart.new Shop Util Util.build assert_equal build items= label new public_send size total total= zero?],
       index.referenced_names("CartTest#test_total")
     assert_equal %w[- Cart Cart.new Shop build new zero?], index.referenced_names("Util.build")
-    assert_equal %w[- Cart Cart.new CartTest Shop Util assert_equal build items= label module_function new other_only public_send size total total= zero?],
+    assert_equal %w[- Cart Cart.new CartTest Shop Util Util.build assert_equal build items= label module_function new other_only public_send size total total= zero?],
       index.referenced_names("CartTest#test_missing")
   end
   def test_a_hash_key_symbol_is_not_a_mention_and_a_reflective_call_is
@@ -387,11 +387,11 @@ class TestSourceIndexExamples < Minitest::Test
   end
 
   def test_an_example_reads_its_block_its_groups_setup_and_helpers
-    assert_equal %w[* << Cart Cart.new cart described_class doubled eq expect new prices subtotal to total twice], index.example_references(15)
+    assert_equal %w[* << Cart Cart.new described_class doubled eq expect new subtotal to total twice], index.example_references(15)
   end
   
   def test_a_sibling_group_setup_and_a_neighbor_are_not_read
-    assert_equal %w[Cart Cart.new cart described_class eq expect label new prices to], index.example_references(23)
+    assert_equal %w[Cart Cart.new described_class eq expect label new to], index.example_references(23)
     refute_includes index.example_references(26), "label"
   end
   
@@ -414,9 +414,27 @@ def test_a_describe_sent_to_another_constant_is_not_a_group
 end
 
 def test_a_top_level_describe_without_rspec_is_a_group_too
-    assert_equal %w[Other build], index.example_references(32)
+    assert_equal %w[Other Other.build build], index.example_references(32)
   end
   
+def test_a_named_receiver_names_its_class_and_a_let_names_no_method
+  source = <<~SPEC
+    RSpec.describe Index do
+      subject(:result) { described_class.parse("x") }
+
+      it("parses") { expect(result).to eq(Index.new.size) }
+    end
+
+    describe "free" do
+      it("asks the class") { described_class.parse("x") }
+    end
+  SPEC
+  index = JitCatch::SourceIndex.parse(source, file: "index_spec.rb")
+
+  assert_equal %w[Index Index#size Index.new Index.parse described_class eq expect new parse size to], index.example_references(4)
+  refute_includes index.example_references(8), "Index.parse"
+end
+
   def test_a_line_with_no_example_reads_nothing
     assert_nil index.example_references(3)
     assert_nil index.example_references(13)

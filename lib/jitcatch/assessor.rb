@@ -204,7 +204,7 @@ module JitCatch
       return [method_from_backtrace(test), framed] if framed.any?
 
       mentions = Array(test["mentions"])
-      mentioned = @methods.select { |item| mentions.include?(mention(item)) }
+      mentioned = sent_to_named_receivers(@methods.select { |item| mentions.include?(mention(item)) }, mentions)
       # Almost every test builds its object with `.new`, so a changed
       # constructor is the related method only when nothing else points.
       constructors, named = mentioned.partition { |item| mention(item).end_with?(".new") }
@@ -216,6 +216,25 @@ module JitCatch
       }
       pool = via_caller.empty? ? constructors : via_caller
       [most_downstream(pool), pool]
+    end
+
+    # A test that names the class it sends a method to (`Index.parse`,
+    # `described_class.parse`) calls that class's method of the name, not
+    # another class's. When no changed method of the name is on a class
+    # the test names, the call may reach one through a superclass or a
+    # module, so all of them stay.
+    def sent_to_named_receivers(items, mentions)
+      receivers = mentions.map { |name| SourceIndex.split_qualified(name) }.reject { |owner, _, _| owner.empty? }
+      items.group_by { |item| bare(item["name"]) }.flat_map do |name, group|
+        named = receivers.select { |_, _, bare_name| bare_name == name }
+        hits = group.select { |item| named.any? { |owner, sep, _| defined_on?(item, owner, sep) } }
+        hits.empty? ? group : hits
+      end
+    end
+
+    def defined_on?(item, owner, sep)
+      qualifier, item_sep, _bare = SourceIndex.split_qualified(item["name"].to_s)
+      item_sep == sep && (qualifier == owner || qualifier.end_with?("::#{owner}"))
     end
 
     def method_from_backtrace(test)

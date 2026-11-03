@@ -516,7 +516,7 @@ class TestRunner < Minitest::Test
       by_name = doc["tests"].to_h { |test| [test["name"], test] }
       assert_equal ["SCALE"], by_name["GeoTest#test_scale"]["mentions"]
       assert_includes by_name["GeoTest#test_scale"]["tags"], "touches:changed_constant"
-      assert_equal ["scaled"], by_name["GeoTest#test_point"]["mentions"]
+      assert_equal ["Geo::Point#scaled", "scaled"], by_name["GeoTest#test_point"]["mentions"]
       assert_includes by_name["GeoTest#test_point"]["tags"], "touches:changed_method"
       refute_includes by_name["GeoTest#test_point"]["tags"], "touches:changed_constant"
     end
@@ -901,7 +901,7 @@ class TestRunner < Minitest::Test
       doc = execute(repo, tests)
       rows = doc["tests"].map { |test| test.values_at("id", "file", "name", "mentions", "classification", "disposition") }
       assert_equal [
-        ["t01", "calc_test.rb", "CalcTest#test_double", ["double"], "candidate", "reported"],
+        ["t01", "calc_test.rb", "CalcTest#test_double", ["Calc#double", "double"], "candidate", "reported"],
         ["t02", "calc_test.rb", "CalcTest#test_ruby", [], "no_signal", "no_signal"],
         ["t03", "test_extra.rb", "test_extra.rb#load", ["Extra"], "candidate", "discarded"]
       ], rows
@@ -954,11 +954,42 @@ class TestRunner < Minitest::Test
       ids = doc["methods"].to_h { |method| [method["name"], method["id"]] }
       rows = doc["tests"].to_h { |test| [test["name"], test.values_at("mentions", "method_id")] }
       assert_equal [%w[Price.new doubled], ids["Price#doubled"]], rows["PriceTest#test_doubled_through_a_helper"]
-      assert_equal [%w[Price.new cents], ids["Price#initialize"]], rows["PriceTest#test_new_keeps_the_cents"]
-      assert_equal [%w[size], ids["Box#size"]], rows["PriceTest#test_box_new_is_not_price_new"]
+      assert_equal [%w[Price#cents Price.new cents], ids["Price#initialize"]], rows["PriceTest#test_new_keeps_the_cents"]
+      assert_equal [%w[Box#size size], ids["Box#size"]], rows["PriceTest#test_box_new_is_not_price_new"]
       doc["tests"].each { |test| assert_includes test["tags"], "touches:changed_method", test["name"] }
     end
   end
+
+def test_the_receiver_class_picks_the_related_method_among_same_named_ones
+  with_repo do |repo|
+    same_named_history(repo)
+    tests = File.join(repo.dir, "candidates")
+    write_tests(tests, {
+      "parse_test.rb" => <<~TEST
+        require "minitest/autorun"
+        require "a"
+
+        class ParseTest < Minitest::Test
+          def test_index
+            result = Index.parse("x")
+            assert_equal "x", result
+          end
+
+          def test_log
+            assert_equal "x", Log.parse("x")
+          end
+        end
+      TEST
+    })
+
+    doc = execute(repo, tests)
+    ids = doc["methods"].to_h { |method| [method["name"], method["id"]] }
+    rows = doc["tests"].to_h { |test| [test["name"], test.values_at("method_id", "method_ids")] }
+
+    assert_equal [ids.fetch("Index.parse"), [ids.fetch("Index.parse")]], rows.fetch("ParseTest#test_index")
+    assert_equal [ids.fetch("Log.parse"), [ids.fetch("Log.parse")]], rows.fetch("ParseTest#test_log")
+  end
+end
 
   def test_a_word_in_a_string_or_a_comment_is_not_a_mention
     with_repo do |repo|
@@ -990,7 +1021,7 @@ class TestRunner < Minitest::Test
 
       ids = doc["methods"].to_h { |method| [method["name"], method["id"]] }
       rows = doc["tests"].to_h { |test| [test["name"], test.values_at("mentions", "method_id")] }
-      assert_equal [%w[run_text], ids["Z.run_text"]], rows["JobTest#test_text"]
+      assert_equal [%w[Z.run_text run_text], ids["Z.run_text"]], rows["JobTest#test_text"]
       assert_equal [%w[run], ids["B#run"]], rows["JobTest#test_symbol_and_constant"]
     end
   end

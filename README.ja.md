@@ -365,6 +365,9 @@ CLI を使わない場合は、`skills/jitcatch` をエージェントの skills
 - 関連 id は、失敗の原因の行から一段ずれていることがある。
 - 言及は、そのテストメソッドと、それが直接または間接に呼ぶ同じファイルのメソッドの中にある、メソッド呼び出し、定数、シンボルである。
   `Owner.new` は、名前が `Owner` で終わるクラスの `initialize` への言及になり、`mentions` には `Owner.new` として出る。
+  テストが名前を書いたクラスか、`.new` で作ったそのインスタンスに送る呼び出しは、`Index.parse` や `Cart#total` のようにそのクラスと一緒にも出る。
+  同じ名前の変更メソッドが複数あるとき、関連 id はそのクラス(または名前がそれで終わるクラス)のものになる。
+  スーパークラスが定義するメソッドのように、そのクラスに該当するものがなければ、全部を残す。
   文字列とコメントの中の語は言及にならない。
   ただし、`send`、`public_send`、`method`、`respond_to?` に普通の文字列で渡したメソッド名は、`send("total")` のように言及になる。
   `snap[:total]`、`snap.fetch(:total)`、`{ total: 1 }` のようにハッシュのキーとして使ったシンボルは言及にならない。
@@ -379,6 +382,8 @@ CLI を使わない場合は、`skills/jitcatch` をエージェントの skills
 - RSpec の example の言及は、その example のブロック、それを囲むグループの `let`、`subject`、フックのブロック、それらのグループの引数、そしてそれらが呼ぶ同じファイルのヘルパーから取る。
   `"#total"` や `".build"` と記述したグループは、そのメソッドを指す。
   `described_class.new` は `Owner.new` を指す。
+  `described_class.parse` は `Owner.parse` として出る。
+  `let(:result)` や `subject(:result)` の名前は spec 自身のヘルパーなので、その名前も、レシーバのない `result` の呼び出しも、変更メソッド `result` への言及にならない。
   暗黙の `subject`、共有 example グループ、`spec/support` のヘルパーは読まない。
   別のファイルで定義した共有グループの example は、候補ファイル全体を読む。
 - Rails 風の `rails_helper` はそれぞれのワークツリーで読み込めるが、base と head は同じ `config/database.yml` で同時に走る。
