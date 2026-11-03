@@ -511,7 +511,10 @@ class TestRunner < Minitest::Test
     end
   end
 
+  # Forty files cost eighty Ruby processes, so the cap is lowered to two
+  # here and checked to be forty on its own.
   def test_runs_at_most_forty_files
+    assert_equal 40, JitCatch::Runner::FILE_CAP
     with_repo do |repo|
       repo.write("lib/flag.rb", "module Flag; end\n")
       repo.commit("base", date: "2026-02-11T00:00:00Z")
@@ -519,9 +522,12 @@ class TestRunner < Minitest::Test
       repo.write("README.md", "head\n")
       repo.commit("Touch readme.", date: "2026-02-12T00:00:00Z")
       tests = File.join(repo.dir, "candidates")
-      write_tests(tests, (1..41).to_h { |n| [format("f%02d_test.rb", n), ""] })
+      write_tests(tests, %w[f03 f01 f02].to_h { |name| [format("%s_test.rb", name), candidate_source(name.upcase, "test_#{name}", "assert true")] })
 
-      assert_equal 1, execute(repo, tests)["test_files_omitted"]
+      doc = with_file_cap(2) { execute(repo, tests) }
+
+      assert_equal 1, doc["test_files_omitted"]
+      assert_equal %w[f01_test.rb f02_test.rb], doc["tests"].map { |test| test["file"] }
     end
   end
 
@@ -862,6 +868,16 @@ class TestRunner < Minitest::Test
         spec.files = ["lib/dep.rb"]
       end
     RUBY
+  end
+
+  def with_file_cap(cap)
+    saved = JitCatch::Runner::FILE_CAP
+    JitCatch::Runner.send(:remove_const, :FILE_CAP)
+    JitCatch::Runner.const_set(:FILE_CAP, cap)
+    yield
+  ensure
+    JitCatch::Runner.send(:remove_const, :FILE_CAP)
+    JitCatch::Runner.const_set(:FILE_CAP, saved)
   end
 
   def execute(repo, tests, reruns: 0, timeout: 10, env: [])
