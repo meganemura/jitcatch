@@ -40,7 +40,11 @@ module JitCatch
       base_dir = File.join(parent, "base")
       head_dir = File.join(parent, "head")
       begin
-        @git.worktree_add(base_dir, change["base"])
+        if @git.empty_tree?(change["base"])
+          FileUtils.mkdir_p(base_dir)
+        else
+          @git.worktree_add(base_dir, change["base"])
+        end
         @git.worktree_add(head_dir, change["head"])
         install(base_dir)
         install(head_dir)

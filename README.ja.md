@@ -128,6 +128,8 @@ jitcatch run --repo DIR BASE HEAD TESTS_DIR
 | `jitcatch run` | `BASE HEAD TESTS_DIR` |
 | `jitcatch assess` | `run --json` が書いた `RUN.json` |
 
+最初のコミットを見るときは、`BASE` に `ROOT^` を渡す。ルートコミットの親は空のツリーとして読む。
+
 `assess` は件数と候補の行を再出力する。掛けるルールは `run` と同じである。
 
 ```sh

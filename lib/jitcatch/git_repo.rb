@@ -17,6 +17,21 @@ module JitCatch
       git("rev-parse", "--verify", "--end-of-options", "#{ref}^{commit}").strip
     end
 
+    # `ROOT^` names nothing in git. Reading it as the empty tree lets a
+    # review of the first commit use the same BASE HEAD form as any other.
+    def base_rev(ref)
+      rev(ref)
+    rescue GitError
+      child = ref.to_s[/\A(.+?)(?:\^1?|~1?)\z/, 1]
+      raise unless child && root_commit?(rev(child))
+
+      empty_tree
+    end
+
+    def empty_tree?(sha)
+      sha == empty_tree
+    end
+
     def diff(base, head)
       git(
         "diff", "--unified=0", "--no-color", "--no-ext-diff", "--no-renames",
@@ -31,7 +46,8 @@ module JitCatch
     # Oldest first. %(trailers) prints the block git itself parses as trailers,
     # verbatim, so cutting it off the end of %B leaves the message without it.
     def commit_messages(base, head)
-      raw = git("log", "--reverse", "--format=%B%x1f%(trailers)%x1e", "--end-of-options", "#{base}..#{head}")
+      range = empty_tree?(base) ? head : "#{base}..#{head}"
+      raw = git("log", "--reverse", "--format=%B%x1f%(trailers)%x1e", "--end-of-options", range)
       raw.split("\x1e").filter_map do |record|
         message, trailers = record.split("\x1f", 2)
         next if trailers.nil?
@@ -84,6 +100,14 @@ module JitCatch
     end
 
     private
+
+    def root_commit?(sha)
+      git("rev-list", "--parents", "-n", "1", "--end-of-options", sha).split.size == 1
+    end
+
+    def empty_tree
+      @empty_tree ||= git("hash-object", "-t", "tree", "--end-of-options", File::NULL).strip
+    end
 
     def capture(*args, env: nil)
       command = ["git", "--no-pager", "-C", @dir, *args]

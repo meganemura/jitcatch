@@ -22,7 +22,7 @@ module JitCatch
     end
 
     def build
-      base = @git.rev(@base_ref)
+      base = @git.base_rev(@base_ref)
       head = @git.rev(@head_ref)
       files = DiffParser.name_status(@git.name_status(base, head))
       hunks = index_hunks(DiffParser.parse(@git.diff(base, head)))

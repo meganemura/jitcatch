@@ -128,6 +128,8 @@ jitcatch run --repo DIR BASE HEAD TESTS_DIR
 | `jitcatch run` | `BASE HEAD TESTS_DIR` |
 | `jitcatch assess` | `RUN.json`, the file written by `run --json` |
 
+To review the first commit, pass `ROOT^` as `BASE`. The parent of a root commit is read as the empty tree.
+
 `assess` reprints the counts and the candidate rows. It applies the same rules as `run`.
 
 ```sh

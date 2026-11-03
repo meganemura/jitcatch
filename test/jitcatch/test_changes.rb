@@ -229,6 +229,27 @@ class TestChanges < Minitest::Test
     end
   end
 
+  def test_the_parent_of_the_root_commit_is_the_empty_tree
+    with_repo do |repo|
+      repo.write("lib/calc.rb", "class Calc\n  def add(a, b)\n    a + b\n  end\nend\n")
+      repo.commit("Add Calc.", date: "2026-02-11T00:00:00Z")
+
+      %w[HEAD^ HEAD~ HEAD~1 HEAD^1].each do |base|
+        doc = JitCatch::Changes.between(repo.dir, base, "HEAD")
+        assert_equal ["Add Calc."], doc["intent"]
+        assert_equal [["A", "lib/calc.rb"]], doc["files"].map { |file| file.values_at("status", "file") }
+        assert_equal [["Calc#add", "added"]], doc["methods"].map { |method| method.values_at("name", "change") }
+      end
+      assert_raises(JitCatch::GitError) { JitCatch::Changes.between(repo.dir, "HEAD~2", "HEAD") }
+      assert_raises(JitCatch::GitError) { JitCatch::Changes.between(repo.dir, "nope^", "HEAD") }
+
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, { "calc_test.rb" => "require \"minitest/autorun\"\nrequire \"calc\"\nclass CalcTest < Minitest::Test\n  def test_add\n    assert_equal 3, Calc.new.add(1, 2)\n  end\nend\n" })
+      run = JitCatch::Runner.run(repo.dir, "HEAD^", "HEAD", tests, reruns: 0)
+      assert_equal [["calc_test.rb#load", "fail_on_base"]], run["tests"].map { |test| test.values_at("name", "classification") }
+    end
+  end
+
   def test_whole_files_added_and_removed_and_a_changed_signature
     with_repo do |repo|
       repo.write("lib/old.rb", "module Old\n  LIMIT = 1\n\n  def self.gone\n    LIMIT\n  end\nend\n")
