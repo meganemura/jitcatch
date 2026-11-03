@@ -349,7 +349,6 @@ module JitCatch
         lines = message.lines.map(&:strip).reject(&:empty?)
         lines.empty? ? nil : lines
       end
-      return [] if messages.empty?
 
       messages.flat_map.with_index { |lines, index| index.zero? ? lines : ["---", *lines] }
     end
@@ -403,7 +402,6 @@ module JitCatch
     def signature_of(change, old_node, new_node)
       return "added" if change == "added"
       return "removed" if change == "removed"
-      return "same" if old_node.nil? || new_node.nil?
 
       old_node.params == new_node.params ? "same" : "changed"
     end
