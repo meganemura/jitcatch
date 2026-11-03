@@ -201,7 +201,7 @@ module JitCatch
     end
 
     def run_process(cmd, chdir:, stdout_path:, stderr_path:)
-      pid = Process.spawn(child_env, *cmd, chdir: chdir, out: stdout_path, err: stderr_path, pgroup: true)
+      pid = Process.spawn(child_env, *cmd, chdir: chdir, out: stdout_path, err: stderr_path, pgroup: true, unsetenv_others: true)
       timed_out = false
       status = nil
       deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + @timeout
@@ -249,7 +249,7 @@ module JitCatch
 
     def child_env
       env = {}
-      %w[PATH HOME USER LOGNAME TMPDIR TEMP TMP LD_LIBRARY_PATH].each do |key|
+      %w[PATH HOME USER LOGNAME TMPDIR TEMP TMP LD_LIBRARY_PATH GEM_HOME GEM_PATH].each do |key|
         env[key] = ENV[key] if ENV[key]
       end
       env["LANG"] = "C.UTF-8"

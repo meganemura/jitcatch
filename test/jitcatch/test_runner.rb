@@ -166,6 +166,44 @@ class TestRunner < Minitest::Test
     end
   end
 
+  def test_candidate_process_gets_only_the_allowlisted_environment
+    with_repo do |repo|
+      repo.write("lib/flag.rb", "module Flag; def self.ok; true; end; end\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("README.md", "head\n")
+      repo.commit("Touch readme.", date: "2026-02-12T00:00:00Z")
+      gems = [Gem.default_dir, [Gem.default_dir, File.join(repo.dir, "more-gems")].join(File::PATH_SEPARATOR)]
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, {
+        "env_test.rb" => <<~RUBY
+          require "minitest/autorun"
+
+          class EnvTest < Minitest::Test
+            def test_parent_only_variables_are_absent
+              assert_equal [nil, nil, nil, nil], ENV.values_at("RUBYOPT", "CI", "HEGEL_SEED", "JITCATCH_PARENT_ONLY")
+            end
+
+            def test_gem_locations_are_kept
+              assert_equal #{gems.inspect}, ENV.values_at("GEM_HOME", "GEM_PATH")
+            end
+          end
+        RUBY
+      })
+      parent = { "RUBYOPT" => "-W:no-deprecated", "CI" => "1", "HEGEL_SEED" => "7", "JITCATCH_PARENT_ONLY" => "x",
+                 "GEM_HOME" => gems[0], "GEM_PATH" => gems[1] }
+      saved = ENV.to_h.slice(*parent.keys)
+      begin
+        ENV.update(parent)
+        doc = execute(repo, tests)
+      ensure
+        parent.each_key { |key| ENV.delete(key) }
+        ENV.update(saved)
+      end
+      assert_equal %w[pass pass], doc["tests"].map { |test| test["base"]["status"] }, doc["tests"].map { |test| test["base"]["message"] }.join("\n")
+    end
+  end
+
   def execute(repo, tests, reruns: 0, timeout: 10)
     raw = JitCatch::Runner.run(repo.dir, "base", "HEAD", tests, reruns: reruns, timeout: timeout)
     JitCatch::Assessor.apply(raw)

@@ -52,7 +52,7 @@ Each file:
 - `require "minitest/autorun"`, then require the library the way the repo loads it (`require "shop"` when `lib/` is on the load path).
 - Name it `*_test.rb` or `test_*.rb`. When any file matches, other `*.rb` files are not executed. At most 40 files run.
 - The runner copies the directory into each worktree at `.jitcatch/` and runs one process per file: `ruby -Ilib -I. .jitcatch/<file> -v --seed 1`.
-- Do not depend on the original path, on order, or on the clock. The child keeps `PATH`, `HOME`, `USER`, `LOGNAME`, `TMPDIR`, `TEMP`, `TMP`, and `LD_LIBRARY_PATH`, and sets `LANG` and `LC_ALL` to `C.UTF-8`.
+- Do not depend on the original path, on order, or on the clock. The child keeps only `PATH`, `HOME`, `USER`, `LOGNAME`, `TMPDIR`, `TEMP`, `TMP`, `LD_LIBRARY_PATH`, `GEM_HOME`, and `GEM_PATH`, and sets `LANG` and `LC_ALL` to `C.UTF-8`. Other variables, such as `RUBYOPT` from `bundle exec` or `CI`, do not reach it.
 
 ## Run
 
