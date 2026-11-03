@@ -26,6 +26,7 @@ methods:
     callsites: lib/shop/cart.rb:57 Shop::Cart#taxable_cents
     reachable_from: Shop::Cart#tax_cents, Shop::Cart#taxable_cents, Shop::Cart#total_cents
     tests: (none)
+    entry_point_tests: test/test_cart.rb via Shop::Cart#tax_cents, Shop::Cart#taxable_cents, Shop::Cart#total_cents
     old:
       (none)
     new:

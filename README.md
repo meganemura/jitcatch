@@ -157,7 +157,7 @@ A tag is a hint, not the judgment. `touches:changed_method` means the test names
 
 ## How it filters
 
-`context` diffs the two revisions and maps hunks onto methods with Prism. Changed methods are `m01`, `m02`, and so on. A changed constant is `k01`, and a method that did not itself change but reads that constant is `affected` (`via=k01`). Each method block has the old and new source, call sites in the library, the entry points that reach it (`reachable_from`), and existing tests that mention it. `--coverage` uses the line lists in the JSON file instead of the grep.
+`context` diffs the two revisions and maps hunks onto methods with Prism. Changed methods are `m01`, `m02`, and so on. A changed constant is `k01`, and a method that did not itself change but reads that constant is `affected` (`via=k01`). Each method block has the old and new source, call sites in the library, the entry points that reach it (`reachable_from`), and existing tests that mention it. When no test mentions it, `entry_point_tests` lists the test files that name the class of a public entry point in `reachable_from` and call a method of that entry point's name. `--coverage` uses the line lists in the JSON file instead of the grep.
 
 `run` adds a git worktree for each revision, copies the scratch directory to `.jitcatch/` in that worktree, and runs each file in its own process:
 

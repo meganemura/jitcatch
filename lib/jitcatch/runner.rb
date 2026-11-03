@@ -303,7 +303,7 @@ module JitCatch
     end
 
     def slim_method(method)
-      method.reject { |key, _| %w[old_source new_source callsites existing_tests].include?(key) }
+      method.reject { |key, _| %w[old_source new_source callsites existing_tests entry_point_tests].include?(key) }
     end
 
     def slim_constant(const)

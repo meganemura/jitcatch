@@ -116,6 +116,10 @@ module JitCatch
             lines << "    reachable_from: #{method["reachable_from"].join(", ")}"
           end
           lines << "    tests: #{format_tests(method["existing_tests"])}"
+          unless method["entry_point_tests"].empty?
+            hits = method["entry_point_tests"].map { |hit| "#{hit["file"]} via #{hit["entry_points"].join(", ")}" }
+            lines << "    entry_point_tests: #{hits.join("; ")}"
+          end
           lines.concat(source_lines(method))
         end
         lines

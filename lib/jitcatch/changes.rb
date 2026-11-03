@@ -212,6 +212,7 @@ module JitCatch
 
     def decorate_tests(methods, base_idx, head_idx)
       test_sources = test_sources_for(base_idx, head_idx)
+      public_names = (base_idx["methods"] + head_idx["methods"]).filter_map { |node| [node.qualified, true] if node.visibility == "public" }.to_h
       methods.each do |method|
         node = method["new"] || method["old"]
         method["existing_tests"] = if @coverage
@@ -219,7 +220,30 @@ module JitCatch
         else
           grep_hits(test_sources, node.bare_name)
         end
+        method["entry_point_tests"] = if @coverage || !method["existing_tests"].empty?
+          []
+        else
+          entry_point_hits(test_sources, method["reachable_from"].select { |name| public_names.key?(name) })
+        end
       end
+    end
+
+    # A file counts when it names the entry point's class as a value (not as a
+    # namespace, so `Minitest::Test` does not match a `Minitest` class) and
+    # calls a method of the entry point's name. A bare-name grep alone matched
+    # unrelated tests for common names such as build, run, and parse.
+    def entry_point_hits(test_sources, entry_points)
+      found = Hash.new { |hash, file| hash[file] = [] }
+      entry_points.each do |name|
+        qualifier, _sep, bare = SourceIndex.split_qualified(name)
+        owner = qualifier.split("::").last
+        call = /\.#{Regexp.escape(bare)}\b/
+        named = owner && /\b#{Regexp.escape(owner)}\b(?!::)/
+        test_sources.each do |file, source|
+          found[file] << name if source.match?(call) && (named.nil? || source.match?(named))
+        end
+      end
+      found.keys.sort.first(TEST_CAP).map { |file| { "file" => file, "entry_points" => found[file].sort } }
     end
 
     def coverage_hits(method)
@@ -355,6 +379,7 @@ module JitCatch
         "callsites_omitted" => item["callsites_omitted"],
         "reachable_from" => item["reachable_from"],
         "existing_tests" => item["existing_tests"],
+        "entry_point_tests" => item["entry_point_tests"],
         "via_constant" => item["via_constant"]
       }
     end

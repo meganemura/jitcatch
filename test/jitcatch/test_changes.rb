@@ -94,6 +94,57 @@ class TestChanges < Minitest::Test
     end
   end
 
+  def test_a_method_no_test_names_lists_the_tests_of_its_public_entry_points
+    with_repo do |repo|
+      cart = <<~RUBY
+        class Cart
+          LIMIT = 3
+
+          def total
+            subtotal + fee
+          end
+
+          def subtotal
+            10
+          end
+
+          private
+
+          def fee
+            1
+          end
+        end
+      RUBY
+      repo.write("lib/cart.rb", cart)
+      repo.write("test/cart_test.rb", "Cart.new.total\n")
+      repo.write("test/other_test.rb", "Other.new.total\n")
+      repo.write("test/limit_test.rb", "Cart::LIMIT\nbox.total\n")
+      repo.write("test/subtotal_test.rb", "Cart.new.subtotal\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/cart.rb", cart.sub("    1\n", "    2\n").sub("    10\n", "    11\n"))
+      repo.commit("Raise the fee and the subtotal.", date: "2026-02-12T00:00:00Z")
+
+      doc = JitCatch::Changes.between(repo.dir, "base", "HEAD")
+      by_name = doc["methods"].to_h { |method| [method["name"], method] }
+      fee = by_name.fetch("Cart#fee")
+      subtotal = by_name.fetch("Cart#subtotal")
+
+      assert_equal [], fee["existing_tests"]
+      assert_equal ["Cart#total"], fee["reachable_from"]
+      assert_equal [{ "file" => "test/cart_test.rb", "entry_points" => ["Cart#total"] }], fee["entry_point_tests"]
+      assert_equal [{ "file" => "test/subtotal_test.rb", "via" => "grep" }], subtotal["existing_tests"]
+      assert_equal [], subtotal["entry_point_tests"]
+      text = JitCatch::Render.context_text(doc)
+      assert_includes text, "    tests: (none)\n    entry_point_tests: test/cart_test.rb via Cart#total\n"
+
+      coverage = File.join(repo.dir, "coverage.json")
+      File.write(coverage, JSON.generate({ "format" => "jitcatch-coverage-v1", "tests" => [] }))
+      covered = JitCatch::Changes.between(repo.dir, "base", "HEAD", coverage: coverage)
+      assert_equal [], covered["methods"].find { |method| method["name"] == "Cart#fee" }["entry_point_tests"]
+    end
+  end
+
   def test_method_edit_includes_old_and_new_source_and_callsites
     with_repo do |repo|
       repo.write("lib/calc.rb", <<~RUBY)

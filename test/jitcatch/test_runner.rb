@@ -91,8 +91,11 @@ class TestRunner < Minitest::Test
       assert_includes by_name["AddArityTest#test_two_args"]["tags"], "discard:signature_change"
       assert_equal "discarded", by_name["TotalTest#test_total"]["disposition"]
       assert_includes by_name["TotalTest#test_total"]["tags"], "discard:signature_change"
+      assert_equal %w[bare_name callsites_omitted change end_line file id kind name new_end new_start
+        old_end old_start reachable_from signature start_line via_constant visibility],
+        doc["methods"].flat_map(&:keys).uniq.sort
 
-      json = JitCatch::Render.dump(JitCatch::Render.run_json(doc))
+      json =JitCatch::Render.dump(JitCatch::Render.run_json(doc))
       path = File.join(repo.dir, "run.json")
       File.write(path, json)
       assessed = JitCatch::Assessor.apply(JSON.parse(File.read(path)))
