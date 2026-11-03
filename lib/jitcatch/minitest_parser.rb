@@ -3,10 +3,11 @@
 module JitCatch
   # Parses Minitest's verbose output (`ruby test.rb -v --seed 1`).
   class MinitestParser
-    VERBOSE = /^(\S+) = \d+\.\d+ s = ([.FES])$/.freeze
+    # minitest/spec names a test after its description, spaces included.
+    VERBOSE = /^(\S.*?) = \d+\.\d+ s = ([.FES])$/.freeze
     ISSUE = /^\s+\d+\) (Failure|Error|Skip):\s*$/.freeze
     SUMMARY = /^\d+ runs, \d+ assertions, \d+ failures, \d+ errors, \d+ skips$/.freeze
-    HEADER = /^(\S+?)(?:\s+\[(.+):(\d+)\])?:\s*$/.freeze
+    HEADER = /^(\S.*?)(?:\s+\[(.+):(\d+)\])?:\s*$/.freeze
     LETTERS = { "." => "pass", "F" => "fail", "E" => "error", "S" => "skip" }.freeze
 
     def self.parse(stdout, stderr, normalizer: ->(text) { text })

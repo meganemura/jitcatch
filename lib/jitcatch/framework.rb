@@ -1,16 +1,18 @@
 # frozen_string_literal: true
 
 module JitCatch
-  # How a candidate file runs and how its output reads. The file name picks
-  # the framework: `*_spec.rb` is RSpec, every other file is Minitest.
+  # How a candidate file runs and how its output reads. A `*_spec.rb` file
+  # is RSpec unless it requires minitest (minitest/spec names files that way
+  # too); every other file is Minitest.
   module Framework
+    MINITEST_REQUIRE = /^\s*require\s*\(?\s*["']minitest/.freeze
     # A rerun command names the candidate under the directory passed to
     # `run`, which the report writes as this so it reads the same anywhere.
     TESTS = "{tests}/"
     REPORT = ".jitcatch-report.json"
 
-    def self.for(relative)
-      File.basename(relative).end_with?("_spec.rb") ? RSpec : Minitest
+    def self.for(relative, source)
+      RSpec.names?(File.basename(relative)) && !source.match?(MINITEST_REQUIRE) ? RSpec : Minitest
     end
 
     def self.named?(relative)

@@ -604,6 +604,42 @@ class TestRunner < Minitest::Test
     end
   end
 
+  def test_a_minitest_spec_file_runs_as_minitest_and_keeps_its_spaced_names
+    with_repo do |repo|
+      repo.write("lib/calc.rb", BASE_CALC)
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/calc.rb", HEAD_CALC)
+      repo.commit("Change double.", date: "2026-02-12T00:00:00Z")
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, {
+        "calc_spec.rb" => <<~RUBY
+          require "minitest/autorun"
+          require "calc"
+
+          describe Calc do
+            it "doubles two" do
+              _(Calc.new.double(2)).must_equal 4
+            end
+
+            it "labels" do
+              _(Calc.new.label).must_equal "ok"
+            end
+          end
+        RUBY
+      })
+
+      doc = execute(repo, tests)
+
+      rows = doc["tests"].to_h { |test| [test["name"], [test["disposition"], test["rerun"]]] }
+      assert_equal({
+        "Calc#test_0001_doubles two" => ["reported", "ruby -Ilib -I. {tests}/calc_spec.rb -n 'Calc#test_0001_doubles two'"],
+        "Calc#test_0002_labels" => ["no_signal", "ruby -Ilib -I. {tests}/calc_spec.rb -n Calc#test_0002_labels"]
+      }, rows)
+      assert_equal "Expected: 4", doc["tests"].fetch(0)["head"]["message_first_line"]
+    end
+  end
+
   def test_runs_named_files_and_tags_each_test_by_its_own_method
     with_repo do |repo|
       repo.write("lib/calc.rb", BASE_CALC)

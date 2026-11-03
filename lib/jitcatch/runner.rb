@@ -39,6 +39,7 @@ module JitCatch
     def run
       change = Changes.between(@git, @base_ref, @head_ref)
       files, omitted = candidate_files
+      @frameworks = files.to_h { |relative| [relative, Framework.for(relative, read_candidate(relative))] }
       parent = Dir.mktmpdir("jitcatch-")
       pairs = (1..[@workers, files.size].min.clamp(1, nil)).map { |n|
         Pair.new(base: File.join(parent, n.to_s, "base"), head: File.join(parent, n.to_s, "head"))
@@ -48,7 +49,7 @@ module JitCatch
         pairs.each { |pair| check_out(pair, change) }
         normalizer = build_normalizer([*pairs.flat_map { |pair| [pair.base, pair.head] }, @git.dir])
         first = pairs.first
-        frameworks = files.map { |relative| Framework.for(relative) }.uniq
+        frameworks = @frameworks.values.uniq
         base_bundle = Thread.new { bundle_status(first.base, normalizer, frameworks) }
         head_bundle = bundle_status(first.head, normalizer, frameworks)
         bundle = { "base" => base_bundle.value, "head" => head_bundle }
@@ -114,7 +115,7 @@ module JitCatch
     end
 
     def classify_file(relative, base_dir, head_dir, normalizer, known)
-      source = File.read(File.join(@tests_dir, relative), mode: "r:bom|utf-8")
+      source = read_candidate(relative)
       index = SourceIndex.parse(source, file: relative)
       # Each side runs in its own worktree, so the two can run at once.
       base_thread = Thread.new { execute(base_dir, relative, normalizer) }
@@ -225,7 +226,7 @@ module JitCatch
     end
 
     def execute(worktree, relative, normalizer)
-      framework = Framework.for(relative)
+      framework = @frameworks.fetch(relative)
       stdout_path = File.join(worktree, ".jitcatch-stdout")
       stderr_path = File.join(worktree, ".jitcatch-stderr")
       report_path = File.join(worktree, Framework::REPORT)
@@ -326,6 +327,10 @@ module JitCatch
       end
     end
 
+    def read_candidate(relative)
+      File.read(File.join(@tests_dir, relative), mode: "r:bom|utf-8")
+    end
+
     def candidate_files
       all = Dir.glob("**/*.rb", base: @tests_dir).sort
       named = all.select { |path| Framework.named?(path) }
@@ -365,7 +370,7 @@ module JitCatch
     def rerun_command(row, bundled)
       file_level = row["line"].nil? && row["name"].start_with?("#{File.basename(row["file"])}#")
       name = file_level ? nil : row["name"]
-      command = Framework.for(row["file"]).rerun(row["file"], name, row["line"])
+      command = @frameworks.fetch(row["file"]).rerun(row["file"], name, row["line"])
       bundled ? "bundle exec #{command}" : command
     end
 
