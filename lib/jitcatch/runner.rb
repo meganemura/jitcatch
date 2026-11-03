@@ -25,7 +25,7 @@ module JitCatch
       new(repo, base_ref, head_ref, tests_dir, reruns: reruns, timeout: timeout, env: env, workers: workers).run
     end
 
-    def initialize(repo, base_ref, head_ref, tests_dir, reruns:, timeout:, env:, workers:)
+    def initialize(repo, base_ref, head_ref, tests_dir, reruns:, timeout:, env:, workers: 1)
       @git = repo.is_a?(GitRepo) ? repo : GitRepo.new(repo)
       @base_ref = base_ref
       @head_ref = head_ref
