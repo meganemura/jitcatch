@@ -508,6 +508,7 @@ class TestRunner < Minitest::Test
       assert_equal "pass", row["base"]["status"]
       assert_equal "timeout", row["head"]["status"]
       assert_equal "slow_test.rb#timeout", row["name"]
+      assert_includes JitCatch::Render.run_text(doc), "slow_test.rb#timeout slow_test.rb\n    hint: head timed out after 1s; raise --timeout if the file needs longer\n"
     end
   end
 

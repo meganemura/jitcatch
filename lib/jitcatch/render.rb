@@ -60,6 +60,7 @@ module JitCatch
         doc["tests"].each do |test|
           lines << "  #{test_line(test)}"
           lines.concat(rerun_lines(test)) if test["disposition"] == "flaky"
+          lines.concat(timeout_lines(test, doc["timeout_s"]))
         end
       end
       lines << counts_line(doc["counts"])
@@ -197,6 +198,12 @@ module JitCatch
       Array(test["reruns"]).each_with_index.map do |rerun, index|
         outcome = [rerun["status"], rerun["error_class"], rerun["message_first_line"]].reject { |part| part.to_s.empty? }
         "    rerun #{index + 1}: #{outcome.join(" ")}"
+      end
+    end
+
+    def timeout_lines(test, seconds)
+      %w[base head].select { |side| test.dig(side, "status") == "timeout" }.map do |side|
+        "    hint: #{side} timed out after #{seconds}s; raise --timeout if the file needs longer"
       end
     end
 
