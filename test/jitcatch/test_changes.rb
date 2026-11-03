@@ -361,6 +361,22 @@ class TestChanges < Minitest::Test
     end
   end
 
+  def test_a_private_constant_hides_the_methods_another_file_defines_under_it
+    with_repo do |repo|
+      repo.write("lib/shop.rb", "module Shop\n  private_constant :Ledger\nend\n")
+      repo.write("lib/shop/ledger.rb", "module Shop\n  class Ledger\n    def post\n      1\n    end\n  end\n\n  class Till\n    def open\n      1\n    end\n  end\nend\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/shop/ledger.rb", "module Shop\n  class Ledger\n    def post\n      2\n    end\n  end\n\n  class Till\n    def open\n      2\n    end\n  end\nend\n")
+      repo.commit("Post two.", date: "2026-02-12T00:00:00Z")
+
+      doc = JitCatch::Changes.between(repo.dir, "base", "HEAD")
+      assert_equal({ "Shop::Ledger#post" => "private", "Shop::Till#open" => "public" },
+        doc["methods"].to_h { |method| [method["name"], method["visibility"]] })
+      assert_equal ["Shop::Till"], doc["entrypoints"].map { |entry| entry["class"] }
+    end
+  end
+
   def test_reachable_from_keeps_the_nearest_callers_when_it_is_cut
     with_repo do |repo|
       near = (1..6).map { |n| "  def z#{n}\n    leaf\n  end\n" }.join("\n")

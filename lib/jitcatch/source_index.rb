@@ -18,7 +18,7 @@ module JitCatch
     )
     Call = Data.define(:file, :bare_name, :line, :enclosing)
 
-    attr_reader :methods, :constants, :namespaces, :calls, :parse_error
+    attr_reader :methods, :constants, :namespaces, :calls, :private_constants, :parse_error
 
     def self.parse(source, file:)
       new(source, file).parse
@@ -47,7 +47,7 @@ module JitCatch
       scan_body(result.value, "", :public, false)
       walk(result.value, "", false, nil)
       rename_module_function_callers
-      hide_private_constants
+      @methods = self.class.hide_private_constants(@methods, @private_constants)
       self
     end
 
@@ -63,6 +63,18 @@ module JitCatch
         [qname[0...idx], ".", qname[(idx + 1)..]]
       else
         ["", "#", qname]
+      end
+    end
+
+    # Code outside the namespace cannot name a private constant, so no method
+    # under it is an entry point, whatever its own visibility says. A revision
+    # passes the names from all its files, since a namespace can be reopened.
+    def self.hide_private_constants(methods, names)
+      return methods if names.empty?
+
+      methods.map do |method|
+        hidden = names.any? { |name| method.qualifier == name || method.qualifier.start_with?("#{name}::") }
+        hidden ? method.with(visibility: "private") : method
       end
     end
 
@@ -173,15 +185,6 @@ module JitCatch
     def record_private_constants(stmt, qualifier)
       (stmt.arguments&.arguments || []).each do |arg|
         @private_constants << join_qual(qualifier, arg.unescaped.to_s) if arg.is_a?(Prism::SymbolNode) || arg.is_a?(Prism::StringNode)
-      end
-    end
-
-    # Code outside the namespace cannot name a private constant, so no method
-    # under it is an entry point, whatever its own visibility says.
-    def hide_private_constants
-      @methods.map! do |method|
-        hidden = @private_constants.any? { |name| method.qualifier == name || method.qualifier.start_with?("#{name}::") }
-        hidden ? method.with(visibility: "private") : method
       end
     end
 

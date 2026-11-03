@@ -108,6 +108,7 @@ module JitCatch
       constants = []
       namespaces = []
       calls = []
+      private_constants = []
       errors = []
       sources = {}
       listed = @git.ruby_blobs(sha).select { |blob| blob.size <= MAX_BLOB }
@@ -125,7 +126,9 @@ module JitCatch
         constants.concat(index.constants)
         namespaces.concat(index.namespaces)
         calls.concat(index.calls)
+        private_constants.concat(index.private_constants)
       end
+      methods = SourceIndex.hide_private_constants(methods, private_constants.uniq)
       { "methods" => methods, "constants" => constants, "namespaces" => namespaces, "calls" => calls, "errors" => errors, "sources" => sources }
     end
 
