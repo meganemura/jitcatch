@@ -95,11 +95,19 @@ class TestSourceIndex < Minitest::Test
             end
           end
 
+          track_changes
+
           def add(sku)
             total
           end
         end
       end
+
+      def top
+        boot
+      end
+
+      configure
     RUBY
     index = JitCatch::SourceIndex.parse(source, file: "lib\\shop.rb")
     enclosing = index.calls.to_h { |call| [call.bare_name, call.enclosing] }
@@ -107,6 +115,9 @@ class TestSourceIndex < Minitest::Test
     assert_equal "Shop::Cart.build", enclosing["make"]
     assert_equal "Shop::Cart.from_hash", enclosing["load_hash"]
     assert_equal "Shop::Cart#add", enclosing["total"]
+    assert_equal "#top", enclosing["boot"]
+    assert enclosing.key?("configure")
+    assert_nil enclosing["configure"]
 
     add = index.methods.find { |method| method.qualified == "Shop::Cart#add" }
     assert_equal ["lib/shop.rb", "public", "    def add(sku)\n      total\n    end"], [add.file, add.visibility, add.source]

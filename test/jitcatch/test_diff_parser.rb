@@ -63,9 +63,9 @@ class TestDiffParser < Minitest::Test
   end
 
   def test_an_empty_side_of_a_hunk_overlaps_nothing
-    hunks = [{ "old_start" => 0, "old_count" => 0, "new_start" => 1, "new_count" => 2 }]
-    refute JitCatch::DiffParser.overlaps?(0, 5, hunks, "old")
-    assert JitCatch::DiffParser.overlaps?(2, 5, hunks, "new")
+    hunks = [{ "old_start" => 5, "old_count" => 0, "new_start" => 6, "new_count" => 2 }]
+    refute JitCatch::DiffParser.overlaps?(1, 10, hunks, "old")
+    assert JitCatch::DiffParser.overlaps?(7, 9, hunks, "new")
     assert_equal [{ "status" => "M", "file" => "a.rb" }], JitCatch::DiffParser.name_status("\nM\ta.rb\n\n")
   end
 end
