@@ -143,7 +143,6 @@ module JitCatch
       ranges = []
       ranges << (method["start_line"]..method["end_line"]) if method["start_line"] && method["end_line"]
       ranges << (method["old_start"]..method["old_end"]) if method["old_start"] && method["old_end"]
-      ranges << (method["new_start"]..method["new_end"]) if method["new_start"] && method["new_end"]
       ranges.any? { |range| range.cover?(line) }
     end
 
@@ -164,7 +163,7 @@ module JitCatch
 
     def removed_symbol?(symbol)
       removed_methods = @methods.select { |item| item["change"] == "removed" || item["signature"] == "removed" }
-      return true if removed_methods.any? { |item| item["bare_name"] == symbol || item["name"] == symbol }
+      return true if removed_methods.any? { |item| item["bare_name"] == symbol }
 
       removed_constants = @constants.select { |item| item["change"] == "removed" }
       removed_constants.any? { |item| item["bare_name"] == symbol || item["name"] == symbol || symbol.end_with?("::#{item["bare_name"]}") }
@@ -175,8 +174,6 @@ module JitCatch
     # downstream (the one other changed methods call into) is the usual source
     # of the new value.
     def most_downstream(items)
-      return nil if items.nil? || items.empty?
-
       items.min_by do |item|
         others = items.reject { |other| other["id"] == item["id"] }
         covered = others.count { |other| Array(item["reachable_from"]).include?(other["name"]) }
@@ -193,8 +190,6 @@ module JitCatch
     end
 
     def lowest(items)
-      return nil if items.nil? || items.empty?
-
       items.min_by { |item| item["id"].to_s }
     end
 
