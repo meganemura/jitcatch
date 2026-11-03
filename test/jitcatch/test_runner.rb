@@ -163,6 +163,57 @@ class TestRunner < Minitest::Test
       assert_includes row["tags"], "discard:timeout"
       assert_equal "pass", row["base"]["status"]
       assert_equal "timeout", row["head"]["status"]
+      assert_equal "slow_test.rb#timeout", row["name"]
+    end
+  end
+
+  def test_runs_named_files_and_tags_each_test_by_its_own_method
+    with_repo do |repo|
+      repo.write("lib/calc.rb", BASE_CALC)
+      repo.write("lib/extra.rb", "module Extra; end\n")
+      repo.commit("Initial calc", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/calc.rb", HEAD_CALC)
+      FileUtils.rm(File.join(repo.dir, "lib/extra.rb"))
+      repo.commit("Tweak calc helpers.", date: "2026-02-12T00:00:00Z")
+
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, {
+        "helper.rb" => "raise 'helper.rb is not a test file'\n",
+        "calc_test.rb" => <<~RUBY,
+          require "minitest/autorun"
+          require "calc"
+
+          class CalcTest < Minitest::Test
+            def test_ruby
+              assert_equal 2, 1 + 1
+            end
+
+            def test_double
+              assert_equal 4, Calc.new.double(2)
+            end
+          end
+        RUBY
+        "test_extra.rb" => <<~RUBY
+          require "minitest/autorun"
+          require "extra"
+
+          class ExtraTest < Minitest::Test
+            def test_loads
+              assert Extra
+            end
+          end
+        RUBY
+      })
+      doc = execute(repo, tests)
+      rows = doc["tests"].map { |test| test.values_at("id", "file", "name", "mentions", "classification", "disposition") }
+      assert_equal [
+        ["t01", "calc_test.rb", "CalcTest#test_double", ["double"], "candidate", "reported"],
+        ["t02", "calc_test.rb", "CalcTest#test_ruby", [], "no_signal", "no_signal"],
+        ["t03", "test_extra.rb", "test_extra.rb#load", [], "candidate", "discarded"]
+      ], rows
+      assert_equal ["pass", "LoadError"], doc["tests"][2].values_at("base", "head").map { |side| side["error_class"] || side["status"] }
+      assert_raises(JitCatch::UsageError) { JitCatch::Runner.run(repo.dir, "base", "HEAD", File.join(repo.dir, "nope")) }
     end
   end
 
