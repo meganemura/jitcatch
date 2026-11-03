@@ -3,7 +3,7 @@
 require "open3"
 require "fileutils"
 
-module JitTest
+module JitCatch
   # Thin git wrapper. Every invocation is an argv array, never a shell.
   class GitRepo
     attr_reader :dir

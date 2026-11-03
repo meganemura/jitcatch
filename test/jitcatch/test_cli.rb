@@ -28,7 +28,7 @@ class TestCLI < Minitest::Test
       stdout, stderr, status = cli("context", "--repo", repo.dir, "base", "HEAD")
       assert_equal 0, status.exitstatus, stderr
       assert_equal "", stderr
-      assert_includes stdout, "jittest context"
+      assert_includes stdout, "jitcatch context"
       assert_includes stdout, "Box::LIMIT"
       json, json_err, json_status = cli("context", "--json", "--repo", repo.dir, "base", "HEAD")
       assert_equal 0, json_status.exitstatus, json_err
@@ -52,7 +52,7 @@ class TestCLI < Minitest::Test
       run_out, run_err, run_status = cli("run", "--repo", repo.dir, "--reruns", "0", "base", "HEAD", tests)
       assert_equal 0, run_status.exitstatus, run_err
       assert_includes run_out, "counts "
-      assert_includes run_out, "jittest run"
+      assert_includes run_out, "jitcatch run"
 
       json_run, json_run_err, json_run_status = cli("run", "--json", "--repo", repo.dir, "--reruns", "0", "base", "HEAD", tests)
       assert_equal 0, json_run_status.exitstatus, json_run_err
@@ -76,7 +76,7 @@ class TestCLI < Minitest::Test
   end
 
   def cli(*args)
-    bin = File.expand_path("../../bin/jittest", __dir__)
+    bin = File.expand_path("../../bin/jitcatch", __dir__)
     Open3.capture3(RbConfig.ruby, bin, *args)
   end
 end

@@ -4,7 +4,7 @@ require "fileutils"
 require "rbconfig"
 require "tmpdir"
 
-module JitTest
+module JitCatch
   # Runs each candidate file on base and head worktrees and classifies it.
   class Runner
     FILE_CAP = 40
@@ -31,7 +31,7 @@ module JitTest
       change = Changes.between(@git, @base_ref, @head_ref, coverage: @coverage)
       files, omitted = candidate_files
       rows = []
-      parent = Dir.mktmpdir("jittest-")
+      parent = Dir.mktmpdir("jitcatch-")
       base_dir = File.join(parent, "base")
       head_dir = File.join(parent, "head")
       begin
@@ -169,13 +169,13 @@ module JitTest
     end
 
     def execute(worktree, relative, normalizer)
-      stdout_path = File.join(worktree, ".jittest-stdout")
-      stderr_path = File.join(worktree, ".jittest-stderr")
+      stdout_path = File.join(worktree, ".jitcatch-stdout")
+      stderr_path = File.join(worktree, ".jitcatch-stderr")
       cmd = [
         RbConfig.ruby,
         "-I#{File.join(worktree, "lib")}",
         "-I#{worktree}",
-        File.join(".jittest", relative),
+        File.join(".jitcatch", relative),
         "-v",
         "--seed",
         "1"
@@ -259,7 +259,7 @@ module JitTest
     end
 
     def install(worktree)
-      dest = File.join(worktree, ".jittest")
+      dest = File.join(worktree, ".jitcatch")
       FileUtils.rm_rf(dest)
       FileUtils.mkdir_p(dest)
       Dir.children(@tests_dir).sort.each do |child|

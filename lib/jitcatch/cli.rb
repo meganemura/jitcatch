@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-module JitTest
+module JitCatch
   class CLI
     def self.start(argv)
       new(argv).run
@@ -30,7 +30,7 @@ module JitTest
     def command_context(argv)
       opts, positional = parse_options(argv, %i[repo coverage])
       return write_help if opts[:help]
-      raise UsageError, "usage: jittest context BASE HEAD" unless positional.size == 2
+      raise UsageError, "usage: jitcatch context BASE HEAD" unless positional.size == 2
 
       doc = Changes.between(repo_at(opts), positional[0], positional[1], coverage: opts[:coverage])
       $stdout.write(opts[:json] ? Render.dump(Render.context_json(doc)) : Render.context_text(doc))
@@ -40,7 +40,7 @@ module JitTest
     def command_run(argv)
       opts, positional = parse_options(argv, %i[repo coverage reruns timeout])
       return write_help if opts[:help]
-      raise UsageError, "usage: jittest run BASE HEAD TESTS_DIR" unless positional.size == 3
+      raise UsageError, "usage: jitcatch run BASE HEAD TESTS_DIR" unless positional.size == 3
 
       raw = Runner.run(
         repo_at(opts),
@@ -59,7 +59,7 @@ module JitTest
     def command_assess(argv)
       opts, positional = parse_options(argv, [])
       return write_help if opts[:help]
-      raise UsageError, "usage: jittest assess RUN.json" unless positional.size == 1
+      raise UsageError, "usage: jitcatch assess RUN.json" unless positional.size == 1
 
       path = positional[0]
       raise UsageError, "run json not found: #{path}" unless File.file?(path)
@@ -121,15 +121,15 @@ module JitTest
 
     def help_text
       <<~HELP
-        jittest #{VERSION}
+        jitcatch #{VERSION}
 
         Deterministic Just-in-Time catching-test helper for Ruby.
         This tool never calls an LLM. An agent writes the tests and judges intent.
 
         Usage:
-          jittest context [--json] [--repo DIR] [--coverage FILE] BASE HEAD
-          jittest run [--json] [--repo DIR] [--coverage FILE] [--reruns N] [--timeout SEC] BASE HEAD TESTS_DIR
-          jittest assess [--json] RUN.json
+          jitcatch context [--json] [--repo DIR] [--coverage FILE] BASE HEAD
+          jitcatch run [--json] [--repo DIR] [--coverage FILE] [--reruns N] [--timeout SEC] BASE HEAD TESTS_DIR
+          jitcatch assess [--json] RUN.json
 
         context   Short brief of changed methods, old/new source, call sites, and tests.
         run       Run each candidate file on base and head. Keep pass/fail, drop flakes.

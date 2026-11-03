@@ -6,7 +6,7 @@ class TestShopDemo < Minitest::Test
   ROOT = File.expand_path("../..", __dir__)
 
   def test_recorded_shop_runs_match_a_fresh_fixture
-    Dir.mktmpdir("jittest-shop-") do |dir|
+    Dir.mktmpdir("jitcatch-shop-") do |dir|
       repo = File.join(dir, "shop")
       setup = File.join(ROOT, "script/setup_shop")
       ok = system(RbConfig.ruby, setup, repo, out: File::NULL, err: File::NULL)
@@ -31,6 +31,6 @@ class TestShopDemo < Minitest::Test
   end
 
   def cli(*args)
-    Open3.capture3(RbConfig.ruby, File.join(ROOT, "bin/jittest"), *args)
+    Open3.capture3(RbConfig.ruby, File.join(ROOT, "bin/jitcatch"), *args)
   end
 end

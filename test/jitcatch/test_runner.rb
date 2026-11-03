@@ -65,8 +65,8 @@ class TestRunner < Minitest::Test
       doc = execute(repo, tests)
       assert_equal before, repo.git("worktree", "list", "--porcelain")
       again = execute(repo, tests)
-      assert_equal JitTest::Render.run_text(doc), JitTest::Render.run_text(again)
-      text = JitTest::Render.run_text(doc)
+      assert_equal JitCatch::Render.run_text(doc), JitCatch::Render.run_text(again)
+      text = JitCatch::Render.run_text(doc)
       refute_match(%r{/tmp/}, text)
       refute_match(/Finished in/, text)
       refute_match(/\d{4}-\d{2}-\d{2}/, text)
@@ -92,10 +92,10 @@ class TestRunner < Minitest::Test
       assert_equal "discarded", by_name["TotalTest#test_total"]["disposition"]
       assert_includes by_name["TotalTest#test_total"]["tags"], "discard:signature_change"
 
-      json = JitTest::Render.dump(JitTest::Render.run_json(doc))
+      json = JitCatch::Render.dump(JitCatch::Render.run_json(doc))
       path = File.join(repo.dir, "run.json")
       File.write(path, json)
-      assessed = JitTest::Assessor.apply(JSON.parse(File.read(path)))
+      assessed = JitCatch::Assessor.apply(JSON.parse(File.read(path)))
       assert_equal doc["counts"], assessed["counts"]
     end
   end
@@ -167,8 +167,8 @@ class TestRunner < Minitest::Test
   end
 
   def execute(repo, tests, reruns: 0, timeout: 10)
-    raw = JitTest::Runner.run(repo.dir, "base", "HEAD", tests, reruns: reruns, timeout: timeout)
-    JitTest::Assessor.apply(raw)
+    raw = JitCatch::Runner.run(repo.dir, "base", "HEAD", tests, reruns: reruns, timeout: timeout)
+    JitCatch::Assessor.apply(raw)
   end
 
   def candidate_source(class_name, name, assertion)

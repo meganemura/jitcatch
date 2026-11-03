@@ -27,7 +27,7 @@ class TestAssessor < Minitest::Test
       ]
     }
 
-    out = JitTest::Assessor.apply(doc)
+    out = JitCatch::Assessor.apply(doc)
     by_name = out["tests"].to_h { |test| [test["name"], test] }
 
     assert_equal "discarded", by_name["LabelTest#test_label"]["disposition"]
@@ -86,7 +86,7 @@ class TestAssessor < Minitest::Test
         candidate("t01", "TotalTest#test_at_threshold", ["total_cents"], failure("Expected: 9720\n  Actual: 10800"))
       ]
     }
-    pointed = JitTest::Assessor.apply(downstream)
+    pointed = JitCatch::Assessor.apply(downstream)
     assert_equal "m05", pointed["tests"].fetch(0)["method_id"]
     assert_includes pointed["tests"].fetch(0)["tags"], "touches:unchanged_caller"
     assert_equal({
@@ -99,7 +99,7 @@ class TestAssessor < Minitest::Test
       "reported" => 3
     }, out["counts"])
 
-    again = JitTest::Assessor.apply(out)
+    again = JitCatch::Assessor.apply(out)
     assert_equal out["tests"].map { |test| test["tags"] }, again["tests"].map { |test| test["tags"] }
     assert_equal out["counts"], again["counts"]
   end

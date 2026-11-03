@@ -24,14 +24,14 @@ class TestDiffParser < Minitest::Test
       +new
     DIFF
 
-    files = JitTest::DiffParser.parse(diff)
+    files = JitCatch::DiffParser.parse(diff)
     assert_equal ["lib/cart.rb", "README.md"], files.map { |file| file["new_path"] }
     cart = files.first
-    assert JitTest::DiffParser.overlaps?(4, 4, cart["hunks"], "new")
-    assert JitTest::DiffParser.overlaps?(13, 15, cart["hunks"], "new")
-    refute JitTest::DiffParser.overlaps?(6, 11, cart["hunks"], "new")
+    assert JitCatch::DiffParser.overlaps?(4, 4, cart["hunks"], "new")
+    assert JitCatch::DiffParser.overlaps?(13, 15, cart["hunks"], "new")
+    refute JitCatch::DiffParser.overlaps?(6, 11, cart["hunks"], "new")
 
-    status = JitTest::DiffParser.name_status("M\tlib/cart.rb\nA\tlib/new.rb\n")
+    status = JitCatch::DiffParser.name_status("M\tlib/cart.rb\nA\tlib/new.rb\n")
     assert_equal [
       { "status" => "M", "file" => "lib/cart.rb" },
       { "status" => "A", "file" => "lib/new.rb" }

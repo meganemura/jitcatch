@@ -1,22 +1,22 @@
-# jittest agent loop
+# jitcatch agent loop
 
-`jittest` never calls an LLM. You write the tests. You decide whether a failure is a regression. The CLI only prepares a brief, runs the tests on the parent and the change, and applies deterministic rules.
+`jitcatch` never calls an LLM. You write the tests. You decide whether a failure is a regression. The CLI only prepares a brief, runs the tests on the parent and the change, and applies deterministic rules.
 
 Do not commit the candidate tests into the target repository. They are throwaway.
 
 ## Test contract
 
 - Minitest files. `require "minitest/autorun"` and require the library the way the repo loads it (`require "shop"` when `lib/` is on the load path).
-- The runner copies the directory into each worktree at `.jittest/` and executes every `*_test.rb` / `test_*.rb` with `ruby -Ilib -I. file -v --seed 1`.
+- The runner copies the directory into each worktree at `.jitcatch/` and executes every `*_test.rb` / `test_*.rb` with `ruby -Ilib -I. file -v --seed 1`.
 - One file, one process. Do not depend on the original path, on order, or on the clock.
 - Write 3 to 6 files. Cover the changed methods and the unchanged behavior next to the change: boundaries, rounding, and error paths. A test that only describes the new feature fails on the parent and is discarded. A catching test is one the old code already satisfies.
 
 ## Loop
 
-1. Read the change intent (PR body, or the commit messages `jittest context` prints).
-2. Run `jittest context BASE HEAD` (add `--repo` when the git repo is not the working directory). Note the method ids (`m01`, …) and constant ids (`k01`, …).
+1. Read the change intent (PR body, or the commit messages `jitcatch context` prints).
+2. Run `jitcatch context BASE HEAD` (add `--repo` when the git repo is not the working directory). Note the method ids (`m01`, …) and constant ids (`k01`, …).
 3. Write the minitest files into a scratch directory.
-4. Run `jittest run BASE HEAD scratch_dir/`. Default `--reruns` is 2 and `--timeout` is 10 seconds. Add `--json` if you want the same document as JSON.
+4. Run `jitcatch run BASE HEAD scratch_dir/`. Default `--reruns` is 2 and `--timeout` is 10 seconds. Add `--json` if you want the same document as JSON.
 5. Read the assess section. For each reported row, judge:
    - **likely-regression** — behavior changed and the intent does not ask for that change.
    - **intended** — the intent explicitly wants that behavior.
@@ -24,7 +24,7 @@ Do not commit the candidate tests into the target repository. They are throwaway
 6. Write a short report: the counts, and one line per reported test with the judgment and why.
 7. Delete the scratch directory. Do not add it to the target suite.
 
-`jittest assess RUN.json` reprints the judgment aid from a saved run. It does not call a model either.
+`jitcatch assess RUN.json` reprints the judgment aid from a saved run. It does not call a model either.
 
 ## How to read a row
 

@@ -9,7 +9,7 @@ module Support
     attr_reader :dir
 
     def initialize
-      @dir = Dir.mktmpdir("jittest-repo-")
+      @dir = Dir.mktmpdir("jitcatch-repo-")
       git("init", "-b", "main")
       git("config", "user.email", "jittest@example.local")
       git("config", "user.name", "jittest")

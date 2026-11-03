@@ -1,4 +1,4 @@
-# jittest
+# jitcatch
 
 Ruby 向けの Just-in-Time catching test の決定的なプロトタイプ。変更ごとに、その diff を狙ったテストを **親（base）と変更後（head）の両方**で走らせ、base で通り head で落ちるものだけを残す。フレークは落とし、明らかな非シグナルはルールで捨て、残りをエージェントが「意図した変更か、回帰か」を判断する。
 
@@ -11,9 +11,9 @@ Ruby 3.3 以降（4.0 でも可）。追加 gem はない。`minitest` と `pris
 対象は git リポジトリの 2 つのコミット。出力は同じ入力ならバイト単位で同じになる。並びは固定、コンパクトな出力に時刻は出さない。テストの順序は Minitest の `--seed 1`。ワークツリーの絶対パスは結果から除く。どのコマンドも `--json` で同じ内容の JSON を出す。
 
 ```
-jittest context [--json] [--repo DIR] [--coverage FILE] BASE HEAD
-jittest run     [--json] [--repo DIR] [--coverage FILE] [--reruns N] [--timeout SEC] BASE HEAD TESTS_DIR
-jittest assess  [--json] RUN.json
+jitcatch context [--json] [--repo DIR] [--coverage FILE] BASE HEAD
+jitcatch run     [--json] [--repo DIR] [--coverage FILE] [--reruns N] [--timeout SEC] BASE HEAD TESTS_DIR
+jitcatch assess  [--json] RUN.json
 ```
 
 終了コードは 0 が成功、1 が使い方の誤り、2 が git の失敗。候補が見つかっても 0 のまま。回帰かどうかはツールが決めない。
@@ -26,7 +26,7 @@ jittest assess  [--json] RUN.json
 - 変更メソッドの呼び出し元（ライブラリ内）と、そこから届く公開エントリ
 - 既存テストの参照。既定はテストファイルの grep。`--coverage` を渡すとそのファイルだけを使う
 
-`run` は一時ディレクトリに base と head の git worktree を作り、候補ファイルをそれぞれ `.jittest/` にコピーして、ファイルごとに `ruby -Ilib -I.` で実行する。タイムアウトは既定 10 秒。分類は次のとおり。
+`run` は一時ディレクトリに base と head の git worktree を作り、候補ファイルをそれぞれ `.jitcatch/` にコピーして、ファイルごとに `ruby -Ilib -I.` で実行する。タイムアウトは既定 10 秒。分類は次のとおり。
 
 | 結果 | 意味 |
 | --- | --- |
@@ -44,8 +44,8 @@ jittest assess  [--json] RUN.json
 
 ```sh
 ruby script/setup_shop          # examples/shop に再現可能な git 履歴を作る
-bin/jittest context --repo examples/shop base regression
-bin/jittest run --repo examples/shop base regression examples/runs/regression/tests
+bin/jitcatch context --repo examples/shop base regression
+bin/jitcatch run --repo examples/shop base regression examples/runs/regression/tests
 ruby -Ilib test/run.rb          # エンジンテスト
 ```
 
@@ -55,9 +55,9 @@ ruby -Ilib test/run.rb          # エンジンテスト
 
 ## エージェントのループ
 
-1. `jittest context BASE HEAD` を読む。意図は `BASE..HEAD` のコミットメッセージとして出る。
+1. `jitcatch context BASE HEAD` を読む。意図は `BASE..HEAD` のコミットメッセージとして出る。
 2. 変更メソッドと、その近くの変わっていない振る舞い（境界、丸め、異常系）に対して、Minitest を 3〜6 ファイル書く。
-3. `jittest run BASE HEAD tests_dir/` を実行する。
+3. `jitcatch run BASE HEAD tests_dir/` を実行する。
 4. reported の各行を、意図と照らして likely-regression / intended / unclear に分ける。
 5. カウントと判断を短いレポートに書く。テストは捨てる。
 
@@ -69,7 +69,7 @@ Meta の Just-in-Time Catching Test Generation（arXiv 2601.22832、engineering.
 
 Vitest での実験（github.com/hbmartin/catching-jit-tests-vitest）も、同じ pass/fail フィルタを外に出している。
 
-| Meta | jittest |
+| Meta | jitcatch |
 | --- | --- |
 | 変更の選択 | `git diff BASE HEAD` と Prism |
 | テスト生成（モデル） | エージェントが `context` を読んで Minitest を書く |
@@ -191,11 +191,11 @@ assess:
 
 ## 次のステップ
 
-**simplecov のテスト単位カバレッジ。** いま受け付ける形は `jittest-coverage-v1`（例は `examples/coverage/jittest-coverage-v1.sample.json`）。
+**simplecov のテスト単位カバレッジ。** いま受け付ける形は `jitcatch-coverage-v1`（例は `examples/coverage/jitcatch-coverage-v1.sample.json`）。
 
 ```json
 {
-  "format": "jittest-coverage-v1",
+  "format": "jitcatch-coverage-v1",
   "tests": [
     {
       "id": "TestCart#test_volume_discount_above_threshold",
@@ -210,7 +210,7 @@ assess:
 
 **hegel-ruby（gem `hegeltest`）のプロパティテストを、生成するテストの形にする。** 境界を 1 点ずつ書く代わりに、割引の閾値や丸めの性質をプロパティで書く。実行と比較は今の pass/fail フィルタのまま。gem は入れていない。
 
-**GitHub Actions の `@jittest` コメント。** PR コメントをトリガに context を出し、エージェントがテストとレポートを書き、コメントで返す。アカウントもワークフローも、このプロトタイプには作っていない。
+**GitHub Actions の `@jitcatch` コメント。** PR コメントをトリガに context を出し、エージェントがテストとレポートを書き、コメントで返す。アカウントもワークフローも、このプロトタイプには作っていない。
 
 **一回きりの E2E へ広げる。** 同じ base/head フィルタを、変更した入口を 1 度だけ叩くリクエストやブラウザのスモークに使う。テストはやはり捨てる。
 
@@ -222,4 +222,4 @@ assess:
 ruby -Ilib test/run.rb
 ```
 
-エンジンテストは一時 git リポジトリで context、実行、フレーク、タイムアウト、シグネチャ変更の破棄を見る。ショップのデモは `test/jittest/test_shop_demo.rb` が、記録した `context.txt` と `run.txt` を新しいフィクスチャの出力とバイト比較する。
+エンジンテストは一時 git リポジトリで context、実行、フレーク、タイムアウト、シグネチャ変更の破棄を見る。ショップのデモは `test/jitcatch/test_shop_demo.rb` が、記録した `context.txt` と `run.txt` を新しいフィクスチャの出力とバイト比較する。

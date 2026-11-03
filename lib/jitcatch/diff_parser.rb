@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-module JitTest
+module JitCatch
   # Parses `git diff --unified=0` text. Line numbers are 1-based, matching Prism.
   module DiffParser
     module_function

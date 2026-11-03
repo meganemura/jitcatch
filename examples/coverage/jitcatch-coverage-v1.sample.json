@@ -1,5 +1,5 @@
 {
-  "format": "jittest-coverage-v1",
+  "format": "jitcatch-coverage-v1",
   "tests": [
     {
       "id": "TestCart#test_volume_discount_above_threshold",

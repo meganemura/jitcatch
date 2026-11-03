@@ -1,12 +1,12 @@
 # frozen_string_literal: true
 
-module JitTest
+module JitCatch
   module Render
     module_function
 
     def context_text(doc)
       lines = []
-      lines << "jittest context"
+      lines << "jitcatch context"
       lines << "version #{doc["version"]}"
       lines << "base #{doc["base"]}"
       lines << "head #{doc["head"]}"
@@ -39,7 +39,7 @@ module JitTest
 
     def run_text(doc)
       lines = []
-      lines << "jittest run"
+      lines << "jitcatch run"
       lines << "version #{doc["version"]}"
       lines << "base #{doc["base"]}"
       lines << "head #{doc["head"]}"
@@ -63,7 +63,7 @@ module JitTest
 
     def assess_text(doc)
       lines = []
-      lines << "jittest assess"
+      lines << "jitcatch assess"
       lines << "version #{doc["version"]}"
       lines << "base #{doc["base"]}"
       lines << "head #{doc["head"]}"

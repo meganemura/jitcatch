@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-module JitTest
+module JitCatch
   # Builds the deterministic change document shared by `context` and `run`.
   class Changes
     MAX_BLOB = 200_000
@@ -420,8 +420,8 @@ module JitTest
       raise UsageError, "coverage file not found: #{path}" unless File.file?(expanded)
 
       raw = JSON.parse(File.read(expanded))
-      unless raw.is_a?(Hash) && raw["format"] == "jittest-coverage-v1" && raw["tests"].is_a?(Array)
-        raise UsageError, "coverage file must be JSON object with format jittest-coverage-v1 and a tests array"
+      unless raw.is_a?(Hash) && raw["format"] == "jitcatch-coverage-v1" && raw["tests"].is_a?(Array)
+        raise UsageError, "coverage file must be JSON object with format jitcatch-coverage-v1 and a tests array"
       end
 
       raw["tests"].map { |test|

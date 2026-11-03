@@ -2,7 +2,7 @@
 
 require "prism"
 
-module JitTest
+module JitCatch
   # Indexes methods, constants, and calls in one Ruby file.
   # Dynamic definitions (`define_method`, `class_eval`) are not indexed.
   class SourceIndex

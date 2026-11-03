@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-module JitTest
+module JitCatch
   # Parses Minitest's verbose output (`ruby test.rb -v --seed 1`).
   class MinitestParser
     VERBOSE = /^(\S+) = \d+\.\d+ s = ([.FES])$/.freeze

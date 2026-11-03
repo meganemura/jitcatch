@@ -3,13 +3,13 @@
 $LOAD_PATH.unshift(File.expand_path("../lib", __dir__))
 
 require "minitest/autorun"
-require "jittest"
+require "jitcatch"
 require "fileutils"
 require "open3"
 require "tmpdir"
 require_relative "support/repo"
 
-module JitTest
+module JitCatch
   module TestHelp
     def with_repo
       repo = Support::Repo.new
@@ -30,5 +30,5 @@ module JitTest
 end
 
 class Minitest::Test
-  include JitTest::TestHelp
+  include JitCatch::TestHelp
 end

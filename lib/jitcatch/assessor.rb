@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-module JitTest
+module JitCatch
   # Rule-based filter. It does not decide intended-versus-regression.
   # That judgment needs the change intent and belongs to the agent.
   class Assessor

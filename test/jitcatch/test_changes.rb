@@ -27,9 +27,9 @@ class TestChanges < Minitest::Test
       repo.write("lib/box.rb", BOX.sub("LIMIT = 10", "LIMIT = 5"))
       repo.commit("Lower LIMIT from 10 to 5.\n\nIntentional.", date: "2026-02-12T00:00:00Z")
 
-      doc = JitTest::Changes.between(repo.dir, "base", "HEAD")
-      text = JitTest::Render.context_text(doc)
-      assert_equal text, JitTest::Render.context_text(JitTest::Changes.between(repo.dir, "base", "HEAD"))
+      doc = JitCatch::Changes.between(repo.dir, "base", "HEAD")
+      text = JitCatch::Render.context_text(doc)
+      assert_equal text, JitCatch::Render.context_text(JitCatch::Changes.between(repo.dir, "base", "HEAD"))
       refute_match(/\d{4}-\d{2}-\d{2}T/, text)
       refute_match(/Finished in/, text)
 
@@ -57,14 +57,14 @@ class TestChanges < Minitest::Test
 
       coverage = File.join(repo.dir, "coverage.json")
       File.write(coverage, JSON.generate({
-        "format" => "jittest-coverage-v1",
+        "format" => "jitcatch-coverage-v1",
         "tests" => [{
           "id" => "BoxTest#test_price",
           "file" => "test/box_test.rb",
           "lines" => { "lib/box.rb" => [price["start_line"]] }
         }]
       }))
-      covered = JitTest::Changes.between(repo.dir, "base", "HEAD", coverage: coverage)
+      covered = JitCatch::Changes.between(repo.dir, "base", "HEAD", coverage: coverage)
       hit = covered["methods"].find { |method| method["bare_name"] == "price" }["existing_tests"]
       assert_equal [{ "file" => "test/box_test.rb", "test" => "BoxTest#test_price", "via" => "coverage" }], hit
       assert_equal "coverage", covered["existing_tests_via"]
@@ -103,7 +103,7 @@ class TestChanges < Minitest::Test
       RUBY
       repo.commit("Add extra.\n\nDouble stays the same.", date: "2026-02-12T00:00:00Z")
 
-      doc = JitTest::Changes.between(repo.dir, "base", "HEAD")
+      doc = JitCatch::Changes.between(repo.dir, "base", "HEAD")
       names = doc["methods"].to_h { |method| [method["name"], method] }
       assert_equal %w[added modified], names.values.map { |method| method["change"] }.sort
       assert_equal "modified", names["Calc#double"]["change"]

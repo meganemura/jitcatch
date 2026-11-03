@@ -3,17 +3,17 @@
 require "json"
 require "rbconfig"
 
-require_relative "jittest/git_repo"
-require_relative "jittest/source_index"
-require_relative "jittest/diff_parser"
-require_relative "jittest/changes"
-require_relative "jittest/minitest_parser"
-require_relative "jittest/assessor"
-require_relative "jittest/runner"
-require_relative "jittest/render"
-require_relative "jittest/cli"
+require_relative "jitcatch/git_repo"
+require_relative "jitcatch/source_index"
+require_relative "jitcatch/diff_parser"
+require_relative "jitcatch/changes"
+require_relative "jitcatch/minitest_parser"
+require_relative "jitcatch/assessor"
+require_relative "jitcatch/runner"
+require_relative "jitcatch/render"
+require_relative "jitcatch/cli"
 
-module JitTest
+module JitCatch
   VERSION = "0.1.0"
 
   class Error < StandardError; end

@@ -50,7 +50,7 @@ class TestSourceIndex < Minitest::Test
       end
     RUBY
 
-    index = JitTest::SourceIndex.parse(source, file: "lib/cart.rb")
+    index = JitCatch::SourceIndex.parse(source, file: "lib/cart.rb")
     refute index.parse_error
     by_name = index.methods.to_h { |method| [method.qualified, method] }
 
@@ -76,7 +76,7 @@ class TestSourceIndex < Minitest::Test
   end
 
   def test_parse_error_is_recorded
-    index = JitTest::SourceIndex.parse("def (\n", file: "lib/bad.rb")
+    index = JitCatch::SourceIndex.parse("def (\n", file: "lib/bad.rb")
     assert index.parse_error
     assert_match(/L1:/, index.parse_error)
     assert_empty index.methods
