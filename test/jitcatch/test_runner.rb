@@ -241,25 +241,96 @@ class TestRunner < Minitest::Test
             def test_gem_locations_are_kept
               assert_equal #{gems.inspect}, ENV.values_at("GEM_HOME", "GEM_PATH")
             end
+
+            def test_named_variables_pass_and_the_locale_is_fixed
+              assert_equal ["yes", nil, "C.UTF-8", "C.UTF-8", "dumb", nil],
+                ENV.values_at("JITCATCH_PASS", "JITCATCH_UNSET", "LANG", "LC_ALL", "TERM", "BUNDLE_GEMFILE")
+            end
           end
         RUBY
       })
       parent = { "RUBYOPT" => "-W:no-deprecated", "CI" => "1", "HEGEL_SEED" => "7", "JITCATCH_PARENT_ONLY" => "x",
-                 "GEM_HOME" => gems[0], "GEM_PATH" => gems[1] }
+                 "GEM_HOME" => gems[0], "GEM_PATH" => gems[1], "JITCATCH_PASS" => "yes", "LANG" => "en_US.UTF-8",
+                 "BUNDLE_GEMFILE" => File.join(repo.dir, "Gemfile") }
       saved = ENV.to_h.slice(*parent.keys)
       begin
         ENV.update(parent)
-        doc = execute(repo, tests)
+        doc = execute(repo, tests, env: %w[JITCATCH_UNSET JITCATCH_PASS])
       ensure
         parent.each_key { |key| ENV.delete(key) }
         ENV.update(saved)
       end
-      assert_equal %w[pass pass], doc["tests"].map { |test| test["base"]["status"] }, doc["tests"].map { |test| test["base"]["message"] }.join("\n")
+      assert_equal %w[pass pass pass], doc["tests"].map { |test| test["base"]["status"] }, doc["tests"].map { |test| test["base"]["message"] }.join("\n")
+      assert_equal %w[JITCATCH_PASS JITCATCH_UNSET], doc["env"]
+      assert_equal({ "base" => { "status" => "none", "message" => "" }, "head" => { "status" => "none", "message" => "" } }, doc["bundle"])
     end
   end
 
-  def execute(repo, tests, reruns: 0, timeout: 10)
-    raw = JitCatch::Runner.run(repo.dir, "base", "HEAD", tests, reruns: reruns, timeout: timeout)
+  def test_each_side_loads_the_gems_its_own_gemfile_locks
+    with_repo do |repo|
+      repo.write("Gemfile", %(source "https://rubygems.org"\ngem "minitest"\ngem "dep", path: "vendor/dep"\n))
+      repo.write("vendor/dep/dep.gemspec", dep_gemspec("1.0.0"))
+      repo.write("vendor/dep/lib/dep.rb", %(module Dep\n  VERSION = "1.0.0"\nend\n))
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("vendor/dep/dep.gemspec", dep_gemspec("2.0.0"))
+      repo.write("vendor/dep/lib/dep.rb", %(module Dep\n  VERSION = "2.0.0"\nend\n))
+      repo.commit("Bump dep to 2.0.0.", date: "2026-02-12T00:00:00Z")
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, {
+        "dep_test.rb" => <<~RUBY
+          require "minitest/autorun"
+          require "dep"
+
+          class DepTest < Minitest::Test
+            def test_dep_is_one
+              assert_equal ["1.0.0", "1.0.0"], [Dep::VERSION, Gem.loaded_specs.fetch("dep").version.to_s]
+            end
+          end
+        RUBY
+      })
+
+      doc = execute(repo, tests)
+
+      assert_equal({ "base" => { "status" => "ok", "message" => "" }, "head" => { "status" => "ok", "message" => "" } }, doc["bundle"])
+      row = doc["tests"].fetch(0)
+      assert_equal ["reported", "pass", "fail"], [row["disposition"], row["base"]["status"], row["head"]["status"]], row["head"]["message"]
+      assert_includes JitCatch::Render.run_text(doc), "timeout_s 10\nbundle base ok\nbundle head ok\ntests:\n"
+    end
+  end
+
+  def test_reports_a_side_whose_locked_gems_are_not_installed
+    with_repo do |repo|
+      repo.write("lib/flag.rb", "module Flag; end\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("Gemfile", %(source "https://rubygems.org"\ngem "jitcatch_absent_gem", "9.9.9"\n))
+      repo.commit("Add a Gemfile.", date: "2026-02-12T00:00:00Z")
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, { "flag_test.rb" => candidate_source("FlagTest", "test_flag", "assert true").sub('require "calc"', 'require "flag"') })
+
+      doc = execute(repo, tests)
+
+      message = "Could not find gem 'jitcatch_absent_gem (= 9.9.9)' in locally installed gems."
+      assert_equal({ "base" => { "status" => "none", "message" => "" }, "head" => { "status" => "failed", "message" => message } }, doc["bundle"])
+      assert_includes JitCatch::Render.run_text(doc), "timeout_s 10\nbundle head failed: #{message}\ntests:\n"
+    end
+  end
+
+  def dep_gemspec(version)
+    <<~RUBY
+      Gem::Specification.new do |spec|
+        spec.name = "dep"
+        spec.version = "#{version}"
+        spec.summary = "dep"
+        spec.authors = ["jittest"]
+        spec.files = ["lib/dep.rb"]
+      end
+    RUBY
+  end
+
+  def execute(repo, tests, reruns: 0, timeout: 10, env: [])
+    raw = JitCatch::Runner.run(repo.dir, "base", "HEAD", tests, reruns: reruns, timeout: timeout, env: env)
     JitCatch::Assessor.apply(raw)
   end
 

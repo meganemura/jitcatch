@@ -120,6 +120,7 @@ jitcatch run --repo DIR BASE HEAD TESTS_DIR
 | `--coverage FILE` | `context`, `run` | Replace the grep of existing tests with this file. The JSON has `"format": "jitcatch-coverage-v1"` and a `tests` array. See `examples/coverage/jitcatch-coverage-v1.sample.json`. |
 | `--reruns N` | `run` | Extra runs on head after a pass-on-base / fail-on-head result. The default is 2. `0` skips the flake check. |
 | `--timeout SEC` | `run` | Seconds before a test file is killed. The default is 10. The minimum is 1. |
+| `--env NAME` | `run` | Pass this variable from your environment to the test processes. Repeat it for more names. The run records the names, not the values. |
 
 | Command | Arguments |
 | --- | --- |
@@ -164,6 +165,8 @@ A tag is a hint, not the judgment. `touches:changed_method` means the test names
 ```sh
 ruby -Ilib -I. .jitcatch/<file> -v --seed 1
 ```
+
+When a revision has a `Gemfile`, its files run with `-rbundler/setup` and `BUNDLE_GEMFILE` set to that `Gemfile`, so each side loads the gems its own lock names. `run` checks the bundle once per side and prints `bundle base ok` or `bundle head failed: <message>`, for example when a locked gem is not installed. The process keeps only a fixed list of environment variables and the ones named with `--env`.
 
 Files named `*_test.rb` or `test_*.rb` run. When none have those names, every `.rb` file runs. At most 40 files run. A test that passes on base and fails, errors, or times out on head is a candidate. `--reruns` repeats candidates on head. One disagreement makes the test `flaky`. A timeout is not rerun.
 

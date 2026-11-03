@@ -45,6 +45,12 @@ module JitCatch
       lines << "head #{doc["head"]}"
       lines << "reruns #{doc["reruns"]}"
       lines << "timeout_s #{doc["timeout_s"]}"
+      lines << "env #{doc["env"].join(" ")}" unless doc["env"].to_a.empty?
+      doc.fetch("bundle", {}).each do |side, bundle|
+        next if bundle["status"] == "none"
+
+        lines << (bundle["message"].empty? ? "bundle #{side} #{bundle["status"]}" : "bundle #{side} #{bundle["status"]}: #{bundle["message"]}")
+      end
       lines << "test_files_omitted #{doc["test_files_omitted"]}" unless doc["test_files_omitted"].to_i.zero?
       lines << "tests:"
       if doc["tests"].empty?

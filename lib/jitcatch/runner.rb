@@ -8,13 +8,19 @@ module JitCatch
   # Runs each candidate file on base and head worktrees and classifies it.
   class Runner
     FILE_CAP = 40
+    PASSED_ENV = %w[PATH HOME USER LOGNAME TMPDIR TEMP TMP LD_LIBRARY_PATH GEM_HOME GEM_PATH].freeze
+    FIXED_ENV = { "LANG" => "C.UTF-8", "LC_ALL" => "C.UTF-8", "TERM" => "dumb" }.freeze
+    # Names jitcatch sets itself, so --env cannot pass them.
+    RESERVED_ENV = (FIXED_ENV.keys + ["BUNDLE_GEMFILE"]).freeze
+    # Rescuing in the child keeps Bundler's own message and drops its backtrace.
+    BUNDLE_CHECK = 'begin; require "bundler/setup"; rescue Exception => e; $stderr.puts e.message; exit 1; end'
     Result = Data.define(:tests, :summary, :file_error, :timed_out, :exit_code)
 
-    def self.run(repo, base_ref, head_ref, tests_dir, reruns: 2, timeout: 10, coverage: nil)
-      new(repo, base_ref, head_ref, tests_dir, reruns: reruns, timeout: timeout, coverage: coverage).run
+    def self.run(repo, base_ref, head_ref, tests_dir, reruns: 2, timeout: 10, coverage: nil, env: [])
+      new(repo, base_ref, head_ref, tests_dir, reruns: reruns, timeout: timeout, coverage: coverage, env: env).run
     end
 
-    def initialize(repo, base_ref, head_ref, tests_dir, reruns:, timeout:, coverage:)
+    def initialize(repo, base_ref, head_ref, tests_dir, reruns:, timeout:, coverage:, env:)
       @git = repo.is_a?(GitRepo) ? repo : GitRepo.new(repo)
       @base_ref = base_ref
       @head_ref = head_ref
@@ -22,6 +28,7 @@ module JitCatch
       @reruns = reruns
       @timeout = timeout
       @coverage = coverage
+      @env_names = env.uniq.sort
       raise UsageError, "tests directory not found: #{tests_dir}" unless File.directory?(@tests_dir)
     end
 
@@ -38,6 +45,7 @@ module JitCatch
         install(base_dir)
         install(head_dir)
         normalizer = build_normalizer([base_dir, head_dir, @git.dir])
+        bundle = { "base" => bundle_status(base_dir, normalizer), "head" => bundle_status(head_dir, normalizer) }
         files.each do |relative|
           rows.concat(classify_file(relative, base_dir, head_dir, normalizer, change))
         end
@@ -55,6 +63,8 @@ module JitCatch
         "head" => change["head"],
         "reruns" => @reruns,
         "timeout_s" => @timeout,
+        "env" => @env_names,
+        "bundle" => bundle,
         "test_files_omitted" => omitted,
         "methods" => change["methods"].map { |method| slim_method(method) },
         "constants" => change["constants"].map { |const| slim_constant(const) },
@@ -171,6 +181,7 @@ module JitCatch
       stderr_path = File.join(worktree, ".jitcatch-stderr")
       cmd = [
         RbConfig.ruby,
+        *("-rbundler/setup" if gemfile?(worktree)),
         "-I#{File.join(worktree, "lib")}",
         "-I#{worktree}",
         File.join(".jitcatch", relative),
@@ -182,7 +193,8 @@ module JitCatch
         cmd,
         chdir: worktree,
         stdout_path: stdout_path,
-        stderr_path: stderr_path
+        stderr_path: stderr_path,
+        env: child_env(worktree)
       )
       if timed_out
         return Result.new(tests: {}, summary: false, file_error: nil, timed_out: true, exit_code: nil)
@@ -198,8 +210,8 @@ module JitCatch
       )
     end
 
-    def run_process(cmd, chdir:, stdout_path:, stderr_path:)
-      pid = Process.spawn(child_env, *cmd, chdir: chdir, out: stdout_path, err: stderr_path, pgroup: true, unsetenv_others: true)
+    def run_process(cmd, chdir:, stdout_path:, stderr_path:, env:)
+      pid = Process.spawn(env, *cmd, chdir: chdir, out: stdout_path, err: stderr_path, pgroup: true, unsetenv_others: true)
       timed_out = false
       status = nil
       deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + @timeout
@@ -245,15 +257,32 @@ module JitCatch
       text.valid_encoding? ? text : text.scrub("?")
     end
 
-    def child_env
-      env = {}
-      %w[PATH HOME USER LOGNAME TMPDIR TEMP TMP LD_LIBRARY_PATH GEM_HOME GEM_PATH].each do |key|
-        env[key] = ENV[key] if ENV[key]
-      end
-      env["LANG"] = "C.UTF-8"
-      env["LC_ALL"] = "C.UTF-8"
-      env["TERM"] = "dumb"
-      env
+    def child_env(worktree)
+      env = (PASSED_ENV + @env_names).to_h { |key| [key, ENV[key]] }.compact
+      env["BUNDLE_GEMFILE"] = File.join(worktree, "Gemfile") if gemfile?(worktree)
+      env.merge(FIXED_ENV)
+    end
+
+    def gemfile?(worktree)
+      File.file?(File.join(worktree, "Gemfile"))
+    end
+
+    # One check per side, so a missing locked gem is said once instead of as a
+    # load error on every candidate file.
+    def bundle_status(worktree, normalizer)
+      return { "status" => "none", "message" => "" } unless gemfile?(worktree)
+
+      status, _stdout, stderr, timed_out = run_process(
+        [RbConfig.ruby, "-e", BUNDLE_CHECK],
+        chdir: worktree,
+        stdout_path: File.join(worktree, ".jitcatch-stdout"),
+        stderr_path: File.join(worktree, ".jitcatch-stderr"),
+        env: child_env(worktree)
+      )
+      return { "status" => "ok", "message" => "" } if !timed_out && status&.success?
+
+      message = timed_out ? "timeout" : normalizer.call(stderr).lines.map(&:strip).reject(&:empty?).first.to_s
+      { "status" => "failed", "message" => message }
     end
 
     def install(worktree)

@@ -54,7 +54,8 @@ Each file:
 - `require "minitest/autorun"`, then require the library the way the repo loads it (`require "shop"` when `lib/` is on the load path).
 - Name it `*_test.rb` or `test_*.rb`. When any file matches, other `*.rb` files are not executed. At most 40 files run.
 - The runner copies the directory into each worktree at `.jitcatch/` and runs one process per file: `ruby -Ilib -I. .jitcatch/<file> -v --seed 1`.
-- Do not depend on the original path, on order, or on the clock. The child keeps only `PATH`, `HOME`, `USER`, `LOGNAME`, `TMPDIR`, `TEMP`, `TMP`, `LD_LIBRARY_PATH`, `GEM_HOME`, and `GEM_PATH`, and sets `LANG` and `LC_ALL` to `C.UTF-8`. Other variables, such as `RUBYOPT` from `bundle exec` or `CI`, do not reach it. The child does not run under Bundler, even when you start `jitcatch` with `bundle exec`. A gem installed in `GEM_HOME` or `GEM_PATH` still loads with a plain `require`.
+- When the worktree has a `Gemfile`, the process also gets `-rbundler/setup` and `BUNDLE_GEMFILE` set to that worktree's `Gemfile`. Base and head then each load the gem versions their own `Gemfile.lock` names, so a test can catch a dependency bump. Only gems in the bundle load. If `require "minitest/autorun"` fails with `LoadError` on both sides, the `Gemfile` does not list `minitest`. Do not add `require "bundler/setup"` to the file yourself.
+- Do not depend on the original path, on order, or on the clock. The child keeps only `PATH`, `HOME`, `USER`, `LOGNAME`, `TMPDIR`, `TEMP`, `TMP`, `LD_LIBRARY_PATH`, `GEM_HOME`, and `GEM_PATH`, and sets `LANG` and `LC_ALL` to `C.UTF-8` and `TERM` to `dumb`. Other variables, such as `RUBYOPT` from `bundle exec` or `CI`, do not reach it. When the library reads a variable of its own (for example `QUINT`, the command it runs), pass it with `--env QUINT`. Without it, the library falls back to its default, which can time out on both sides.
 
 ## Run
 
@@ -63,7 +64,9 @@ jitcatch run --repo DIR BASE HEAD TESTS_DIR
 jitcatch run --json --repo DIR --reruns 2 --timeout 10 BASE HEAD TESTS_DIR
 ```
 
-`--reruns` defaults to 2: that many extra runs on head for a pass-on-base / fail-on-head result. `0` skips the flake check. `--timeout` defaults to 10 seconds per process (minimum 1). `--coverage` is the same flag as on `context`. The text report already includes the assess section. Save the `--json` document if you will call `assess` later.
+`--reruns` defaults to 2: that many extra runs on head for a pass-on-base / fail-on-head result. `0` skips the flake check. `--timeout` defaults to 10 seconds per process (minimum 1). `--coverage` is the same flag as on `context`. `--env NAME` passes one variable from your environment, and you can repeat it. The report lists the names on an `env` line. The text report already includes the assess section. Save the `--json` document if you will call `assess` later.
+
+When either worktree has a `Gemfile`, the report prints `bundle base ok` or `bundle head failed: <message>` before `tests:`. A `failed` side cannot load its bundle, usually because a locked gem is not installed, and every file on that side fails to load. Install the gems (`bundle install` at that revision) and run again before you judge any row.
 
 Judge only rows whose disposition is `reported`.
 

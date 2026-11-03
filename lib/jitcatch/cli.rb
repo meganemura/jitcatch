@@ -44,7 +44,7 @@ module JitCatch
     end
 
     def command_run(argv)
-      opts, positional = parse_options(argv, %i[repo coverage reruns timeout])
+      opts, positional = parse_options(argv, %i[repo coverage reruns timeout env])
       return write_help if opts[:help]
       raise UsageError, "usage: jitcatch run BASE HEAD TESTS_DIR" unless positional.size == 3
 
@@ -55,7 +55,8 @@ module JitCatch
         positional[2],
         reruns: opts.fetch(:reruns, 2),
         timeout: opts.fetch(:timeout, 10),
-        coverage: opts[:coverage]
+        coverage: opts[:coverage],
+        env: opts.fetch(:env, [])
       )
       doc = Assessor.apply(raw)
       $stdout.write(opts[:json] ? Render.dump(Render.run_json(doc)) : Render.run_text(doc))
@@ -95,6 +96,8 @@ module JitCatch
 
           value = rest.shift
           raise UsageError, "#{arg} requires a value" if value.nil? || value.start_with?("-")
+          next (opts[:env] ||= []) << env_option(arg, value) if name == :env
+
           opts[name] = case name
           when :reruns then integer_option(arg, value)
           when :timeout then seconds_option(arg, value)
@@ -120,6 +123,13 @@ module JitCatch
       seconds
     end
 
+    def env_option(flag, value)
+      raise UsageError, "#{flag} needs a variable name, not #{value}" unless value.match?(/\A[A-Za-z_][A-Za-z0-9_]*\z/)
+      raise UsageError, "#{flag} cannot pass #{value}: jitcatch sets it" if Runner::RESERVED_ENV.include?(value)
+
+      value
+    end
+
     def repo_at(opts)
       opts[:repo] || Dir.pwd
     end
@@ -138,7 +148,7 @@ module JitCatch
 
         Usage:
           jitcatch context [--json] [--repo DIR] [--coverage FILE] BASE HEAD
-          jitcatch run [--json] [--repo DIR] [--coverage FILE] [--reruns N] [--timeout SEC] BASE HEAD TESTS_DIR
+          jitcatch run [--json] [--repo DIR] [--coverage FILE] [--reruns N] [--timeout SEC] [--env NAME]... BASE HEAD TESTS_DIR
           jitcatch assess [--json] RUN.json
 
         context   Short brief of changed methods, old/new source, call sites, and tests.

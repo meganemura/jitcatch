@@ -120,6 +120,7 @@ jitcatch run --repo DIR BASE HEAD TESTS_DIR
 | `--coverage FILE` | `context`, `run` | 既存テストの grep の代わりにこのファイルを使う。JSON は `"format": "jitcatch-coverage-v1"` と `tests` 配列を持つ。例は `examples/coverage/jitcatch-coverage-v1.sample.json`。 |
 | `--reruns N` | `run` | base で通り head で落ちたあとの、head での追加実行回数。既定は 2。`0` でフレーク検査をしない。 |
 | `--timeout SEC` | `run` | テストファイルを止めるまでの秒数。既定は 10。最小は 1。 |
+| `--env NAME` | `run` | この環境変数を今の環境からテストのプロセスへ渡す。複数の名前は繰り返して渡す。実行結果には値ではなく名前を記録する。 |
 
 | コマンド | 引数 |
 | --- | --- |
@@ -164,6 +165,8 @@ bin/jitcatch assess --json run.json
 ```sh
 ruby -Ilib -I. .jitcatch/<file> -v --seed 1
 ```
+
+リビジョンに `Gemfile` があるときは、`-rbundler/setup` を付け、`BUNDLE_GEMFILE` をその `Gemfile` にして実行する。そのため、それぞれの側は自分のロックファイルにある gem を読む。`run` は側ごとに 1 回 bundle を確かめ、`bundle base ok` や `bundle head failed: <メッセージ>` を出す。たとえばロックした gem がインストールされていないときである。プロセスに渡す環境変数は、決まった一覧と `--env` で名前を挙げたものだけである。
 
 実行されるのは `*_test.rb` か `test_*.rb` である。その名前が 1 つも無いときは、すべての `.rb` を実行する。上限は 40 ファイル。base で通り、head で失敗、エラー、またはタイムアウトになったテストが候補になる。`--reruns` は候補を head で繰り返す。1 回でも結果が違えば `flaky` である。タイムアウトは再実行しない。
 
