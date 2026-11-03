@@ -44,7 +44,7 @@ module JitCatch
     end
 
     def command_run(argv)
-      opts, positional = parse_options(argv, %i[repo coverage reruns timeout env])
+      opts, positional = parse_options(argv, %i[repo reruns timeout env])
       return write_help if opts[:help]
       raise UsageError, "usage: jitcatch run BASE HEAD TESTS_DIR" unless positional.size == 3
 
@@ -55,7 +55,6 @@ module JitCatch
         positional[2],
         reruns: opts.fetch(:reruns, 2),
         timeout: opts.fetch(:timeout, 10),
-        coverage: opts[:coverage],
         env: opts.fetch(:env, [])
       )
       doc = Assessor.apply(raw)
@@ -148,7 +147,7 @@ module JitCatch
 
         Usage:
           jitcatch context [--json] [--repo DIR] [--coverage FILE] BASE HEAD
-          jitcatch run [--json] [--repo DIR] [--coverage FILE] [--reruns N] [--timeout SEC] [--env NAME]... BASE HEAD TESTS_DIR
+          jitcatch run [--json] [--repo DIR] [--reruns N] [--timeout SEC] [--env NAME]... BASE HEAD TESTS_DIR
           jitcatch assess [--json] RUN.json
 
         context   Short brief of changed methods, old/new source, call sites, and tests.

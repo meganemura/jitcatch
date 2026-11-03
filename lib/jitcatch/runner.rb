@@ -19,24 +19,23 @@ module JitCatch
       'begin; require "minitest"; rescue LoadError; $stderr.puts %(minitest is not in the bundle: add gem "minitest" to the Gemfile); exit 1; end'
     Result = Data.define(:tests, :file_error, :timed_out, :exit_code)
 
-    def self.run(repo, base_ref, head_ref, tests_dir, reruns: 2, timeout: 10, coverage: nil, env: [])
-      new(repo, base_ref, head_ref, tests_dir, reruns: reruns, timeout: timeout, coverage: coverage, env: env).run
+    def self.run(repo, base_ref, head_ref, tests_dir, reruns: 2, timeout: 10, env: [])
+      new(repo, base_ref, head_ref, tests_dir, reruns: reruns, timeout: timeout, env: env).run
     end
 
-    def initialize(repo, base_ref, head_ref, tests_dir, reruns:, timeout:, coverage:, env:)
+    def initialize(repo, base_ref, head_ref, tests_dir, reruns:, timeout:, env:)
       @git = repo.is_a?(GitRepo) ? repo : GitRepo.new(repo)
       @base_ref = base_ref
       @head_ref = head_ref
       @tests_dir = File.expand_path(tests_dir)
       @reruns = reruns
       @timeout = timeout
-      @coverage = coverage
       @env_names = env.uniq.sort
       raise UsageError, "tests directory not found: #{tests_dir}" unless File.directory?(@tests_dir)
     end
 
     def run
-      change = Changes.between(@git, @base_ref, @head_ref, coverage: @coverage)
+      change = Changes.between(@git, @base_ref, @head_ref)
       files, omitted = candidate_files
       rows = []
       parent = Dir.mktmpdir("jitcatch-")

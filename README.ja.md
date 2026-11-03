@@ -154,7 +154,7 @@ jitcatch run --repo DIR BASE HEAD TESTS_DIR
 | --- | --- | --- |
 | `--json` | `context`, `run`, `assess` | 同じ内容を JSON で出す。 |
 | `--repo DIR` | `context`, `run` | 読む git リポジトリ。既定は作業ディレクトリ。 |
-| `--coverage FILE` | `context`, `run` | 既存テストの grep の代わりにこのファイルを使う。JSON は `"format": "jitcatch-coverage-v1"` と `tests` 配列を持つ。例は `examples/coverage/jitcatch-coverage-v1.sample.json`。 |
+| `--coverage FILE` | `context` | 既存テストの grep の代わりにこのファイルを使う。JSON は `"format": "jitcatch-coverage-v1"` と `tests` 配列を持つ。例は `examples/coverage/jitcatch-coverage-v1.sample.json`。 |
 | `--reruns N` | `run` | base で通り head で落ちたあとの、head での追加実行回数。既定は 2。`0` でフレーク検査をしない。 |
 | `--timeout SEC` | `run` | テストファイルを止めるまでの秒数。既定は 10。最小は 1。 |
 | `--env NAME` | `run` | この環境変数を今の環境からテストのプロセスへ渡す。複数の名前は繰り返して渡す。実行結果には値ではなく名前を記録する。 |

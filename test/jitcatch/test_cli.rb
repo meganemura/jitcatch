@@ -92,6 +92,7 @@ class TestCLI < Minitest::Test
         %w[assess] => "usage: jitcatch assess RUN.json",
         %w[context --bogus x base HEAD] => "unknown option: --bogus",
         %w[context --repo] => "--repo requires a value",
+        %w[run --coverage c.json base HEAD t] => "unknown option: --coverage",
         %w[run --reruns x base HEAD t] => "--reruns requires an integer",
         %w[run --timeout 0 base HEAD t] => "--timeout must be >= 1",
         %w[run --env 1X base HEAD t] => "--env needs a variable name, not 1X",

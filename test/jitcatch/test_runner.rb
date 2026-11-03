@@ -452,7 +452,7 @@ class TestRunner < Minitest::Test
     end
   end
 
-  def test_runs_at_most_forty_files_and_validates_the_coverage_file
+  def test_runs_at_most_forty_files
     with_repo do |repo|
       repo.write("lib/flag.rb", "module Flag; end\n")
       repo.commit("base", date: "2026-02-11T00:00:00Z")
@@ -463,10 +463,6 @@ class TestRunner < Minitest::Test
       write_tests(tests, (1..41).to_h { |n| [format("f%02d_test.rb", n), ""] })
 
       assert_equal 1, execute(repo, tests)["test_files_omitted"]
-      error = assert_raises(JitCatch::UsageError) do
-        JitCatch::Runner.run(repo.dir, "base", "HEAD", tests, coverage: File.join(repo.dir, "missing.json"))
-      end
-      assert_match(/\Acoverage file not found: /, error.message)
     end
   end
 

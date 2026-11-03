@@ -117,7 +117,7 @@ jitcatch run --repo DIR BASE HEAD TESTS_DIR
 | --- | --- | --- |
 | `--json` | `context`, `run`, `assess` | Print the same document as JSON. |
 | `--repo DIR` | `context`, `run` | Git repository to read. The default is the working directory. |
-| `--coverage FILE` | `context`, `run` | Replace the grep of existing tests with this file. The JSON has `"format": "jitcatch-coverage-v1"` and a `tests` array. See `examples/coverage/jitcatch-coverage-v1.sample.json`. |
+| `--coverage FILE` | `context` | Replace the grep of existing tests with this file. The JSON has `"format": "jitcatch-coverage-v1"` and a `tests` array. See `examples/coverage/jitcatch-coverage-v1.sample.json`. |
 | `--reruns N` | `run` | Extra runs on head after a pass-on-base / fail-on-head result. The default is 2. `0` skips the flake check. |
 | `--timeout SEC` | `run` | Seconds before a test file is killed. The default is 10. The minimum is 1. |
 | `--env NAME` | `run` | Pass this variable from your environment to the test processes. Repeat it for more names. The run records the names, not the values. |
