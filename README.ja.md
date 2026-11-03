@@ -2,17 +2,37 @@
 
 jitcatch は、変更の親で通り、その変更で落ちる Ruby のテストを残す。
 
-変更をレビューするエージェントは、その差分向けのテストを書く。新しい振る舞いだけを書いたテストは親で落ち、回帰の証拠にならない。親がすでに満たしていて変更後に落ちるテストは、古いコードが満たしていた主張を新しいコードが壊したことを示す。jitcatch はそのテストを両方のリビジョンで走らせ、フレークと、ほかのいくつかの非シグナルを除いて、残ったものを出す。
+変更をレビューするエージェントは、その差分向けのテストを書く。
+新しい振る舞いだけを書いたテストは親で落ち、回帰の証拠にならない。
+親がすでに満たしていて変更後に落ちるテストは、古いコードが満たしていた主張を新しいコードが壊したことを示す。
+jitcatch はそのテストを両方のリビジョンで走らせ、フレークと、ほかのいくつかの非シグナルを除いて、残ったものを出す。
 
 方法は Meta の catching JiT tests に沿う（[Harden and Catch](https://arxiv.org/abs/2504.16472)、Meta での報告は [Just-in-Time Catching Test Generation at Meta](https://arxiv.org/abs/2601.22832)）。
 
 ## 使い方
 
-Ruby 3.3 以降。追加の gem はない。`minitest` と `prism` は Ruby に付いている。`BASE` は親のリビジョン、`HEAD` は変更である。どちらもコミットを指す。未コミットのファイルは diff に入らない。
+Ruby 3.3 以降。
+追加の gem はない。
+`minitest` と `prism` は Ruby に付いている。
+`BASE` は親のリビジョン、`HEAD` は変更である。
+どちらもコミットを指す。
+未コミットのファイルは diff に入らない。
 
-Minitest のファイルはスクラッチディレクトリに自分で書く。`require "minitest/autorun"` のあと、リポジトリがライブラリを読むのと同じ `require` を書く。実行は jitcatch が行う。`reported` の各行を、意図と diff と照らして判断する。ブリーフの意図は `BASE` から `HEAD` までのコミットメッセージである。各メッセージの末尾で git がトレーラーとして読む行（`Co-Authored-By:` など）は含めない。likely-regression は、振る舞いが変わり、意図がその変更を求めていないとき。intended は、意図がその変更を求めているとき。unclear は、意図だけでは決められないとき。
+Minitest のファイルはスクラッチディレクトリに自分で書く。
+`require "minitest/autorun"` のあと、リポジトリがライブラリを読むのと同じ `require` を書く。
+実行は jitcatch が行う。
+`reported` の各行を、意図と diff と照らして判断する。
+ブリーフの意図は `BASE` から `HEAD` までのコミットメッセージである。
+各メッセージの末尾で git がトレーラーとして読む行（`Co-Authored-By:` など）は含めない。
+likely-regression は、振る舞いが変わり、意図がその変更を求めていないとき。
+intended は、意図がその変更を求めているとき。
+unclear は、意図だけでは決められないとき。
 
-`examples/fixtures/shop` はセント単位のカートである。小計が 10000 セントに達すると 10% のボリューム割引が付く。税は 8% で、端数は half up。既存テストは 10000 セントちょうどを見ていない。`ruby script/setup_shop` は `examples/shop` に git の履歴を書く（このディレクトリは gitignore してある）。
+`examples/fixtures/shop` はセント単位のカートである。
+小計が 10000 セントに達すると 10% のボリューム割引が付く。
+税は 8% で、端数は half up。
+既存テストは 10000 セントちょうどを見ていない。
+`ruby script/setup_shop` は `examples/shop` に git の履歴を書く（このディレクトリは gitignore してある）。
 
 | リビジョン | 内容 |
 | --- | --- |
@@ -26,7 +46,8 @@ bin/jitcatch context --repo examples/shop base regression
 bin/jitcatch run --repo examples/shop base regression examples/runs/regression/tests
 ```
 
-`context` は意図を出し、変更されたメソッドを 1 ブロックずつ出す。この実行からは次のとおり。
+`context` は意図を出し、変更されたメソッドを 1 ブロックずつ出す。
+この実行からは次のとおり。
 
 ```
 intent:
@@ -57,7 +78,8 @@ intent:
       end
 ```
 
-`run` はテストを 2 件残す。全文は `examples/runs/regression/run.txt`。
+`run` はテストを 2 件残す。
+全文は `examples/runs/regression/run.txt`。
 
 ```
 counts generated=13 no_signal=8 fail_on_base=3 candidates=2 flaky=0 discarded=0 reported=2
@@ -70,9 +92,16 @@ assess:
     Actual: 0
 ```
 
-reported の 2 件は、どちらも likely-regression である。10000 セントちょうどでは割引が 1000、割引後の税込み合計が 9720 になる。head は 0 と 10800 を返す。10800 は割引なしの税込み合計である。意図が頼んでいるのはクーポンの追加だけである。SAVE5 の 3 件は base で落ちる。`apply_coupon` と `Shop::UnknownCoupon` がまだ無いためで、候補にならない。
+reported の 2 件は、どちらも likely-regression である。
+10000 セントちょうどでは割引が 1000、割引後の税込み合計が 9720 になる。
+head は 0 と 10800 を返す。
+10800 は割引なしの税込み合計である。
+意図が頼んでいるのはクーポンの追加だけである。
+SAVE5 の 3 件は base で落ちる。
+`apply_coupon` と `Shop::UnknownCoupon` がまだ無いためで、候補にならない。
 
-もう一方の履歴は、意図した変更である。変わるのは定数だけで、メソッド本体は同じなので、`context` はそのメソッドを `affected` と出す。
+もう一方の履歴は、意図した変更である。
+変わるのは定数だけで、メソッド本体は同じなので、`context` はそのメソッドを `affected` と出す。
 
 ```sh
 bin/jitcatch context --repo examples/shop base intended
@@ -100,9 +129,17 @@ assess:
     Actual: 500
 ```
 
-全文は `examples/runs/intended/context.txt` と `examples/runs/intended/run.txt`。reported の 2 件は intended である。メッセージは、5000 セント以上の注文を 10% 引きにする、と書いている。新しい規則を直接書いたテストは base で落ち、候補にならない。base で通り head で落ちる結果の形は、回帰の実行と同じである。分けているのはコミットメッセージである。
+全文は `examples/runs/intended/context.txt` と `examples/runs/intended/run.txt`。
+reported の 2 件は intended である。
+メッセージは、5000 セント以上の注文を 10% 引きにする、と書いている。
+新しい規則を直接書いたテストは base で落ち、候補にならない。
+base で通り head で落ちる結果の形は、回帰の実行と同じである。
+分けているのはコミットメッセージである。
 
-終わったらスクラッチディレクトリは消す。プロジェクトのスイートに残すのは、そのテストを採用するときだけである。likely-regression のテストは、バグを直したあとに置ける。intended のテストは、古い振る舞いを書いている。
+終わったらスクラッチディレクトリは消す。
+プロジェクトのスイートに残すのは、そのテストを採用するときだけである。
+likely-regression のテストは、バグを直したあとに置ける。
+intended のテストは、古い振る舞いを書いている。
 
 別のリポジトリでは、そのリポジトリが作業ディレクトリでなければ `--repo` を渡す。
 
@@ -128,9 +165,11 @@ jitcatch run --repo DIR BASE HEAD TESTS_DIR
 | `jitcatch run` | `BASE HEAD TESTS_DIR` |
 | `jitcatch assess` | `run --json` が書いた `RUN.json` |
 
-最初のコミットを見るときは、`BASE` に `ROOT^` を渡す。ルートコミットの親は空のツリーとして読む。
+最初のコミットを見るときは、`BASE` に `ROOT^` を渡す。
+ルートコミットの親は空のツリーとして読む。
 
-`assess` は件数と候補の行を再出力する。掛けるルールは `run` と同じである。
+`assess` は件数と候補の行を再出力する。
+掛けるルールは `run` と同じである。
 
 ```sh
 bin/jitcatch run --json --repo examples/shop --reruns 2 --timeout 10 base regression examples/runs/regression/tests > run.json
@@ -154,13 +193,30 @@ bin/jitcatch assess --json run.json
 | `discarded` | base で通り head で落ちたあと、ルールが除いた。`assess:` には残る。 |
 | `reported` | base で通り head で落ち、ルールは除かなかった。この行を判断する。 |
 
-`generated` はテストメソッドの数である。`candidates` は、破棄ルールの前に、base で安定して通り head で落ちた数である。`reported` はそのあと残った数である。
+`generated` はテストメソッドの数である。
+`candidates` は、破棄ルールの前に、base で安定して通り head で落ちた数である。
+`reported` はそのあと残った数である。
 
-タグはヒントであり、判断そのものではない。`touches:changed_method` は、テストが diff の変更したメソッド名を含んでいる。`touches:changed_constant` は、テストが diff の変更した定数名を含んでいる。`touches:changed_dependency` は、ロックしたバージョンが変わった gem の中からエラーが出た。gem の中から始まったエラーには `touches:changed_method` を付けない。`touches:unchanged_caller` は、diff が編集していない入口を通り、その入口から変更メソッドへ届いている。`discard:signature_change`、`discard:load_error`、`discard:timeout` は、候補を除いたルールの名前である。関連 id（`m05`、無ければ `-`）は、経路上に変更メソッドが複数あるときの、最も下流の変更メソッドである。
+タグはヒントであり、判断そのものではない。
+`touches:changed_method` は、テストが diff の変更したメソッド名を含んでいる。
+`touches:changed_constant` は、テストが diff の変更した定数名を含んでいる。
+`touches:changed_dependency` は、ロックしたバージョンが変わった gem の中からエラーが出た。
+gem の中から始まったエラーには `touches:changed_method` を付けない。
+`touches:unchanged_caller` は、diff が編集していない入口を通り、その入口から変更メソッドへ届いている。
+`discard:signature_change`、`discard:load_error`、`discard:timeout` は、候補を除いたルールの名前である。
+関連 id（`m05`、無ければ `-`）は、経路上に変更メソッドが複数あるときの、最も下流の変更メソッドである。
 
 ## どう残すか
 
-`context` は 2 つのリビジョンを diff し、ハンクを Prism でメソッドに対応づける。変更メソッドは `m01`、`m02` と付く。`Gemfile.lock` が変わったときは、`dependencies:` に gem ごとに `gem 旧 -> 新` を出す。変わった定数は `k01` で、その定数を読むだけで本体が変わっていないメソッドは `affected`（`via=k01`）になる。片方の側にしか無いクラスやモジュールも定数として `added` か `removed` になり、ソースには宣言の行が出る。各メソッドには、旧ソースと新ソース、ライブラリ内の呼び出し、そこへ届く入口（`reachable_from`）、それに言及している既存テストが出る。言及しているテストがないときは `entry_point_tests` が出る。`reachable_from` のうち public な入口について、そのクラスを書き、入口と同じ名前のメソッドを呼んでいるテストファイルである。`--coverage` を渡すと、grep の代わりに JSON の行リストを使う。
+`context` は 2 つのリビジョンを diff し、ハンクを Prism でメソッドに対応づける。
+変更メソッドは `m01`、`m02` と付く。
+`Gemfile.lock` が変わったときは、`dependencies:` に gem ごとに `gem 旧 -> 新` を出す。
+変わった定数は `k01` で、その定数を読むだけで本体が変わっていないメソッドは `affected`（`via=k01`）になる。
+片方の側にしか無いクラスやモジュールも定数として `added` か `removed` になり、ソースには宣言の行が出る。
+各メソッドには、旧ソースと新ソース、ライブラリ内の呼び出し、そこへ届く入口（`reachable_from`）、それに言及している既存テストが出る。
+言及しているテストがないときは `entry_point_tests` が出る。
+`reachable_from` のうち public な入口について、そのクラスを書き、入口と同じ名前のメソッドを呼んでいるテストファイルである。
+`--coverage` を渡すと、grep の代わりに JSON の行リストを使う。
 
 `run` はリビジョンごとに git worktree を作り、スクラッチディレクトリをその worktree の `.jitcatch/` へコピーし、ファイルごとに 1 プロセスで実行する。
 
@@ -168,19 +224,38 @@ bin/jitcatch assess --json run.json
 ruby -Ilib -I. .jitcatch/<file> -v --seed 1
 ```
 
-リビジョンに `Gemfile` があるときは、`-rbundler/setup` を付け、`BUNDLE_GEMFILE` をその `Gemfile` にして実行する。そのため、それぞれの側は自分のロックファイルにある gem を読む。`run` は側ごとに 1 回 bundle を確かめ、`bundle base ok` や `bundle head failed: <メッセージ>` を出す。たとえばロックした gem がインストールされていないときや、bundle に `minitest` が無いときである。プロセスに渡す環境変数は、決まった一覧と `--env` で名前を挙げたものだけである。
+リビジョンに `Gemfile` があるときは、`-rbundler/setup` を付け、`BUNDLE_GEMFILE` をその `Gemfile` にして実行する。
+そのため、それぞれの側は自分のロックファイルにある gem を読む。
+`run` は側ごとに 1 回 bundle を確かめ、`bundle base ok` や `bundle head failed: <メッセージ>` を出す。
+たとえばロックした gem がインストールされていないときや、bundle に `minitest` が無いときである。
+プロセスに渡す環境変数は、決まった一覧と `--env` で名前を挙げたものだけである。
 
-実行されるのは `*_test.rb` か `test_*.rb` である。その名前が 1 つも無いときは、すべての `.rb` を実行する。上限は 40 ファイル。base で通り、head で失敗、エラー、またはタイムアウトになったテストが候補になる。`--reruns` は候補を head で繰り返す。1 回でも結果が違えば `flaky` である。比べる前に一時ディレクトリ直下の名前を伏せるので、メッセージにある `Dir.mktmpdir` のパスは違いにならない。テキストの報告は `flaky` の行の下に各再実行の結果を出し、JSON の行は `reruns` に持つ。タイムアウトは再実行しない。
+実行されるのは `*_test.rb` か `test_*.rb` である。
+その名前が 1 つも無いときは、すべての `.rb` を実行する。
+上限は 40 ファイル。
+base で通り、head で失敗、エラー、またはタイムアウトになったテストが候補になる。
+`--reruns` は候補を head で繰り返す。
+1 回でも結果が違えば `flaky` である。
+比べる前に一時ディレクトリ直下の名前を伏せるので、メッセージにある `Dir.mktmpdir` のパスは違いにならない。
+テキストの報告は `flaky` の行の下に各再実行の結果を出し、JSON の行は `reruns` に持つ。
+タイムアウトは再実行しない。
 
-候補を `discarded` にするルールは 3 つある。head での `LoadError`、タイムアウト、そして diff が消したかシグネチャを書き換えた名前に対する `NameError`、`NoMethodError`、引数個数の `ArgumentError` である。消えたクラスやモジュールも消えた名前に数える。引数個数の `ArgumentError` とは `wrong number of arguments`、`missing keyword`、`unknown keyword` のことで、`assert_raises` が受け取って失敗にしたときも同じに扱う。コードが意図して起こす `ArgumentError`（`qty must be > 0` のようなもの）は `reported` のまま残る。
+候補を `discarded` にするルールは 3 つある。
+head での `LoadError`、タイムアウト、そして diff が消したかシグネチャを書き換えた名前に対する `NameError`、`NoMethodError`、引数個数の `ArgumentError` である。
+消えたクラスやモジュールも消えた名前に数える。
+引数個数の `ArgumentError` とは `wrong number of arguments`、`missing keyword`、`unknown keyword` のことで、`assert_raises` が受け取って失敗にしたときも同じに扱う。
+コードが意図して起こす `ArgumentError`（`qty must be > 0` のようなもの）は `reported` のまま残る。
 
-同じリポジトリと同じテストなら、出力は同じバイトになる。順序は固定で、テキストに時刻は無く、worktree の絶対パスは除かれる。
+同じリポジトリと同じテストなら、出力は同じバイトになる。
+順序は固定で、テキストに時刻は無く、worktree の絶対パスは除かれる。
 
 ## インストール
 
-実行ファイルは、このリポジトリのチェックアウトにある `bin/jitcatch` である。そのディレクトリを `PATH` に置く。
+実行ファイルは、このリポジトリのチェックアウトにある `bin/jitcatch` である。
+そのディレクトリを `PATH` に置く。
 
-スキルは [`skills`](https://github.com/vercel-labs/skills) CLI で入れる（Node.js 22.20 以降）。このリポジトリは非公開なので、Git の認証情報、GitHub CLI、または SSH で GitHub にアクセスできる必要がある。
+スキルは [`skills`](https://github.com/vercel-labs/skills) CLI で入れる（Node.js 22.20 以降）。
+このリポジトリは非公開なので、Git の認証情報、GitHub CLI、または SSH で GitHub にアクセスできる必要がある。
 
 ```sh
 npx skills add meganemura/jitcatch
@@ -195,22 +270,29 @@ npx skills add meganemura/jitcatch -a cursor
 npx skills add meganemura/jitcatch -a claude-code
 ```
 
-確認を飛ばすときは `-y` を足す。`bin/jitcatch` も `PATH` に置く。
+確認を飛ばすときは `-y` を足す。
+`bin/jitcatch` も `PATH` に置く。
 
 CLI を使わない場合は、`skills/jitcatch` をエージェントの skills ディレクトリへコピーまたはシンボリックリンクする（例: `.agents/skills/`、`.claude/skills/`、`.cursor/skills/`）。
 
 ## 限界
 
-- 呼び出しは名前で照合し、型は見ない。同名のメソッドが複数あると、呼び出し元を落とすか、関連 id を外す。
-- `define_method`、`class_eval`、条件の中の `def` は索引しない。`def self.foo` 以外のレシーバ付き定義は粗い。
+- 呼び出しは名前で照合し、型は見ない。
+  同名のメソッドが複数あると、呼び出し元を落とすか、関連 id を外す。
+- `define_method`、`class_eval`、条件の中の `def` は索引しない。
+  `def self.foo` 以外のレシーバ付き定義は粗い。
 - リネームは削除と追加に見える（`git diff --no-renames`）。
-- カバレッジは集めない。`--coverage` は渡された JSON を読むだけである。
+- カバレッジは集めない。
+  `--coverage` は渡された JSON を読むだけである。
 - 破棄ルールは、intended と regression を分けない。
 - 候補テストが古い振る舞いを書いていなければ、その穴にある回帰は `reported` が 0 のままである。
 - 新機能のテストは base で落ち、候補にならない。
 - 関連 id は、失敗の原因の行から一段ずれていることがある。
-- 言及は、そのテストメソッドの中の語である。コメントにメソッド名を書くと、タグがそちらへ寄る。
-- ファイルは 1 つずつ実行する。リポジトリの既存スイートは走らない。worktree を追加できる git リポジトリが要る。
+- 言及は、そのテストメソッドの中の語である。
+  コメントにメソッド名を書くと、タグがそちらへ寄る。
+- ファイルは 1 つずつ実行する。
+  リポジトリの既存スイートは走らない。
+  worktree を追加できる git リポジトリが要る。
 - アサーションのバックトレースはテストの中で止まりがちなので、ライブラリの行はテストが言及した名前から探す。
 
 ## 開発
@@ -219,7 +301,8 @@ CLI を使わない場合は、`skills/jitcatch` をエージェントの skills
 ruby -Ilib test/run.rb
 ```
 
-エンジンテストは一時 git リポジトリを作り、context、実行、フレーク、タイムアウト、シグネチャ変更の破棄を見る。`test/jitcatch/test_shop_demo.rb` はショップのフィクスチャを作り直し、`context` と `run` を `examples/runs/*/context.txt` および `run.txt` とバイト単位で比べる。
+エンジンテストは一時 git リポジトリを作り、context、実行、フレーク、タイムアウト、シグネチャ変更の破棄を見る。
+`test/jitcatch/test_shop_demo.rb` はショップのフィクスチャを作り直し、`context` と `run` を `examples/runs/*/context.txt` および `run.txt` とバイト単位で比べる。
 
 ## ライセンス
 
