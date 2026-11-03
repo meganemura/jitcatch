@@ -105,6 +105,14 @@ class TestChangesGraph < Minitest::Test
           self.class.build
         end
 
+        def on_a_result
+          again.strip
+        end
+
+        def on_a_self_result
+          self.again.build
+        end
+
         def self.sample
           new.strip
         end
@@ -161,50 +169,55 @@ class TestChangesGraph < Minitest::Test
       repo.commit("Change the leaves.", date: "2026-02-12T00:00:00Z")
 
       doc = JitCatch::Changes.between(repo.dir, "base", "HEAD")
-      reach = doc["methods"].to_h { |method| [method["name"], method["reachable_from"]] }
+      callers = doc["methods"].to_h { |method| [method["name"], method["callsites"].map { |site| site["enclosing"] }.sort] }
 
-      assert_equal %w[Ns::A#again Ns::A#mine Ns::A.sample Ns::B#fresh], reach.fetch("Ns::A#strip")
-      assert_equal %w[Ns::A#remake Ns::B#chained Ns::B#made Ns::B#qualified], reach.fetch("Ns::A.build")
-      assert_equal %w[C#run], reach.fetch("Helpers#helper")
+      assert_equal %w[Ns::A#again Ns::A#mine Ns::A.sample Ns::B#fresh], callers.fetch("Ns::A#strip")
+      assert_equal %w[Ns::A#remake Ns::B#chained Ns::B#made Ns::B#qualified], callers.fetch("Ns::A.build")
+      assert_equal %w[C#run], callers.fetch("Helpers#helper")
     end
   end
 
-def test_an_instance_variable_built_from_one_class_is_that_class
-  with_repo do |repo|
-    leaf = "class Repo\n  def read\n    BODY\n  end\nend\n\nclass Other\n  def read\n    0\n  end\nend\n"
-    users = <<~SRC
-      class Store
-        def initialize(repo)
-          @repo = repo.is_a?(Repo) ? repo : Repo.new(repo)
-          @either = rand > 0.5 ? Repo.new : Other.new
-          @given = repo
+  def test_an_instance_variable_built_from_one_class_is_that_class
+    with_repo do |repo|
+      leaf = "class Repo\n  def read\n    BODY\n  end\nend\n\nclass Other\n  def read\n    0\n  end\nend\n"
+      users = <<~SRC
+        class Store
+          def initialize(repo)
+            @repo = repo.is_a?(Repo) ? repo : Repo.new(repo)
+            @either = rand > 0.5 ? Repo.new : Other.new
+            @tested = Other.new ? Repo.new : nil
+            @given = repo
+          end
+
+          def load
+            @repo.read
+          end
+
+          def mixed
+            @either.read
+          end
+
+          def passed
+            @given.read
+          end
+
+          def tested
+            @tested.read
+          end
         end
+      SRC
+      repo.write("lib/repo.rb", leaf.sub("BODY", "1"))
+      repo.write("lib/store.rb", users)
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/repo.rb", leaf.sub("BODY", "2"))
+      repo.commit("Change read.", date: "2026-02-12T00:00:00Z")
 
-        def load
-          @repo.read
-        end
+      doc = JitCatch::Changes.between(repo.dir, "base", "HEAD")
 
-        def mixed
-          @either.read
-        end
-
-        def passed
-          @given.read
-        end
-      end
-    SRC
-    repo.write("lib/repo.rb", leaf.sub("BODY", "1"))
-    repo.write("lib/store.rb", users)
-    repo.commit("base", date: "2026-02-11T00:00:00Z")
-    repo.branch("base")
-    repo.write("lib/repo.rb", leaf.sub("BODY", "2"))
-    repo.commit("Change read.", date: "2026-02-12T00:00:00Z")
-
-    doc = JitCatch::Changes.between(repo.dir, "base", "HEAD")
-
-    assert_equal [["Repo#read", ["Store#load"]]], doc["methods"].map { |method| method.values_at("name", "reachable_from") }
+      assert_equal [["Repo#read", ["Store#load", "Store#tested"]]], doc["methods"].map { |method| method.values_at("name", "reachable_from") }
+    end
   end
-end
 
   def test_parse_errors_and_oversized_files_are_not_indexed
     with_repo do |repo|

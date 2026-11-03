@@ -87,6 +87,26 @@ class TestRender < Minitest::Test
     assert_equal diffs.values, JitCatch::Render.assess_json(doc)["candidates"].map { |row| row["message"] }
   end
 
+  def test_the_short_forms_of_a_diff_line_at_their_bounds
+    diff = ->(expected, actual) { { "message" => "--- expected\n+++ actual\n@@ -1 +1 @@\n#{expected}#{actual}" } }
+    pair = ->(expected, actual) { JitCatch::Render.message_lines(diff.call("-#{expected}\n", "+#{actual}\n")) }
+    long = %("#{"v" * 100}")
+    hash = ->(pairs) { "{#{pairs.map { |key, value| %("#{key}" => #{value}) }.join(", ")}}" }
+    window = "a" * 30
+    marker = "#{" " * 34}^ column 71"
+
+    assert_equal ["-#{"a" * 99}x"], JitCatch::Render.message_lines(diff.call("-#{"a" * 99}x\n", ""))
+    assert_equal ["-#{"a" * 99}b", "+#{"a" * 99}c"], pair.call("#{"a" * 99}b", "#{"a" * 99}c")
+    assert_equal ["-...#{window}b#{window}", "+...#{window}c#{window}", marker], pair.call("#{"a" * 70}b#{window}", "#{"a" * 70}c#{window}")
+    assert_equal ["-...#{window}b#{window}...", "+...#{window}c#{window}...", marker], pair.call("#{"a" * 70}b#{window}a", "#{"a" * 70}c#{window}a")
+    assert_equal " ^ column 1", pair.call(hash.call("a" => long), "#{long}!").last
+    assert_equal "   ^ column 3", pair.call(hash.call("a" => long, "b" => 1), hash.call("b" => 1, "a" => long)).last
+    assert_equal "^ column", pair.call("{**x, #{hash.call("a" => long)[1..]}", "{**x, #{hash.call("a" => long.sub("v", "w"))[1..]}").last.strip[0, 8]
+    four = %w[b c d e]
+    assert_equal %(hash keys differ: "b", "c", "d", "e"), pair.call(hash.call(four.to_h { |key| [key, 1] }.merge("a" => long)), hash.call(four.to_h { |key| [key, 2] }.merge("a" => long))).first
+    assert_equal %(hash keys differ: "b", "c", "d", "e" (+1 more)), pair.call(hash.call((four + ["f"]).to_h { |key| [key, 1] }.merge("a" => long)), hash.call((four + ["f"]).to_h { |key| [key, 2] }.merge("a" => long))).first
+  end
+
   def test_run_text_names_omitted_files_and_an_empty_run
     doc = JitCatch::Assessor.apply({
       "version" => "0.1.0", "base" => "b", "head" => "h", "reruns" => 2, "timeout_s" => 10,
