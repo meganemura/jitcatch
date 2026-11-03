@@ -45,6 +45,8 @@ Methods in test files (under `test/` or `spec/`, or named `test_*.rb` or `*_test
 
 `tests: (none)` means no test file names that method. Then `entry_point_tests:` lists, when it finds any, the test files that call a public `reachable_from` entry point: the file names the entry point's class (`Cart.new`, not only `Cart::LIMIT`) and calls a method of that name (`.total`). Each file shows the entry points it matched. Read those tests before you write yours. They show how the repository builds the object and which inputs already reach the changed method. Like `tests:`, this line is a grep. It misses tests that drive the code through a subprocess or a factory, and it can list a file that calls a same-named method on another object. A `tests:` grep hit on a common name such as `initialize` or `call` can be any file that defines or calls that name.
 
+The brief ends with one `entrypoints <Const>:` section for each class or module that holds a changed method. Each line is a public method of that class on head (on base when head has none) and its role: the change kind (`modified`, `added`, `affected`, `removed`) first, then `unchanged`, at most 12 lines. Pick the methods your tests call from this list. `run` counts these names as mentions too, so calling one gives a row its `touches:unchanged_caller` tag when it reaches a changed method.
+
 `--coverage FILE` replaces the grep of existing tests. The file is JSON: `"format": "jitcatch-coverage-v1"` and a `tests` array of `{ "id", "file", "lines" }`, where `lines` maps repo paths to line numbers. Without it, the brief says `existing_tests grep`.
 
 `--json` prints the same brief (`"command": "context"`).
