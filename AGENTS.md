@@ -23,7 +23,25 @@ CI (`.github/workflows/ci.yml`) runs `test/run.rb` on Ruby 3.3 with no bundle, a
 
 The engine tests build temporary git repositories and cover context, execution, flakes, timeouts, and signature-change discards. `test/jitcatch/test_shop_demo.rb` runs `script/setup_shop` in a temp directory and compares `context` and `run` to `examples/runs/*/context.txt` and `run.txt`, byte for byte.
 
-`ruby script/setup_shop` writes a gitignored history at `examples/shop`. The sources are `examples/fixtures/shop/`. `examples/runs/` is the recorded demo, not a place to check in new candidate tests. If a change to rendering or the fixture moves those bytes, regenerate from the fixture and review the diff. Do not hand-edit the records to hide a mismatch.
+`ruby script/setup_shop` writes a gitignored history at `examples/shop`. The sources are `examples/fixtures/shop/`. `examples/runs/` is the recorded demo, not a place to check in new candidate tests. If a change to rendering or the fixture moves those bytes, regenerate from the fixture and review the diff. Do not hand-edit the records to hide a mismatch. To regenerate a record, write the history to a scratch directory and run the CLI from this checkout:
+
+```sh
+ruby script/setup_shop /tmp/shop
+ruby -Ilib bin/jitcatch run --repo /tmp/shop base regression examples/runs/regression/tests > examples/runs/regression/run.txt
+```
+
+Use `intended` in place of `regression` for the other record, and `context --repo /tmp/shop base <ref>` for `context.txt`.
+
+## Mutation testing
+
+mutineer is not in the Gemfile. Run it from a Gemfile outside the repository (`gem "mutineer"` and `gem "minitest"`), with `BUNDLE_GEMFILE` pointing there, and name the test files that cover each source:
+
+```sh
+BUNDLE_GEMFILE=/path/to/Gemfile bundle exec mutineer run --since origin/queue \
+  lib/jitcatch/assessor.rb --test test/jitcatch/test_assessor.rb --test test/jitcatch/test_render.rb
+```
+
+`--only 'JitCatch::Assessor#related_method'` scores one method, which also works on an archive of the base revision for a before score. `test/jitcatch/test_runner.rb` builds git repositories and takes about a minute per run, so scope `runner.rb`, `changes.rb`, and `git_repo.rb` with `--since` or `--only`. mutineer writes `.mutineer/` at the root, which git ignores.
 
 ## Invariants
 
