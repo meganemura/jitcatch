@@ -330,4 +330,4 @@ ruby -Ilib test/run.rb
 
 ## ライセンス
 
-ライセンスはまだ選んでいない。
+MIT
