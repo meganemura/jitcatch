@@ -35,7 +35,9 @@ jitcatch context --repo DIR --coverage FILE BASE HEAD
 
 Omit `--repo` when the working directory is the repository.
 
-Read `intent:` first. Then the changed files, constants (`k01`, …), and methods (`m01`, …). Each method has a change kind, signature, visibility, call sites, `reachable_from`, existing tests, and the old and new source. A method marked `affected` did not change its body. It reads a constant that did (`via=k01`).
+Read `intent:` first. It prints whole commit messages, so trailer lines such as `Co-Authored-By:` appear there too. Then the changed files, constants (`k01`, …), and methods (`m01`, …). Each method has a change kind, signature, visibility, call sites, `reachable_from`, existing tests, and the old and new source. A method marked `affected` did not change its body. It reads a constant that did (`via=k01`).
+
+`tests: (none)` means no test file names that method. A test that calls it through a `reachable_from` entry point still covers it, so look for tests of the entry points too.
 
 `--coverage FILE` replaces the grep of existing tests. The file is JSON: `"format": "jitcatch-coverage-v1"` and a `tests` array of `{ "id", "file", "lines" }`, where `lines` maps repo paths to line numbers. Without it, the brief says `existing_tests grep`.
 
@@ -52,7 +54,7 @@ Each file:
 - `require "minitest/autorun"`, then require the library the way the repo loads it (`require "shop"` when `lib/` is on the load path).
 - Name it `*_test.rb` or `test_*.rb`. When any file matches, other `*.rb` files are not executed. At most 40 files run.
 - The runner copies the directory into each worktree at `.jitcatch/` and runs one process per file: `ruby -Ilib -I. .jitcatch/<file> -v --seed 1`.
-- Do not depend on the original path, on order, or on the clock. The child keeps only `PATH`, `HOME`, `USER`, `LOGNAME`, `TMPDIR`, `TEMP`, `TMP`, `LD_LIBRARY_PATH`, `GEM_HOME`, and `GEM_PATH`, and sets `LANG` and `LC_ALL` to `C.UTF-8`. Other variables, such as `RUBYOPT` from `bundle exec` or `CI`, do not reach it.
+- Do not depend on the original path, on order, or on the clock. The child keeps only `PATH`, `HOME`, `USER`, `LOGNAME`, `TMPDIR`, `TEMP`, `TMP`, `LD_LIBRARY_PATH`, `GEM_HOME`, and `GEM_PATH`, and sets `LANG` and `LC_ALL` to `C.UTF-8`. Other variables, such as `RUBYOPT` from `bundle exec` or `CI`, do not reach it. The child does not run under Bundler, even when you start `jitcatch` with `bundle exec`. A gem installed in `GEM_HOME` or `GEM_PATH` still loads with a plain `require`.
 
 ## Run
 
