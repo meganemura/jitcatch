@@ -18,6 +18,10 @@ module JitCatch
     OWN_FRAME = %r{/gems/rspec-(?:core|expectations|mocks|support)-[^/]+/|\A-e\z}.freeze
     # A raise_error failure repeats the backtrace of the error it got.
     QUOTED_FRAME = /\A\s*# \S.*:\d+:in /.freeze
+    # The backtrace goes on past the error's own frames into the error it
+    # was raised from: this line, the class, then the message and the
+    # frames indented under it.
+    CAUSED_BY = "--- Caused by: ---"
 
     def self.parse(report, stdout, stderr, normalizer: ->(text) { text })
       new(report, normalizer.call(stdout.to_s), normalizer.call(stderr.to_s), normalizer).parse
@@ -64,10 +68,18 @@ module JitCatch
       exception = example["exception"] || {}
       error_class = exception["class"].to_s
       quoted, lines = @normalizer.call(exception["message"].to_s).lines.partition { |line| line.match?(QUOTED_FRAME) }
-      own = frames(exception["backtrace"])
+      backtrace = Array(exception["backtrace"]).map { |line| @normalizer.call(line.to_s) }
+      at = backtrace.index(CAUSED_BY)
+      own = frames(backtrace.take(at || backtrace.size))
       # The expectation's line comes first, then the frames of the error it
       # got, as Minitest prints an assert_raises failure.
-      Failure.result(FAILURES.include?(error_class) ? "fail" : "error", error_class, lines.join, [*own.first(1), *frames(quoted), *own.drop(1)])
+      Failure.result(FAILURES.include?(error_class) ? "fail" : "error", error_class, lines.join, [*own.first(1), *frames(quoted), *own.drop(1)],
+        cause: at && cause(backtrace.drop(at + 1)))
+    end
+
+    def cause(lines)
+      message = lines.drop(1).take_while { |line| line.start_with?("  ") && !line.match?(Failure::FRAME) }
+      { "error_class" => lines.first.to_s.delete_suffix(":"), "message" => message.map(&:strip).join("\n") }
     end
 
     def frames(backtrace)

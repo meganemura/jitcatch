@@ -219,6 +219,19 @@ constants: (none)
       JitCatch::Render.message_lines({ "message" => message })
   end
 
+  def test_an_error_row_names_its_cause
+    doc = JitCatch::Assessor.apply({
+      "version" => "0.1.0", "base" => "b", "head" => "h",
+      "tests" => [
+        { "id" => "t01", "name" => "A errors", "classification" => "candidate", "base" => { "status" => "pass" },
+          "head" => { "status" => "error", "error_class" => "W", "message" => "outer", "cause" => { "error_class" => "KeyError", "message" => "inner k\nmore" } } }
+      ]
+    })
+
+    assert_equal ["  c01 A errors base=pass head=error - error:W,report", "    outer", "    cause: KeyError: inner k"],
+      JitCatch::Render.assess_text(doc).split("assess:\n").last.lines(chomp: true)
+  end
+
   def test_assess_prints_the_warnings_of_the_run
     doc = { "version" => "0.1.0", "base" => "b", "head" => "h", "warnings" => ["base is not an ancestor of head"], "tests" => [],
             "counts" => { "generated" => 0, "no_signal" => 0, "fail_on_base" => 0, "candidates" => 0, "flaky" => 0, "discarded" => 0, "reported" => 0 } }

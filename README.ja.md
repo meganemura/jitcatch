@@ -189,6 +189,9 @@ jitcatch run --repo DIR BASE HEAD TESTS_DIR
 掛けるルールは `run` と同じである。
 行には失敗の最初の行か、Minitest の差分の期待行と実際行が出る。
 そのどちらかが 100 文字を超えると、値の違う Hash のエントリか、最初に違う桁のまわりと `^ column N` の印を出す。
+失敗した `assert_raises(X)` の行には、代わりに来たエラーを示す Minitest の `Class:` 行と `Message:` 行も出る。
+別のエラーから上げられた RSpec のエラーの行には、`cause: KeyError: key not found` のように元のエラーのクラスとメッセージが出る。
+Minitest は元のエラーを出力しないので、Minitest の行には出ない。
 `--json` はメッセージ全体を残す。
 
 ```sh

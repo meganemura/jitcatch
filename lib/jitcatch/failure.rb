@@ -13,14 +13,17 @@ module JitCatch
     MESSAGE_LINES = 20
     FRAMES = 15
 
-    def result(status, error_class, message, frames)
+    # +cause+ is the error the failing one was raised from, when the
+    # framework printed it: {"error_class", "message"}.
+    def result(status, error_class, message, frames, cause: nil)
       message = message.to_s.strip.lines.first(MESSAGE_LINES).join.rstrip
       {
         "status" => status,
         "error_class" => error_class,
         "message" => message,
         "message_first_line" => first_line(message),
-        "backtrace" => frames.first(FRAMES)
+        "backtrace" => frames.first(FRAMES),
+        "cause" => cause
       }
     end
 

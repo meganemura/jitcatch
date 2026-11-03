@@ -239,6 +239,7 @@ module JitCatch
         lines << "  #{row["candidate_id"]} #{row["name"]} base=#{row["base_status"]} head=#{row["head_status"]} #{method} #{row["tags"].join(",")}"
         lines << "    related guess: #{method} of #{row["method_ids"].join(",")}" if row["method_ids"].size > 1
         row["message_lines"].each { |line| lines << "    #{line}" }
+        lines << "    cause: #{cause_line(row["cause"])}" if row["cause"]
         lines << "    rerun: #{row["rerun"]}" if row["rerun"]
       end
       lines
@@ -261,9 +262,14 @@ module JitCatch
           "disposition" => test["disposition"],
           "message_first_line" => test.dig("head", "message_first_line").to_s,
           "message" => test.dig("head", "message").to_s,
-          "message_lines" => message_lines(test["head"])
+          "message_lines" => message_lines(test["head"]),
+          "cause" => test.dig("head", "cause")
         }
       }
+    end
+
+    def cause_line(cause)
+      cause && [cause["error_class"], Failure.first_line(cause["message"])].reject(&:empty?).join(": ")
     end
 
     def message_lines(head)

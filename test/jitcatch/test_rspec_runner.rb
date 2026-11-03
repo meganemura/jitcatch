@@ -304,6 +304,24 @@ class TestRSpecRunner < Minitest::Test
     end
   end
 
+  def test_an_error_row_names_the_error_it_was_raised_from
+    with_repo do |repo|
+      repo.write("lib/a.rb", "module A; def self.g = 1; end\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/a.rb", %(module A; def self.g = (raise KeyError, "inner k" rescue raise ArgumentError, "outer"); end\n))
+      repo.commit("Wrap a key error.", date: "2026-02-12T00:00:00Z")
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, { "a_spec.rb" => %(require "a"\n\nRSpec.describe A do\n  it("gets one") { expect(A.g).to eq(1) }\nend\n) })
+
+      doc = execute(repo, tests)
+
+      # Ruby 3.3 adds a `rescue in` frame on the same line as the error's own.
+      assert_equal({ "file" => ".jitcatch/a_spec.rb", "line" => 4 }, doc["tests"].fetch(0)["head"]["backtrace"].last)
+      assert_includes JitCatch::Render.run_text(doc), "    outer\n    cause: KeyError: inner k\n    rerun: "
+    end
+  end
+
   def execute(repo, tests, reruns: 0)
     raw = JitCatch::Runner.run(repo.dir, "base", "HEAD", tests, reruns: reruns, timeout: 20)
     JitCatch::Assessor.apply(raw)

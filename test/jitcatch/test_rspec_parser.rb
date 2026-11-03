@@ -58,7 +58,8 @@ class TestRSpecParser < Minitest::Test
       "error_class" => "RSpec::Expectations::ExpectationNotMetError",
       "message" => "expected: 3\n     got: 4\n\n(compared using ==)",
       "message_first_line" => "expected: 3",
-      "backtrace" => [{ "file" => ".jitcatch/calc_spec.rb", "line" => 10 }]
+      "backtrace" => [{ "file" => ".jitcatch/calc_spec.rb", "line" => 10 }],
+      "cause" => nil
     }, tests["Calc#add rounds"])
     boom = tests["Calc#boom"]
     assert_equal ["KeyError", "key not found: :a in {worktree}/lib"], [boom["error_class"], boom["message"]]
@@ -72,6 +73,18 @@ class TestRSpecParser < Minitest::Test
     result = JitCatch::RSpecParser.parse(report(examples), "", "")["tests"].fetch("Calc raises")
 
     assert_equal "expected KeyError, got #<ArgumentError: wrong number of arguments (given 1, expected 2)> with backtrace:", result["message"]
+  end
+
+  def test_an_error_with_a_cause_names_the_cause_and_keeps_only_its_own_frames
+    backtrace = ["./lib/calc.rb:2:in 'Object#g'", "./.jitcatch/calc_spec.rb:5:in 'block (2 levels)'", RSPEC_FRAME,
+                 "------------------", "--- Caused by: ---", "KeyError:", "  inner k", "  more", "  ./lib/calc.rb:2:in 'Object#g'"]
+    examples = [example("1:1", "Calc errors", "failed", 5, exception: { "class" => "W", "message" => "outer", "backtrace" => backtrace })]
+
+    result = JitCatch::RSpecParser.parse(report(examples), "", "")["tests"].fetch("Calc errors")
+
+    assert_equal({ "error_class" => "KeyError", "message" => "inner k\nmore" }, result["cause"])
+    assert_equal [{ "file" => "lib/calc.rb", "line" => 2 }, { "file" => ".jitcatch/calc_spec.rb", "line" => 5 }], result["backtrace"]
+    assert_nil JitCatch::RSpecParser.parse(report([example("1:1", "Calc errors", "failed", 5, exception: { "class" => "W", "message" => "outer", "backtrace" => [] })]), "", "")["tests"].fetch("Calc errors")["cause"]
   end
 
   def test_a_mock_failure_and_a_fixed_pending_are_failures
@@ -97,7 +110,8 @@ class TestRSpecParser < Minitest::Test
       "error_class" => "LoadError",
       "message" => "cannot load such file -- nope",
       "message_first_line" => "cannot load such file -- nope",
-      "backtrace" => [{ "file" => ".jitcatch/calc_spec.rb", "line" => 1 }]
+      "backtrace" => [{ "file" => ".jitcatch/calc_spec.rb", "line" => 1 }],
+      "cause" => nil
     }, parsed["file_error"])
   end
 
