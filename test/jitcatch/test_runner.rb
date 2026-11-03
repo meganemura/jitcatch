@@ -91,6 +91,7 @@ class TestRunner < Minitest::Test
       assert_includes by_name["AddArityTest#test_two_args"]["tags"], "discard:signature_change"
       assert_equal "discarded", by_name["TotalTest#test_total"]["disposition"]
       assert_includes by_name["TotalTest#test_total"]["tags"], "discard:signature_change"
+      assert_includes by_name["TotalTest#test_total"]["tags"], "touches:unchanged_caller"
       assert_equal %w[bare_name callsites_omitted change end_line file id kind name new_end new_start
         old_end old_start reachable_from signature start_line via_constant visibility],
         doc["methods"].flat_map(&:keys).uniq.sort
@@ -136,6 +137,173 @@ class TestRunner < Minitest::Test
     end
   end
 
+  def test_reruns_judge_only_candidates_and_run_every_rerun
+    with_repo do |repo|
+      repo.write("lib/calc.rb", BASE_CALC)
+      repo.commit("Initial calc", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/calc.rb", HEAD_CALC)
+      repo.commit("Tweak calc helpers.", date: "2026-02-12T00:00:00Z")
+      counts = File.join(repo.dir, "counts")
+      FileUtils.mkdir_p(counts)
+      counter = <<~RUBY
+        def head_run(name)
+          return 0 unless Dir.pwd.end_with?("/head")
+
+          path = File.join(#{counts.inspect}, name)
+          n = File.exist?(path) ? Integer(File.read(path)) + 1 : 1
+          File.write(path, n.to_s)
+          n
+        end
+      RUBY
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, {
+        "mixed_test.rb" => <<~RUBY,
+          require "minitest/autorun"
+          require "calc"
+          #{counter}
+          class MixedTest < Minitest::Test
+            def test_stable
+              assert_equal 4, Calc.new.double(2)
+            end
+
+            def test_quiet_then_loud
+              flunk "loud" if head_run("quiet") > 1
+            end
+          end
+        RUBY
+        "late_test.rb" => <<~RUBY,
+          require "minitest/autorun"
+          require "calc"
+          #{counter}
+          class LateTest < Minitest::Test
+            def test_late_flip
+              flunk "late" if head_run("late").between?(1, 2)
+            end
+          end
+        RUBY
+        "quiet_test.rb" => <<~RUBY
+          require "minitest/autorun"
+          require "calc"
+          #{counter}
+          class QuietTest < Minitest::Test
+            def test_quiet
+              head_run("only")
+            end
+          end
+        RUBY
+      })
+
+      doc = execute(repo, tests, reruns: 2)
+
+      dispositions = doc["tests"].to_h { |test| [test["name"], test["disposition"]] }
+      assert_equal({ "LateTest#test_late_flip" => "flaky", "MixedTest#test_quiet_then_loud" => "no_signal",
+                     "MixedTest#test_stable" => "reported", "QuietTest#test_quiet" => "no_signal" }, dispositions)
+      assert_equal %w[3 3 1], %w[late quiet only].map { |name| File.read(File.join(counts, name)) }
+    end
+  end
+
+  def test_a_test_only_head_defines_and_a_file_that_stops_loading_on_head
+    with_repo do |repo|
+      repo.write("lib/calc.rb", BASE_CALC)
+      repo.commit("Initial calc", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/calc.rb", HEAD_CALC.sub("  def label", "  def triple(n)\n    n * 3\n  end\n\n  def label"))
+      repo.commit("Add triple.", date: "2026-02-12T00:00:00Z")
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, {
+        "triple_test.rb" => <<~RUBY,
+          require "minitest/autorun"
+          require "calc"
+
+          class TripleTest < Minitest::Test
+            if Calc.method_defined?(:triple)
+              def test_triple
+                assert_equal 6, Calc.new.triple(2)
+              end
+            end
+          end
+        RUBY
+        "guard_test.rb" => <<~RUBY
+          require "minitest/autorun"
+          require "calc"
+          raise "double moved" unless Calc.new.double(2) == 4
+
+          class GuardTest < Minitest::Test
+          end
+        RUBY
+      })
+
+      doc = execute(repo, tests)
+
+      rows = doc["tests"].map { |test| [test["name"], test["disposition"], test["base"]["status"], test["head"]["status"]] }
+      assert_equal [
+        ["TripleTest#test_triple", "fail_on_base", "error", "pass"],
+        ["guard_test.rb#load", "reported", "pass", "error"]
+      ], rows.sort
+      assert_match(/\A\.jitcatch\/guard_test\.rb:3:in .<main>.: double moved \(RuntimeError\)\z/, doc["tests"].find { |test| test["name"] == "guard_test.rb#load" }["head"]["message"])
+      assert_equal 0, doc["test_files_omitted"]
+    end
+  end
+
+  def test_messages_keep_utf8_and_lose_worktree_and_ruby_paths
+    with_repo do |repo|
+      repo.write("lib/calc.rb", BASE_CALC)
+      repo.commit("Initial calc", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/calc.rb", HEAD_CALC)
+      repo.commit("Tweak calc helpers.", date: "2026-02-12T00:00:00Z")
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, {
+        "words_test.rb" => <<~RUBY
+          require "minitest/autorun"
+          require "json"
+          require "calc"
+
+          class WordsTest < Minitest::Test
+            def test_word
+              assert_equal "caf\\u00e9", Calc.new.double(2) == 4 ? "caf\\u00e9" : "cafe"
+            end
+
+            def test_file
+              assert_equal "x", __FILE__
+            end
+
+            def test_parse
+              JSON.parse("{") unless Calc.new.double(2) == 4
+            end
+          end
+        RUBY
+      })
+
+      doc = execute(repo, tests)
+
+      by_name = doc["tests"].to_h { |test| [test["name"], test] }
+      assert_includes JitCatch::Render.run_text(doc), "Actual: \"cafe\""
+      assert_includes JitCatch::Render.dump(doc), "caf\u00e9"
+      assert_equal "Expected: \"x\"\n  Actual: \".jitcatch/words_test.rb\"", by_name["WordsTest#test_file"]["head"]["message"]
+      assert_equal "{ruby}/", by_name["WordsTest#test_parse"]["head"]["backtrace"].fetch(0)["file"][0, 7]
+    end
+  end
+
+  def test_runs_at_most_forty_files_and_validates_the_coverage_file
+    with_repo do |repo|
+      repo.write("lib/flag.rb", "module Flag; end\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("README.md", "head\n")
+      repo.commit("Touch readme.", date: "2026-02-12T00:00:00Z")
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, (1..41).to_h { |n| [format("f%02d_test.rb", n), ""] })
+
+      assert_equal 1, execute(repo, tests)["test_files_omitted"]
+      error = assert_raises(JitCatch::UsageError) do
+        JitCatch::Runner.run(repo.dir, "base", "HEAD", tests, coverage: File.join(repo.dir, "missing.json"))
+      end
+      assert_match(/\Acoverage file not found: /, error.message)
+    end
+  end
+
   def test_discards_head_timeout
     with_repo do |repo|
       repo.write("lib/flag.rb", "module Flag; def self.ok; true; end; end\n")
@@ -144,6 +312,7 @@ class TestRunner < Minitest::Test
       repo.write("README.md", "head\n")
       repo.commit("Touch readme.", date: "2026-02-12T00:00:00Z")
       tests = File.join(repo.dir, "candidates")
+      head_runs = File.join(repo.dir, "head-runs")
       write_tests(tests, {
         "slow_test.rb" => <<~RUBY
           require "minitest/autorun"
@@ -151,13 +320,19 @@ class TestRunner < Minitest::Test
 
           class SlowTest < Minitest::Test
             def test_slow
-              sleep 5 if Dir.pwd.end_with?("/head")
+              if Dir.pwd.end_with?("/head")
+                File.write(#{head_runs.inspect}, "x", mode: "a")
+                sleep 60
+              end
               assert Flag.ok
             end
           end
         RUBY
       })
-      doc = execute(repo, tests, timeout: 1, reruns: 0)
+      started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      doc = execute(repo, tests, timeout: 1, reruns: 2)
+      assert_operator Process.clock_gettime(Process::CLOCK_MONOTONIC) - started, :<, 30, "the timed-out process was not killed"
+      assert_equal "x", File.read(head_runs), "a timeout is not rerun"
       assert_equal 1, doc["counts"]["generated"]
       assert_equal 1, doc["counts"]["discarded"]
       assert_equal 0, doc["counts"]["reported"]
