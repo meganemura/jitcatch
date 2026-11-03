@@ -53,6 +53,8 @@ Write 3 to 6 Minitest files in a scratch directory you can delete.
 
 A catching test states a behavior the old code already satisfies. Aim it at a changed or affected method, and at unchanged callers that reach that method (`reachable_from`). Prefer a boundary, a rounding case, or an error path the diff could disturb. One claim per test method. A test that only describes the new feature fails on base and is not evidence.
 
+Call the changed method or its public caller in the test method itself. The `mentions` and the `touches:` tags read only the test method's own body, so a call made through a helper method in the same file leaves the row with no related id (`-`). Prefer a public entry point over `send(:private_helper)`: a private helper can move between base and head, and the test then fails on base.
+
 Each file:
 
 - `require "minitest/autorun"`, then require the library the way the repo loads it (`require "shop"` when `lib/` is on the load path). The worktree root is on the load path too, so a test can reuse the repository's own helpers by path from the root (`require "test/support/repo"`). When you start from a copy of a repository test, rewrite `require_relative "../test_helper"` to `require "test/test_helper"`: the copy runs from `.jitcatch/`, where the relative path points at the worktree root and fails with `LoadError` on both sides.
