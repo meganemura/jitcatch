@@ -272,6 +272,9 @@ module JitCatch
       lines = head["message"].to_s.lines.map(&:strip).reject(&:empty?)
       if lines[1]&.match?(/\AActual:/)
         lines.first(2)
+      elsif lines[0]&.end_with?("exception expected, not") && lines[1]&.start_with?("Class: <")
+        # assert_raises names the error that came on the next two lines.
+        lines.first(3)
       elsif lines[0]&.start_with?("expected: ") && lines[1]&.start_with?("got: ")
         # RSpec's eq and eql print each side on its own line.
         expected = lines[0].delete_prefix("expected: ")

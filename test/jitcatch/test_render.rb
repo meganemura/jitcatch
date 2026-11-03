@@ -212,6 +212,13 @@ constants: (none)
     assert_equal ["expected: 3"], JitCatch::Render.message_lines({ "message" => "expected: 3\nboom" })
   end
 
+  def test_an_assert_raises_failure_shows_the_class_and_message_that_came
+    message = "[KeyError] exception expected, not\nClass: <ArgumentError>\nMessage: <\"wrapped k\">\n---Backtrace---\nlib/a.rb:1:in 'A.f'\n---------------"
+
+    assert_equal ["[KeyError] exception expected, not", "Class: <ArgumentError>", "Message: <\"wrapped k\">"],
+      JitCatch::Render.message_lines({ "message" => message })
+  end
+
   def test_assess_prints_the_warnings_of_the_run
     doc = { "version" => "0.1.0", "base" => "b", "head" => "h", "warnings" => ["base is not an ancestor of head"], "tests" => [],
             "counts" => { "generated" => 0, "no_signal" => 0, "fail_on_base" => 0, "candidates" => 0, "flaky" => 0, "discarded" => 0, "reported" => 0 } }

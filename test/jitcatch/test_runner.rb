@@ -296,6 +296,27 @@ class TestRunner < Minitest::Test
     end
   end
 
+  def test_an_assert_raises_row_names_the_class_and_message_that_came
+    with_repo do |repo|
+      repo.write("lib/a.rb", %(module A; def self.f = raise(KeyError, "k"); end\n))
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/a.rb", %(module A; def self.f = raise(ArgumentError, "wrapped k"); end\n))
+      repo.commit("Wrap the key error.", date: "2026-02-12T00:00:00Z")
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, { "a_test.rb" => candidate_source("ATest", "test_f_raises_key_error", "assert_raises(KeyError) { A.f }").sub('"calc"', '"a"') })
+
+      text = JitCatch::Render.run_text(execute(repo, tests))
+
+      assert_includes text, <<~ROW.gsub(/^/, "    ")
+        [KeyError] exception expected, not
+        Class: <ArgumentError>
+        Message: <"wrapped k">
+        rerun: ruby -Ilib -I. {tests}/a_test.rb -n ATest#test_f_raises_key_error
+      ROW
+    end
+  end
+
   def test_a_removed_method_that_unchanged_code_still_calls_is_reported
     with_repo do |repo|
       inherited_history(repo)
