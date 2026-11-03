@@ -51,7 +51,9 @@ module JitCatch
         install(base_dir)
         install(head_dir)
         normalizer = build_normalizer([base_dir, head_dir, @git.dir])
-        bundle = { "base" => bundle_status(base_dir, normalizer), "head" => bundle_status(head_dir, normalizer) }
+        base_bundle = Thread.new { bundle_status(base_dir, normalizer) }
+        head_bundle = bundle_status(head_dir, normalizer)
+        bundle = { "base" => base_bundle.value, "head" => head_bundle }
         files.each do |relative|
           rows.concat(classify_file(relative, base_dir, head_dir, normalizer, change))
         end
@@ -86,8 +88,10 @@ module JitCatch
       source = File.read(File.join(@tests_dir, relative), mode: "r:bom|utf-8")
       known = mention_patterns(change)
       index = SourceIndex.parse(source, file: relative)
-      base_run = execute(base_dir, relative, normalizer)
+      # Each side runs in its own worktree, so the two can run at once.
+      base_thread = Thread.new { execute(base_dir, relative, normalizer) }
       head_run = execute(head_dir, relative, normalizer)
+      base_run = base_thread.value
       rows = rows_for(relative, base_run, head_run, index, known, source)
       return rows unless rows.any? { |row| row["classification"] == "candidate" }
       return rows if head_run.timed_out
@@ -221,27 +225,10 @@ module JitCatch
 
     def run_process(cmd, chdir:, stdout_path:, stderr_path:, env:)
       pid = Process.spawn(env, *cmd, chdir: chdir, out: stdout_path, err: stderr_path, pgroup: true, unsetenv_others: true)
-      timed_out = false
-      status = nil
-      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + @timeout
-      loop do
-        waited = Process.wait2(pid, Process::WNOHANG)
-        if waited
-          status = waited.last
-          break
-        end
-        if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
-          timed_out = true
-          kill_group(pid)
-          begin
-            Process.wait2(pid)
-          rescue Errno::ECHILD
-            nil
-          end
-          break
-        end
-        sleep 0.02
-      end
+      waiter = Process.detach(pid)
+      timed_out = waiter.join(@timeout).nil?
+      kill_group(pid) if timed_out
+      status = waiter.value
       [status, read_text(stdout_path), read_text(stderr_path), timed_out]
     end
 

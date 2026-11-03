@@ -121,10 +121,10 @@ class TestRunner < Minitest::Test
 
           class FlipTest < Minitest::Test
             def test_flip
-              path = #{marker.inspect}
+              path = #{marker.inspect} + "-" + File.basename(Dir.pwd)
               n = File.exist?(path) ? Integer(File.read(path)) : 0
               File.write(path, (n + 1).to_s)
-              flunk "flip" if n == 1
+              flunk "flip" if n.zero? && File.basename(Dir.pwd) == "head"
             end
           end
         RUBY
@@ -600,6 +600,40 @@ class TestRunner < Minitest::Test
       assert_equal [%w[doubled initialize], ids["Price#doubled"]], rows["PriceTest#test_doubled_through_a_helper"]
       assert_equal [%w[cents initialize], ids["Price#initialize"]], rows["PriceTest#test_new_keeps_the_cents"]
       doc["tests"].each { |test| assert_includes test["tags"], "touches:changed_method", test["name"] }
+    end
+  end
+
+  def test_the_base_and_head_runs_of_a_file_overlap
+    with_repo do |repo|
+      repo.write("lib/flag.rb", "module Flag; end\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("README.md", "head\n")
+      repo.commit("Touch readme.", date: "2026-02-12T00:00:00Z")
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, {
+        "meet_test.rb" => <<~RUBY
+          require "minitest/autorun"
+
+          class MeetTest < Minitest::Test
+            def test_the_other_side_is_running
+              dir = ENV.fetch("MEET_DIR")
+              File.write(File.join(dir, Process.pid.to_s), "")
+              deadline = Time.now + 5
+              sleep 0.01 until Dir.children(dir).size >= 2 || Time.now > deadline
+              assert_equal 2, Dir.children(dir).size
+            end
+          end
+        RUBY
+      })
+
+      Dir.mktmpdir("jitcatch-meet-") do |meet|
+        ENV["MEET_DIR"] = meet
+        doc = execute(repo, tests, env: ["MEET_DIR"])
+        assert_equal [%w[pass pass]], doc["tests"].map { |test| [test.dig("base", "status"), test.dig("head", "status")] }
+      ensure
+        ENV.delete("MEET_DIR")
+      end
     end
   end
 
