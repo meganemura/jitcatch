@@ -118,4 +118,25 @@ class TestChanges < Minitest::Test
       refute names.key?("Calc#total")
     end
   end
+
+  def test_whole_files_added_and_removed_and_a_changed_signature
+    with_repo do |repo|
+      repo.write("lib/old.rb", "module Old\n  LIMIT = 1\n\n  def self.gone\n    LIMIT\n  end\nend\n")
+      repo.write("lib/calc.rb", "class Calc\n  def add(a, b)\n    a + b\n  end\nend\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      FileUtils.rm(File.join(repo.dir, "lib/old.rb"))
+      repo.write("lib/new.rb", "module New\n  LIMIT = 2\nend\n")
+      repo.write("lib/calc.rb", "class Calc\n  def add(a, b, c)\n    a + b + c\n  end\nend\n")
+      repo.commit("Replace Old with New.", date: "2026-02-12T00:00:00Z")
+
+      doc = JitCatch::Changes.between(repo.dir, "base", "HEAD")
+      assert_equal [["k01", "added", "New::LIMIT"], ["k02", "removed", "Old::LIMIT"]],
+        doc["constants"].map { |const| const.values_at("id", "change", "name") }
+      assert_equal [["Calc#add", "modified", "changed"], ["Old.gone", "removed", "removed"]],
+        doc["methods"].map { |method| method.values_at("name", "change", "signature") }
+      assert_equal [["A", "lib/new.rb"], ["D", "lib/old.rb"], ["M", "lib/calc.rb"]].sort_by(&:last),
+        doc["files"].map { |file| file.values_at("status", "file") }
+    end
+  end
 end
