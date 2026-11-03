@@ -212,7 +212,7 @@ Without the CLI, copy or symlink `skills/jitcatch` into the agent's skills direc
 - If the candidate tests never state the old behavior, a regression in that gap stays at `reported` 0.
 - A test of a new feature fails on base and is not a candidate.
 - The related id can sit one step away from the line that caused the failure.
-- A mention is a method call, a constant, or a symbol in that test method or in a method of the same file that it calls, directly or through other such methods. `Owner.new` mentions `Owner#initialize`. Words in strings and comments are not mentions, and neither is a method name passed as a string, as in `send("total")`. A helper in another file is not read.
+- A mention is a method call, a constant, or a symbol in that test method or in a method of the same file that it calls, directly or through other such methods. `Owner.new` mentions `Owner#initialize`. Words in strings and comments are not mentions, except a method name passed as a plain string to `send`, `public_send`, `method`, or `respond_to?`, as in `send("total")`. A symbol that keys a Hash, as in `snap[:total]`, `snap.fetch(:total)`, or `{ total: 1 }`, is not a mention. A helper in another file is not read.
 - Files run one at a time unless you pass `--workers`. The base run and the head run of one file run at the same time, each in its own worktree, so a test that writes a fixed path outside the worktree or listens on a fixed port can collide with its other side, and with other files under `--workers`. The repository's existing suite is not run. The repository has to be able to add worktrees.
 - An assertion backtrace usually stops in the test, so a library line is found from names the test mentions.
 

@@ -65,6 +65,21 @@ class TestParserProperty < Minitest::Test
     end
   end
 
+  def test_hash_key_symbols_do_not_change_what_a_test_refers_to
+    Hegel.test do |tc|
+      code = ["snap = cart.snapshot", "assert_equal 1, snap[:total]", "snap.fetch(:tax, 0)", "snap.dig(:a)", "snap.key?(:b)", "row = { a: total }"]
+      keys = tc.draw(arrays(from_regex("[a-z_][a-z0-9_]{0,12}[?!]?", fullmatch: true), min_size: 1, max_size: 4))
+      noise = keys.flat_map { |key|
+        ["snap[:#{key}]", "snap[:#{key}] = 1", "snap.fetch(:#{key})", "snap.dig(:#{key}, :#{key})", "snap.key?(:#{key})", "row = { #{key}: 1, :#{key} => 2 }"]
+      }
+      body = noise.reduce(code) { |lines, line| lines.dup.insert(tc.draw(integers(min_value: 1, max_value: lines.size)), line) }
+      source = "class T\n  def test_x\n#{body.map { |line| "    #{line}" }.join("\n")}\n  end\nend\n"
+      plain = "class T\n  def test_x\n#{(code + ["snap[:a] = 1"]).map { |line| "    #{line}" }.join("\n")}\n  end\nend\n"
+      assert_equal JitCatch::SourceIndex.parse(plain, file: "t.rb").referenced_names("T#test_x"),
+        JitCatch::SourceIndex.parse(source, file: "t.rb").referenced_names("T#test_x")
+    end
+  end
+
   def test_split_qualified_reverses_qualify
     Hegel.test do |tc|
       qualifier = tc.draw(from_regex("([A-Z][a-z]{0,3}(::[A-Z][a-z]{0,3}){0,2})?"))

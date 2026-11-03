@@ -8,6 +8,11 @@ module JitCatch
   class SourceIndex
     VISIBILITY = %i[public private protected].freeze
     CLASS_VISIBILITY = { private_class_method: :private, public_class_method: :public }.freeze
+    # A symbol passed to these names a Hash key, not a method, so
+    # `snap[:total]` does not mention a method `total`.
+    HASH_KEY_CALLS = %i[[] []= fetch dig key? has_key? values_at fetch_values].freeze
+    # These name a method by their first argument, as a symbol or a string.
+    REFLECTIVE_CALLS = %i[send __send__ public_send method public_method respond_to?].freeze
 
     Method = Data.define(
       :file, :bare_name, :qualifier, :qualified, :kind, :visibility,
@@ -69,8 +74,10 @@ module JitCatch
 
     # The names a method refers to in code, with the same-file helpers it
     # calls: method calls, constant reads, and symbols. A constructor call
-    # is also listed as `Owner.new`. Strings and comments are not read. When
-    # the file defines no method by that name, the whole file is read.
+    # is also listed as `Owner.new`. Strings and comments are not read, except
+    # a plain string that a REFLECTIVE_CALLS call takes first. A symbol that
+    # keys a Hash is not listed. When the file defines no method by that
+    # name, the whole file is read.
     def referenced_names(qualified)
       start = @methods.find { |method| method.qualified == qualified }
       return @references.values.flatten.uniq.sort unless start
@@ -326,8 +333,16 @@ module JitCatch
           refer(enclosing, node.name)
           owner = constructor_owner(node)
           refer(enclosing, "#{owner}.new") if owner
+          named = reflective_name(node)
+          refer(enclosing, named) if named
         end
-        node.compact_child_nodes.each { |child| walk(child, qualifier, singleton_context, enclosing) }
+        node.compact_child_nodes.each do |child|
+          children = child.is_a?(Prism::ArgumentsNode) && HASH_KEY_CALLS.include?(node.name) ? child.arguments.grep_v(Prism::SymbolNode) : [child]
+          children.each { |arg| walk(arg, qualifier, singleton_context, enclosing) }
+        end
+      when Prism::AssocNode
+        walk(node.key, qualifier, singleton_context, enclosing) unless node.key.is_a?(Prism::SymbolNode)
+        walk(node.value, qualifier, singleton_context, enclosing) if node.value
       when Prism::CallOperatorWriteNode, Prism::CallAndWriteNode, Prism::CallOrWriteNode
         refer(enclosing, node.read_name)
         refer(enclosing, node.write_name)
@@ -344,6 +359,13 @@ module JitCatch
 
     def refer(enclosing, name)
       @references[enclosing] << name.to_s
+    end
+
+    def reflective_name(node)
+      return nil unless REFLECTIVE_CALLS.include?(node.name)
+
+      first = node.arguments&.arguments&.first
+      first.unescaped if first.is_a?(Prism::StringNode)
     end
 
     def constructor_owner(node)

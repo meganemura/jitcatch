@@ -318,4 +318,29 @@ class TestSourceIndex < Minitest::Test
     assert_equal %w[- Cart Cart.new CartTest Shop Util assert_equal build items= label module_function new other_only public_send size total total= zero?],
       index.referenced_names("CartTest#test_missing")
   end
+  def test_a_hash_key_symbol_is_not_a_mention_and_a_reflective_call_is
+    source = <<~'RUBY'
+      class SnapTest
+        def test_snap
+          snap = cart.snapshot
+          assert_equal 1, snap[:discount_cents]
+          snap[:tax_cents] = snap.fetch(:subtotal_cents) + snap.dig(:lines, :qty_cents)
+          snap.key?(:coupon_cents)
+          row = { label: price_of(1), :sku => sku_of(2), key_of(3) => 4 }
+          Order.new(qty: 3)
+          cart.send(:priv_sym)
+          cart.method(:meth_sym)
+          cart.respond_to?(:resp_sym)
+          cart.send("priv_str")
+          cart.public_send("pub_str", 1)
+          cart.method("meth_str")
+          cart.send("interp_#{row}")
+        end
+      end
+    RUBY
+    index = JitCatch::SourceIndex.parse(source, file: "test/snap_test.rb")
+
+    assert_equal %w[+ Order Order.new [] []= assert_equal cart dig fetch key? key_of meth_str meth_sym method new price_of priv_str priv_sym pub_str public_send resp_sym respond_to? send sku_of snapshot],
+      index.referenced_names("SnapTest#test_snap")
+  end
 end
