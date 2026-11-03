@@ -2,6 +2,16 @@
 
 $LOAD_PATH.unshift(File.expand_path("../lib", __dir__))
 
+unless defined?(Bundler)
+  # `require` loads the newest gem installed, so a Ruby with newer prism and
+  # minitest gems (minitest 6 needs prism 1.5) hides what a bare Ruby does.
+  # The oldest installed version of each is the one that ships with Ruby.
+  %w[prism minitest].each { |name| gem name, Gem::Specification.find_all_by_name(name).min_by(&:version).version.to_s }
+  # minitest 5 loads the plugins of every installed minitest, and minitest 6's
+  # plugins load minitest 6 over it, which drops every test defined so far.
+  ENV["MT_NO_PLUGINS"] = "1"
+end
+
 require "minitest/autorun"
 require "jitcatch"
 require "fileutils"

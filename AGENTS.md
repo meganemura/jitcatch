@@ -10,6 +10,12 @@ ruby -Ilib test/run.rb
 
 Ruby 3.3 or newer. No gems. `minitest` and `prism` ship with Ruby.
 
+Run it on Ruby 3.3 as well as on the newest Ruby before you push. Ruby 3.3 ships Prism 0.19, and the Prism API changed in 1.0: Prism 0.19 has no `ConstantPathNode#name`, for example. Outside a bundle, `test/test_helper.rb` loads the oldest installed `prism` and `minitest`, which are the ones that ship with Ruby, so the run matches a bare Ruby even when newer gems are installed. It also sets `MT_NO_PLUGINS`. A Ruby 3.3 with a newer prism must print `prism 0.19.0` here:
+
+```sh
+ruby -Ilib -e 'require "./test/test_helper"; puts "prism #{Prism::VERSION}"; $stdout.flush; exit!(0)'
+```
+
 The property tests in `test/property/` use hegeltest, which needs Ruby 3.4 or newer:
 
 ```sh
