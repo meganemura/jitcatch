@@ -91,6 +91,7 @@ module JitCatch
           next if row["name"].end_with?("#load")
 
           again = rerun.tests[row["name"]] || missing_result
+          (row["reruns"] ||= []) << again.slice("status", "error_class", "message_first_line")
           row["classification"] = "flaky" if failure_key(again) != failure_key(row["head"])
         end
         break if rows.none? { |row| row["classification"] == "candidate" }
@@ -168,7 +169,13 @@ module JitCatch
     end
 
     def failure_key(result)
-      [result["status"], result["error_class"].to_s, result["message_first_line"].to_s].join("\x1f")
+      message = temp_roots.reduce(result["message_first_line"].to_s) { |text, root| Text.mask_temp_names(text, root) }
+      [result["status"], result["error_class"].to_s, message].join("\x1f")
+    end
+
+    # A symlinked temp directory (macOS /tmp) can appear under either name.
+    def temp_roots
+      @temp_roots ||= [Dir.tmpdir, File.realpath(Dir.tmpdir)].uniq.sort_by { |root| -root.length }
     end
 
     def execute(worktree, relative, normalizer)

@@ -58,6 +58,7 @@ Each file:
 - The runner copies the directory into each worktree at `.jitcatch/` and runs one process per file: `ruby -Ilib -I. .jitcatch/<file> -v --seed 1`.
 - When the worktree has a `Gemfile`, the process also gets `-rbundler/setup` and `BUNDLE_GEMFILE` set to that worktree's `Gemfile`. Base and head then each load the gem versions their own `Gemfile.lock` names, so a test can catch a dependency bump. Only gems in the bundle load. If `require "minitest/autorun"` fails with `LoadError` on both sides, the `Gemfile` does not list `minitest`. Do not add `require "bundler/setup"` to the file yourself.
 - Do not depend on the original path, on order, or on the clock. The child keeps only `PATH`, `HOME`, `USER`, `LOGNAME`, `TMPDIR`, `TEMP`, `TMP`, `LD_LIBRARY_PATH`, `GEM_HOME`, and `GEM_PATH`, and sets `LANG` and `LC_ALL` to `C.UTF-8` and `TERM` to `dumb`. Other variables, such as `RUBYOPT` from `bundle exec` or `CI`, do not reach it. When the library reads a variable of its own (for example `QUINT`, the command it runs), pass it with `--env QUINT`. Without it, the library falls back to its default, which can time out on both sides.
+- A failure message may name a path under the temp directory. The rerun check masks the name directly under `Dir.tmpdir`, so a new `Dir.mktmpdir` name on each run is not a disagreement. Another source of change in the message, such as a pid, a time, or an object id, still makes the test `flaky`.
 - A file that builds a repository, starts processes, or runs a slow fixture needs more than the default 10 seconds. Raise `--timeout`. A timeout on head is discarded, and a timeout on base turns the whole file into one `fail_on_base` row (`<file>#timeout`).
 
 ## Run
@@ -77,7 +78,7 @@ Judge only rows whose disposition is `reported`.
 | --- | --- |
 | `no_signal` | Passed on both sides. Not evidence. |
 | `fail_on_base` | The parent did not satisfy the test. Often a new feature. Not a candidate. |
-| `flaky` | Passed on base, failed on head, then a rerun disagreed. Dropped. |
+| `flaky` | Passed on base, failed on head, then a rerun disagreed. Dropped. The text prints each rerun under the row (`rerun 1: pass`), and the `--json` row keeps them in `reruns`. |
 | `discarded` | Stable pass-on-base / fail-on-head, removed by a rule. Still listed under `assess:`. |
 | `reported` | You must judge this one. |
 

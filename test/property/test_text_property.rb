@@ -16,6 +16,21 @@ class TestTextProperty < Minitest::Test
     end
   end
 
+  def test_mask_temp_names_is_idempotent_and_forgets_the_random_name
+    Hegel.test do |tc|
+      root = tc.draw(sampled_from(["/tmp", "/var/folders/x/T", "/private/tmp/"]))
+      prefix = tc.draw(from_regex("([a-z]{0,5}[ \"])?"))
+      suffix = tc.draw(from_regex("(/[a-z_.0-9]{1,6}){0,2}( [a-z]{0,4})?"))
+      first, second = tc.draw(arrays(from_regex("[a-z]{0,5}[0-9]{8}-[0-9]{1,5}-[a-z0-9]{1,7}"), min_size: 2, max_size: 2))
+      dir = root.chomp("/")
+      one = "#{prefix}#{dir}/#{first}#{suffix}"
+      two = "#{prefix}#{dir}/#{second}#{suffix}"
+      masked = JitCatch::Text.mask_temp_names(one, root)
+      assert_equal masked, JitCatch::Text.mask_temp_names(two, root)
+      assert_equal masked, JitCatch::Text.mask_temp_names(masked, root)
+    end
+  end
+
   def test_dedent_undoes_indent
     Hegel.test do |tc|
       lines = tc.draw(arrays(from_regex("[a-z#][a-z ]{0,5}"), min_size: 1, max_size: 6))

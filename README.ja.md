@@ -168,7 +168,7 @@ ruby -Ilib -I. .jitcatch/<file> -v --seed 1
 
 リビジョンに `Gemfile` があるときは、`-rbundler/setup` を付け、`BUNDLE_GEMFILE` をその `Gemfile` にして実行する。そのため、それぞれの側は自分のロックファイルにある gem を読む。`run` は側ごとに 1 回 bundle を確かめ、`bundle base ok` や `bundle head failed: <メッセージ>` を出す。たとえばロックした gem がインストールされていないときである。プロセスに渡す環境変数は、決まった一覧と `--env` で名前を挙げたものだけである。
 
-実行されるのは `*_test.rb` か `test_*.rb` である。その名前が 1 つも無いときは、すべての `.rb` を実行する。上限は 40 ファイル。base で通り、head で失敗、エラー、またはタイムアウトになったテストが候補になる。`--reruns` は候補を head で繰り返す。1 回でも結果が違えば `flaky` である。タイムアウトは再実行しない。
+実行されるのは `*_test.rb` か `test_*.rb` である。その名前が 1 つも無いときは、すべての `.rb` を実行する。上限は 40 ファイル。base で通り、head で失敗、エラー、またはタイムアウトになったテストが候補になる。`--reruns` は候補を head で繰り返す。1 回でも結果が違えば `flaky` である。比べる前に一時ディレクトリ直下の名前を伏せるので、メッセージにある `Dir.mktmpdir` のパスは違いにならない。テキストの報告は `flaky` の行の下に各再実行の結果を出し、JSON の行は `reruns` に持つ。タイムアウトは再実行しない。
 
 候補を `discarded` にするルールは 3 つある。head での `LoadError`、タイムアウト、そして diff が消したかシグネチャを書き換えた名前に対する `NameError`、`NoMethodError`、引数個数の `ArgumentError` である。コードが意図して起こす `ArgumentError`（`qty must be > 0` のようなもの）は `reported` のまま残る。
 

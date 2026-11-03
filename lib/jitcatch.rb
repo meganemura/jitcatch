@@ -41,6 +41,15 @@ module JitCatch
       parts.map { |line| line.empty? ? "" : line[cut..] }.join("\n")
     end
 
+    # A name a test creates under the temp directory is new on every run, so
+    # it would make one deterministic failure look like two different ones.
+    def mask_temp_names(text, tmpdir)
+      root = tmpdir.to_s.sub(%r{/+\z}, "")
+      return text if root.empty?
+
+      text.gsub(%r{(?<![\w./-])#{Regexp.escape(root)}/[^/\s"'`:]+}, "{tmp}")
+    end
+
     def indent(text, spaces)
       pad = " " * spaces
       return "#{pad}(none)" if text.nil? || text.empty?

@@ -134,6 +134,43 @@ class TestRunner < Minitest::Test
       assert_equal 1, doc["counts"]["flaky"]
       assert_equal 0, doc["counts"]["candidates"]
       assert_equal "flaky", doc["tests"].fetch(0)["disposition"]
+      assert_equal [{ "status" => "pass", "error_class" => nil, "message_first_line" => "" }], doc["tests"].fetch(0)["reruns"]
+      assert_includes JitCatch::Render.run_text(doc), "    rerun 1: pass\n"
+    end
+  end
+
+  def test_keeps_a_failure_whose_message_names_a_new_temp_directory_each_run
+    with_repo do |repo|
+      repo.write("lib/calc.rb", BASE_CALC)
+      repo.commit("Initial calc", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/calc.rb", HEAD_CALC)
+      repo.commit("Tweak calc helpers.", date: "2026-02-12T00:00:00Z")
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, {
+        "trace_test.rb" => <<~RUBY
+          require "minitest/autorun"
+          require "tmpdir"
+          require "calc"
+
+          class TraceTest < Minitest::Test
+            def test_trace
+              Dir.mktmpdir("quint") do |dir|
+                path = File.join(dir, "trace_0.itf.json")
+                assert_equal 4, Calc.new.double(2), "replay of \#{path} disagreed"
+              end
+            end
+          end
+        RUBY
+      })
+
+      doc = execute(repo, tests, reruns: 2)
+
+      row = doc["tests"].fetch(0)
+      assert_equal "reported", row["disposition"]
+      assert_equal 2, row["reruns"].size
+      assert_equal %w[fail fail], row["reruns"].map { |rerun| rerun["status"] }
+      assert_match(%r{replay of /.+/quint.+/trace_0\.itf\.json disagreed}, row["reruns"].fetch(0)["message_first_line"])
     end
   end
 

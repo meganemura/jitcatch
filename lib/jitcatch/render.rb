@@ -56,7 +56,10 @@ module JitCatch
       if doc["tests"].empty?
         lines << "  (none)"
       else
-        doc["tests"].each { |test| lines << "  #{test_line(test)}" }
+        doc["tests"].each do |test|
+          lines << "  #{test_line(test)}"
+          lines.concat(rerun_lines(test)) if test["disposition"] == "flaky"
+        end
       end
       lines << counts_line(doc["counts"])
       lines.concat(assess_body(doc))
@@ -181,6 +184,13 @@ module JitCatch
     def test_line(test)
       method = test["method_id"] ? " #{test["method_id"]}" : ""
       "#{test["id"]} #{test["disposition"]} #{test["name"]} #{test["file"]}#{method}"
+    end
+
+    def rerun_lines(test)
+      Array(test["reruns"]).each_with_index.map do |rerun, index|
+        outcome = [rerun["status"], rerun["error_class"], rerun["message_first_line"]].reject { |part| part.to_s.empty? }
+        "    rerun #{index + 1}: #{outcome.join(" ")}"
+      end
     end
 
     def counts_line(counts)

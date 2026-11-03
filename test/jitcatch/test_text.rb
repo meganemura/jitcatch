@@ -21,6 +21,17 @@ class TestText < Minitest::Test
     assert_equal "x\n\ty", Text.dedent("\tx\n\t\ty")
   end
 
+  def test_mask_temp_names_replaces_the_name_under_the_temp_directory
+    assert_equal "replay of {tmp}/trace_0.itf.json failed",
+      Text.mask_temp_names("replay of /tmp/quint20261103-77-abc/trace_0.itf.json failed", "/tmp")
+    assert_equal "{tmp} and {tmp}/x", Text.mask_temp_names("/var/t/d1 and /var/t/d2/x", "/var/t/")
+    assert_equal "/tmpfoo/x and /tmp", Text.mask_temp_names("/tmpfoo/x and /tmp", "/tmp")
+    assert_equal "/other/quint1/x", Text.mask_temp_names("/other/quint1/x", "/tmp")
+    assert_equal "/home/tmp/x", Text.mask_temp_names("/home/tmp/x", "/tmp")
+    assert_equal "/tmp/a/x", Text.mask_temp_names("/tmp/a/x", "/")
+    assert_equal "/tmp/a/x", Text.mask_temp_names("/tmp/a/x", nil)
+  end
+
   def test_indent_pads_each_line_and_names_empty_text
     assert_equal "  (none)", Text.indent(nil, 2)
     assert_equal "   (none)", Text.indent("", 3)
