@@ -93,7 +93,7 @@ module JitCatch
       when Prism::ClassNode, Prism::ModuleNode
         name = const_name(stmt.constant_path)
         nested = join_qual(qualifier, name)
-        record_namespace(stmt, nested) if name
+        record_constant(@namespaces, nested, stmt.location.start_line, stmt.location.end_line, @lines[stmt.location.start_line - 1]) if name
         scan_body(stmt, nested, :public, false)
         visibility
       when Prism::SingletonClassNode
@@ -104,9 +104,8 @@ module JitCatch
         visibility
       when Prism::ConstantWriteNode, Prism::ConstantPathWriteNode
         full = constant_target(stmt, qualifier)
-        bare = full.split("::").last
         source, end_line = constant_header(stmt)
-        record_constant(bare, full.delete_suffix(bare).delete_suffix("::"), stmt.location.start_line, end_line, source, qualified: full)
+        record_constant(@constants, full, stmt.location.start_line, end_line, source)
         block = value_block(stmt)
         scan_body(block, full, :public, false) if block
         visibility
@@ -214,13 +213,14 @@ module JitCatch
       end
     end
 
-    def record_constant(bare, qualifier, start_line, end_line, source, qualified: nil)
-      q = qualifier.to_s
-      full = qualified || (q.empty? ? bare : "#{q}::#{bare}")
-      @constants << self.class::Constant.new(
+    # A class or module header goes to the namespaces; it stands for the
+    # body, which belongs to the methods and constants inside it.
+    def record_constant(list, full, start_line, end_line, source)
+      bare = full.split("::").last
+      list << self.class::Constant.new(
         file: @file,
         bare_name: bare,
-        qualifier: q,
+        qualifier: full.delete_suffix(bare).delete_suffix("::"),
         qualified: full,
         start_line: start_line,
         end_line: end_line,
@@ -228,26 +228,9 @@ module JitCatch
       )
     end
 
-    # The header line stands for the source: the body belongs to the methods
-    # and constants inside it.
-    def record_namespace(node, qualified)
-      bare = qualified.split("::").last
-      @namespaces << self.class::Constant.new(
-        file: @file,
-        bare_name: bare,
-        qualifier: qualified.delete_suffix(bare).delete_suffix("::"),
-        qualified: qualified,
-        start_line: node.location.start_line,
-        end_line: node.location.end_line,
-        source: @lines[node.location.start_line - 1].to_s.strip
-      )
-    end
-
     # The walk names an enclosing method by its `def`, which reads as an
     # instance method; a module function is listed as `Mod.name`.
     def rename_module_function_callers
-      return if @module_functions.empty?
-
       renamed = @module_functions.to_h { |name| [name, name.sub(/#(?=[^#]*\z)/, ".")] }
       @calls.map! { |call| renamed.key?(call.enclosing) ? call.with(enclosing: renamed[call.enclosing]) : call }
     end

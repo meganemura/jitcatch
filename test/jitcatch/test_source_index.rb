@@ -188,22 +188,29 @@ class TestSourceIndex < Minitest::Test
       end
 
       module Util
-        def one
-          1
-        end
-        module_function :one
-
         def two
           2
+        end
+
+        def one
+          two
+        end
+        module_function :one
+      end
+
+      module Other
+        def one
+          1
         end
       end
     RUBY
     index = JitCatch::SourceIndex.parse(source, file: "lib/text.rb")
     assert_equal({ "Text#plain" => "public", "Text.mask" => "public", "Text#hidden" => "private",
-                   "Util.one" => "public", "Util#two" => "public" },
+                   "Util.one" => "public", "Util#two" => "public", "Other#one" => "public" },
       index.methods.to_h { |method| [method.qualified, method.visibility] })
     assert_equal "singleton", index.methods.find { |method| method.qualified == "Text.mask" }.kind
     assert_equal "Text.mask", index.calls.find { |call| call.bare_name == "clean" }.enclosing
+    assert_equal "Util.one", index.calls.find { |call| call.bare_name == "two" }.enclosing
   end
 
   def test_methods_in_a_block_given_to_a_constant_belong_to_that_constant
