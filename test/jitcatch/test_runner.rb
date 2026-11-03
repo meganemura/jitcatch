@@ -658,6 +658,25 @@ class TestRunner < Minitest::Test
     end
   end
 
+  def test_reports_a_bundle_that_does_not_list_minitest
+    with_repo do |repo|
+      repo.write("lib/flag.rb", "module Flag; end\n")
+      repo.write("Gemfile", %(source "https://rubygems.org"\n))
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/flag.rb", "module Flag\nend\n")
+      repo.commit("Reformat.", date: "2026-02-12T00:00:00Z")
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, { "flag_test.rb" => candidate_source("FlagTest", "test_flag", "assert true").sub('require "calc"', 'require "flag"') })
+
+      doc = execute(repo, tests)
+
+      missing = { "status" => "failed", "message" => 'minitest is not in the bundle: add gem "minitest" to the Gemfile' }
+      assert_equal({ "base" => missing, "head" => missing }, doc["bundle"])
+      assert_equal "LoadError", doc["tests"].fetch(0)["head"]["error_class"]
+    end
+  end
+
   def dep_gemspec(version)
     <<~RUBY
       Gem::Specification.new do |spec|

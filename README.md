@@ -168,7 +168,7 @@ A tag is a hint, not the judgment. `touches:changed_method` means the test names
 ruby -Ilib -I. .jitcatch/<file> -v --seed 1
 ```
 
-When a revision has a `Gemfile`, its files run with `-rbundler/setup` and `BUNDLE_GEMFILE` set to that `Gemfile`, so each side loads the gems its own lock names. `run` checks the bundle once per side and prints `bundle base ok` or `bundle head failed: <message>`, for example when a locked gem is not installed. The process keeps only a fixed list of environment variables and the ones named with `--env`.
+When a revision has a `Gemfile`, its files run with `-rbundler/setup` and `BUNDLE_GEMFILE` set to that `Gemfile`, so each side loads the gems its own lock names. `run` checks the bundle once per side and prints `bundle base ok` or `bundle head failed: <message>`, for example when a locked gem is not installed or the bundle has no `minitest`. The process keeps only a fixed list of environment variables and the ones named with `--env`.
 
 Files named `*_test.rb` or `test_*.rb` run. When none have those names, every `.rb` file runs. At most 40 files run. A test that passes on base and fails, errors, or times out on head is a candidate. `--reruns` repeats candidates on head. One disagreement makes the test `flaky`. The comparison masks the name directly under the temp directory, so a `Dir.mktmpdir` path in a message is not a disagreement. The text report prints each rerun under a `flaky` row, and the JSON row keeps them in `reruns`. A timeout is not rerun.
 

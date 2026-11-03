@@ -13,7 +13,10 @@ module JitCatch
     # Names jitcatch sets itself, so --env cannot pass them.
     RESERVED_ENV = (FIXED_ENV.keys + ["BUNDLE_GEMFILE"]).freeze
     # Rescuing in the child keeps Bundler's own message and drops its backtrace.
-    BUNDLE_CHECK = 'begin; require "bundler/setup"; rescue Exception => e; $stderr.puts e.message; exit 1; end'
+    # Minitest is a bundled gem, so under Bundler only a Gemfile that lists it
+    # can load it.
+    BUNDLE_CHECK = 'begin; require "bundler/setup"; rescue Exception => e; $stderr.puts e.message; exit 1; end; ' \
+      'begin; require "minitest"; rescue LoadError; $stderr.puts %(minitest is not in the bundle: add gem "minitest" to the Gemfile); exit 1; end'
     Result = Data.define(:tests, :file_error, :timed_out, :exit_code)
 
     def self.run(repo, base_ref, head_ref, tests_dir, reruns: 2, timeout: 10, coverage: nil, env: [])
