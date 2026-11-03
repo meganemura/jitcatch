@@ -220,6 +220,8 @@ constants: (none)
 
     assert_equal ["[KeyError] exception expected, not", "Class: <ArgumentError>", "Message: <\"wrapped k\">"],
       JitCatch::Render.message_lines({ "message" => message })
+    assert_equal ["[KeyError] exception expected, not"], JitCatch::Render.message_lines({ "message" => "[KeyError] exception expected, not\nboom\nMessage: <1>" })
+    assert_equal ["Keys."], JitCatch::Render.message_lines({ "message" => "Keys.\nClass: <ArgumentError>\nMessage: <1>" })
   end
 
   def test_an_error_row_names_its_cause
