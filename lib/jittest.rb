@@ -32,6 +32,15 @@ module JitTest
       (parts[0, head] + ["# ..."] + parts[-tail, tail]).join("\n")
     end
 
+    def dedent(text)
+      return nil if text.nil?
+
+      parts = text.split("\n", -1)
+      parts.pop if parts.last&.empty?
+      cut = parts.reject(&:empty?).map { |line| line[/^[ \t]*/].size }.min || 0
+      parts.map { |line| line.empty? ? "" : line[cut..] }.join("\n")
+    end
+
     def indent(text, spaces)
       pad = " " * spaces
       return "#{pad}(none)" if text.nil? || text.empty?

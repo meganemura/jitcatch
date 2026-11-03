@@ -283,7 +283,7 @@ module JitTest
       by_bare = methods.group_by(&:bare_name)
       edges = []
       idx["calls"].each do |call|
-        next if call.enclosing.nil?
+        next if call.enclosing.nil? || test_file?(call.file)
 
         qualifier, _sep, _bare = SourceIndex.split_qualified(call.enclosing)
         same = by_class[[qualifier, call.bare_name]] || []
@@ -350,8 +350,8 @@ module JitTest
         "old_end" => old_node&.end_line,
         "new_start" => new_node&.start_line,
         "new_end" => new_node&.end_line,
-        "old_source" => cap(old_node&.source),
-        "new_source" => cap(new_node&.source),
+        "old_source" => cap(Text.dedent(old_node&.source)),
+        "new_source" => cap(Text.dedent(new_node&.source)),
         "callsites" => item["callsites"],
         "callsites_omitted" => item["callsites_omitted"],
         "reachable_from" => item["reachable_from"],

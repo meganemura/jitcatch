@@ -59,6 +59,36 @@ class TestAssessor < Minitest::Test
 
     assert_equal "discarded", by_name["ConstTest#test_old"]["disposition"]
     assert_equal "no_signal", by_name["OkTest#test_ok"]["disposition"]
+
+    downstream = {
+      "methods" => [
+        {
+          "id" => "m02", "change" => "added", "signature" => "added", "bare_name" => "coupon_discount_cents",
+          "name" => "Shop::Cart#coupon_discount_cents", "file" => "lib/shop/cart.rb",
+          "start_line" => 38, "end_line" => 47,
+          "reachable_from" => ["Shop::Cart#tax_cents", "Shop::Cart#taxable_cents", "Shop::Cart#total_cents"]
+        },
+        {
+          "id" => "m04", "change" => "modified", "signature" => "same", "bare_name" => "taxable_cents",
+          "name" => "Shop::Cart#taxable_cents", "file" => "lib/shop/cart.rb",
+          "start_line" => 56, "end_line" => 59,
+          "reachable_from" => ["Shop::Cart#tax_cents", "Shop::Cart#total_cents"]
+        },
+        {
+          "id" => "m05", "change" => "modified", "signature" => "same", "bare_name" => "volume_discount_cents",
+          "name" => "Shop::Cart#volume_discount_cents", "file" => "lib/shop/cart.rb",
+          "start_line" => 50, "end_line" => 54,
+          "reachable_from" => ["Shop::Cart#tax_cents", "Shop::Cart#taxable_cents", "Shop::Cart#total_cents"]
+        }
+      ],
+      "constants" => [],
+      "tests" => [
+        candidate("t01", "TotalTest#test_at_threshold", ["total_cents"], failure("Expected: 9720\n  Actual: 10800"))
+      ]
+    }
+    pointed = JitTest::Assessor.apply(downstream)
+    assert_equal "m05", pointed["tests"].fetch(0)["method_id"]
+    assert_includes pointed["tests"].fetch(0)["tags"], "touches:unchanged_caller"
     assert_equal({
       "generated" => 9,
       "no_signal" => 1,

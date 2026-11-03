@@ -115,13 +115,13 @@ module JitTest
 
       mentions = Array(test["mentions"])
       mentioned = @methods.select { |item| mentions.include?(item["bare_name"]) }
-      return lowest(mentioned) if mentioned.any?
+      return most_downstream(mentioned) if mentioned.any?
 
       via_caller = @methods.select { |item|
         upstream = Array(item["reachable_from"]).map { |name| bare(name) }
         (mentions & upstream).any?
       }
-      lowest(via_caller)
+      most_downstream(via_caller)
     end
 
     def method_from_backtrace(test)
@@ -168,6 +168,28 @@ module JitTest
 
       removed_constants = @constants.select { |item| item["change"] == "removed" }
       removed_constants.any? { |item| item["bare_name"] == symbol || item["name"] == symbol || symbol.end_with?("::#{item["bare_name"]}") }
+    end
+
+    # A catching test passed on the old code, so a method that already existed
+    # outranks one the diff only added. Among those, the method furthest
+    # downstream (the one other changed methods call into) is the usual source
+    # of the new value.
+    def most_downstream(items)
+      return nil if items.nil? || items.empty?
+
+      items.min_by do |item|
+        others = items.reject { |other| other["id"] == item["id"] }
+        covered = others.count { |other| Array(item["reachable_from"]).include?(other["name"]) }
+        [preference(item), -covered, item["id"].to_s]
+      end
+    end
+
+    def preference(item)
+      case item["change"]
+      when "modified", "affected" then 0
+      when "removed" then 1
+      else 2
+      end
     end
 
     def lowest(items)
