@@ -560,10 +560,10 @@ class TestRunner < Minitest::Test
 
   def test_mentions_follow_same_file_helpers_and_read_new_as_initialize
     with_repo do |repo|
-      repo.write("lib/price.rb", "class Price\n  def initialize(cents)\n    @cents = cents\n  end\n\n  def cents\n    @cents\n  end\n\n  def doubled\n    @cents * 2\n  end\nend\n")
+      repo.write("lib/price.rb", "class Price\n  def initialize(cents)\n    @cents = cents\n  end\n\n  def cents\n    @cents\n  end\n\n  def doubled\n    @cents * 2\n  end\nend\n\nclass Box\n  def size\n    1\n  end\nend\n")
       repo.commit("base", date: "2026-02-11T00:00:00Z")
       repo.branch("base")
-      repo.write("lib/price.rb", "class Price\n  def initialize(cents)\n    @cents = cents + 1\n  end\n\n  def cents\n    @cents\n  end\n\n  def doubled\n    @cents * 3\n  end\nend\n")
+      repo.write("lib/price.rb", "class Price\n  def initialize(cents)\n    @cents = cents + 1\n  end\n\n  def cents\n    @cents\n  end\n\n  def doubled\n    @cents * 3\n  end\nend\n\nclass Box\n  def size\n    2\n  end\nend\n")
       repo.commit("Rework price.", date: "2026-02-12T00:00:00Z")
       tests = File.join(repo.dir, "candidates")
       write_tests(tests, {
@@ -580,14 +580,18 @@ class TestRunner < Minitest::Test
               assert_equal 3, Price.new(3).cents
             end
 
+            def test_box_new_is_not_price_new
+              assert_equal 1, Box.new.size
+            end
+
             private
 
             def doubled_of(amount)
               build(amount).doubled
             end
 
-            def build(amount)
-              Price.new(amount)
+            def build(amount, depth = 0)
+              depth.zero? ? build(amount, depth + 1) : Price.new(amount)
             end
           end
         RUBY
@@ -599,6 +603,7 @@ class TestRunner < Minitest::Test
       rows = doc["tests"].to_h { |test| [test["name"], test.values_at("mentions", "method_id")] }
       assert_equal [%w[doubled initialize], ids["Price#doubled"]], rows["PriceTest#test_doubled_through_a_helper"]
       assert_equal [%w[cents initialize], ids["Price#initialize"]], rows["PriceTest#test_new_keeps_the_cents"]
+      assert_equal [%w[size], ids["Box#size"]], rows["PriceTest#test_box_new_is_not_price_new"]
       doc["tests"].each { |test| assert_includes test["tags"], "touches:changed_method", test["name"] }
     end
   end
