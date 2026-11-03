@@ -14,7 +14,7 @@ module JitCatch
     RESERVED_ENV = (FIXED_ENV.keys + ["BUNDLE_GEMFILE"]).freeze
     # Rescuing in the child keeps Bundler's own message and drops its backtrace.
     BUNDLE_CHECK = 'begin; require "bundler/setup"; rescue Exception => e; $stderr.puts e.message; exit 1; end'
-    Result = Data.define(:tests, :summary, :file_error, :timed_out, :exit_code)
+    Result = Data.define(:tests, :file_error, :timed_out, :exit_code)
 
     def self.run(repo, base_ref, head_ref, tests_dir, reruns: 2, timeout: 10, coverage: nil, env: [])
       new(repo, base_ref, head_ref, tests_dir, reruns: reruns, timeout: timeout, coverage: coverage, env: env).run
@@ -88,10 +88,9 @@ module JitCatch
         rerun = execute(head_dir, relative, normalizer)
         rows.each do |row|
           next unless row["classification"] == "candidate"
-          next if row["name"].end_with?("#load", "#timeout")
+          next if row["name"].end_with?("#load")
 
           again = rerun.tests[row["name"]]
-          again = file_level_result(rerun) if again.nil? && (rerun.timed_out || rerun.file_error)
           row["classification"] = "flaky" if again.nil? || failure_key(again) != failure_key(row["head"])
         end
         break if rows.none? { |row| row["classification"] == "candidate" }
@@ -118,7 +117,7 @@ module JitCatch
     end
 
     def file_level?(execution)
-      execution.timed_out || execution.file_error || (execution.tests.empty? && execution.exit_code != 0 && !execution.summary)
+      execution.timed_out || execution.file_error
     end
 
     def file_level_name(relative, base_run, head_run)
@@ -141,10 +140,6 @@ module JitCatch
         "message_first_line" => "no tests ran",
         "backtrace" => []
       }
-    end
-
-    def file_level_result(execution)
-      side_result(execution)
     end
 
     def build_row(relative, name, base_result, head_result, mentions)
@@ -197,13 +192,12 @@ module JitCatch
         env: child_env(worktree)
       )
       if timed_out
-        return Result.new(tests: {}, summary: false, file_error: nil, timed_out: true, exit_code: nil)
+        return Result.new(tests: {}, file_error: nil, timed_out: true, exit_code: nil)
       end
 
       parsed = MinitestParser.parse(stdout, stderr, normalizer: normalizer)
       Result.new(
         tests: parsed["tests"],
-        summary: parsed["summary"],
         file_error: parsed["file_error"],
         timed_out: false,
         exit_code: status&.exitstatus
