@@ -44,3 +44,10 @@ jobs:
       - name: Run the property tests
         if: ${{ matrix.property }}
         run: bundle exec ruby -Ilib test/property/run.rb
+      # test/run.rb runs without the bundle, so there the RSpec engine tests
+      # skip. This step runs them on the bundle's rspec-core.
+      - name: Run the RSpec engine tests
+        if: ${{ matrix.property }}
+        run: bundle exec ruby -Ilib test/jitcatch/test_rspec_runner.rb
+        env:
+          JITCATCH_RSPEC: required

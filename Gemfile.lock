@@ -1,6 +1,7 @@
 GEM
   remote: https://rubygems.org/
   specs:
+    diff-lcs (1.6.2)
     drb (2.2.3)
     ffi (1.17.4)
     ffi (1.17.4-aarch64-linux-gnu)
@@ -25,6 +26,12 @@ GEM
       drb (~> 2.0)
       prism (~> 1.5)
     prism (1.9.0)
+    rspec-core (3.13.6)
+      rspec-support (~> 3.13.0)
+    rspec-expectations (3.13.5)
+      diff-lcs (>= 1.2.0, < 2.0)
+      rspec-support (~> 3.13.0)
+    rspec-support (3.13.7)
 
 PLATFORMS
   aarch64-linux
@@ -43,8 +50,11 @@ PLATFORMS
 DEPENDENCIES
   hegeltest (= 0.4.1)
   minitest (= 6.0.6)
+  rspec-core (= 3.13.6)
+  rspec-expectations (= 3.13.5)
 
 CHECKSUMS
+  diff-lcs (1.6.2) sha256=9ae0d2cba7d4df3075fe8cd8602a8604993efc0dfa934cff568969efb1909962
   drb (2.2.3) sha256=0b00d6fdb50995fe4a45dea13663493c841112e4068656854646f418fda13373
   ffi (1.17.4) sha256=bcd1642e06f0d16fc9e09ac6d49c3a7298b9789bcb58127302f934e437d60acf
   ffi (1.17.4-aarch64-linux-gnu) sha256=b208f06f91ffd8f5e1193da3cae3d2ccfc27fc36fba577baf698d26d91c080df
@@ -63,6 +73,9 @@ CHECKSUMS
   hegeltest (0.4.1-x86_64-linux) sha256=65791b3a601da9f3d8d8c060890276fd5368859f179656eff474fcfb55b9b68c
   minitest (6.0.6) sha256=153ea36d1d987a62942382b61075745042a2b3123b1cd48f4c3675af9cc7d6f1
   prism (1.9.0) sha256=7b530c6a9f92c24300014919c9dcbc055bf4cdf51ec30aed099b06cd6674ef85
+  rspec-core (3.13.6) sha256=a8823c6411667b60a8bca135364351dda34cd55e44ff94c4be4633b37d828b2d
+  rspec-expectations (3.13.5) sha256=33a4d3a1d95060aea4c94e9f237030a8f9eae5615e9bd85718fe3a09e4b58836
+  rspec-support (3.13.7) sha256=0640e5570872aafefd79867901deeeeb40b0c9875a36b983d85f54fb7381c47c
 
 BUNDLED WITH
   4.0.20

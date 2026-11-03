@@ -62,8 +62,13 @@ class TestRSpecRunner < Minitest::Test
     require File.expand_path("../config/environment", __dir__)
   RUBY
 
+  # CI sets JITCATCH_RSPEC=required, so a bundle that lost rspec-core fails
+  # the job instead of skipping these.
   def setup
-    skip "rspec-core is not installed for #{RUBY_VERSION}" if Gem::Specification.find_all_by_name("rspec-core").empty?
+    return unless Gem::Specification.find_all_by_name("rspec-core").empty?
+
+    flunk "rspec-core is not installed for #{RUBY_VERSION}" if ENV["JITCATCH_RSPEC"] == "required"
+    skip "rspec-core is not installed for #{RUBY_VERSION}"
   end
 
   def rails_shaped(repo, cart)
