@@ -55,7 +55,7 @@ class TestCLI < Minitest::Test
       assert_includes run_out, "jitcatch run"
 
       json_run, json_run_err, json_run_status = cli(
-        "run", "--json", "--repo", repo.dir, "--reruns", "0", "--timeout", "1", "--workers", "1", "--env", "B_VAR", "--env", "A_VAR", "--env", "B_VAR", "base", "HEAD", tests
+        "run", "--json", "--repo", repo.dir, "--reruns", "0", "--env", "B_VAR", "--env", "A_VAR", "--env", "B_VAR", "base", "HEAD", tests
       )
       assert_equal 0, json_run_status, json_run_err
       assert_equal %w[A_VAR B_VAR], JSON.parse(json_run)["env"]
@@ -96,6 +96,8 @@ class TestCLI < Minitest::Test
         %w[run --reruns x base HEAD t] => "--reruns requires an integer",
         %w[run --timeout 0 base HEAD t] => "--timeout must be >= 1",
         %w[run --workers 0 base HEAD t] => "--workers must be >= 1",
+        # 1 passes both bounds, so the run gets as far as the missing directory.
+        %w[run --timeout 1 --workers 1 base HEAD t] => "tests directory not found: t",
         %w[run --env 1X base HEAD t] => "--env needs a variable name, not 1X",
         %w[run --env LANG base HEAD t] => "--env cannot pass LANG: jitcatch sets it",
         %w[run --env BUNDLE_GEMFILE base HEAD t] => "--env cannot pass BUNDLE_GEMFILE: jitcatch sets it",
