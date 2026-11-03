@@ -38,7 +38,7 @@ jitcatch assess  [--json] RUN.json
 
 `assess` はルールだけを適用する。残った候補について、テスト名、base と head の結果、失敗メッセージの先頭、関連メソッド id、タグを出す。タグは `touches:changed_method`（テストがそのメソッド名を呼んでいる）と `touches:unchanged_caller`（変更していない入口から、変更されたメソッドへ届いている）のどちらか、または両方。複数の変更メソッドが経路上にあるときは、追加されたメソッドより、もともとあったメソッドのうち最も下流のものを関連 id にする。
 
-意図した変更と回帰の切り分けはしない。それはエージェントの仕事で、手順は [AGENTS.md](AGENTS.md) にある。
+意図した変更と回帰の切り分けはしない。それはエージェントの仕事で、手順は [skills/jitcatch/SKILL.md](skills/jitcatch/SKILL.md) にある。
 
 ## 実行
 
@@ -62,6 +62,12 @@ ruby -Ilib test/run.rb          # エンジンテスト
 5. カウントと判断を短いレポートに書く。テストは捨てる。
 
 新機能だけを assert するテストは base で落ち、候補にならない。catching test は「古いコードがすでに満たしていること」を書く。
+
+## コーディングエージェントと使う
+
+レビューや取り込みのときにエージェントが踏む手順は [skills/jitcatch/SKILL.md](skills/jitcatch/SKILL.md) にある。[AGENTS.md](AGENTS.md) はこのリポジトリを変更する人向け。
+
+スキルを入れるには、`skills/jitcatch` をエージェントの skills ディレクトリへコピーまたはシンボリックリンクする（例: `.agents/skills/`、`.claude/skills/`、`.cursor/skills/`）。実行ファイル `bin/jitcatch`（Ruby 3.3 以降）は別途 `PATH` に置く。スキルをコピーしても実行ファイルは入らない。
 
 ## Meta のパイプラインとの対応
 
@@ -217,6 +223,8 @@ assess:
 **LLM を中に置いた変種との比較。** 中にモデルを置く CLI は、テスト生成も intended / regression の判定もコマンドの中でやる。出力はバイト安定でなくなり、秘密と費用が要り、エンジンテストで固定できない。このプロトタイプは逆で、モデルはループの外、ツールは純関数。ハイブリッドにするなら、既定は今のままにして、明示したときだけ外のコマンドへ委譲する。
 
 ## 開発
+
+このリポジトリを変更するエージェント向けのメモは [AGENTS.md](AGENTS.md)。
 
 ```sh
 ruby -Ilib test/run.rb

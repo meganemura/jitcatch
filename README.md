@@ -38,7 +38,7 @@ Exit status 0 is success, 1 is a usage error, and 2 is a git failure. Finding ca
 
 `assess` applies rules only. For each remaining candidate it prints the test name, the base and head results, the first line of the failure, the related method id, and tags. `touches:changed_method` means the test names a method the diff changed. `touches:unchanged_caller` means an entry point the diff did not edit still reaches a changed method. When several changed methods sit on the path, the related id is the downstream method that already existed, rather than one the diff only added.
 
-The tool does not separate intended changes from regressions. That is the agent's job. The steps are in [AGENTS.md](AGENTS.md).
+The tool does not separate intended changes from regressions. That is the agent's job. The steps are in [skills/jitcatch/SKILL.md](skills/jitcatch/SKILL.md).
 
 ## Run
 
@@ -62,6 +62,12 @@ Do not commit candidate tests into the target repository. `examples/runs/` in th
 5. Write a short report with the counts and the judgments. Discard the tests.
 
 A test that only asserts the new feature fails on base and is not a candidate. A catching test states something the old code already satisfied.
+
+## Using with coding agents
+
+The procedure an agent follows while reviewing or landing a change is [skills/jitcatch/SKILL.md](skills/jitcatch/SKILL.md). [AGENTS.md](AGENTS.md) is for changing this repository.
+
+Install the skill by copying or symlinking the `skills/jitcatch` directory into the agent's skills directory, for example `.agents/skills/`, `.claude/skills/`, or `.cursor/skills/`. The agent still needs this repository's `bin/jitcatch` on `PATH` (Ruby 3.3 or newer). Copying the skill does not install the executable.
 
 ## Mapping to Meta's pipeline
 
@@ -215,6 +221,8 @@ The same pass/fail shape is a regression in case 1 and an intended change in cas
 **An in-tool LLM variant.** A CLI with a model inside would generate tests and judge intended versus regression in the command. The output would no longer be byte-stable, and the tool would need secrets and a budget that the engine tests could not pin down. This prototype keeps the model outside the loop and the tool a pure function. A hybrid can keep that default and shell out only when asked.
 
 ## Development
+
+Notes for agents changing this repository are in [AGENTS.md](AGENTS.md).
 
 ```sh
 ruby -Ilib test/run.rb
