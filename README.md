@@ -218,7 +218,7 @@ The engine tests build temporary git repositories and cover context, execution, 
 
 ## License
 
-No license has been chosen yet.
+MIT
 
 ---
 
