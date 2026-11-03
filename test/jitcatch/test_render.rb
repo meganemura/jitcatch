@@ -206,5 +206,15 @@ constants: (none)
     long = "x" * 90
     message = "expected: {a: 2, b: \"#{long}\"}\n     got: {a: 1, b: \"#{long}\"}\n"
     assert_equal ["hash keys differ: a", "-a => 2", "+a => 1"], JitCatch::Render.message_lines({ "message" => message })
+    edge = "y" * 100
+    assert_equal ["expected: #{edge}", "got: #{edge}"], JitCatch::Render.message_lines({ "message" => "expected: #{edge}\ngot: #{edge}" })
+    assert_equal ["got: 4"], JitCatch::Render.message_lines({ "message" => "got: 4\nexpected: 3" })
+    assert_equal ["expected: 3"], JitCatch::Render.message_lines({ "message" => "expected: 3\nboom" })
+  end
+
+  def test_a_rerun_line_shows_the_first_message_line_that_moved
+    test = { "head" => { "message" => "Expected: 0\n  Actual: 1" }, "reruns" => [{ "status" => "fail", "error_class" => "Minitest::Assertion", "message_first_line" => "Expected: 0", "message" => "Expected: 0\n  Actual: 2" }] }
+
+    assert_equal ["    rerun 1: fail Minitest::Assertion Actual: 2"], JitCatch::Render.rerun_lines(test)
   end
 end

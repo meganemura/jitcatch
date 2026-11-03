@@ -344,3 +344,87 @@ class TestSourceIndex < Minitest::Test
       index.referenced_names("SnapTest#test_snap")
   end
 end
+
+class TestSourceIndexExamples < Minitest::Test
+  SPEC = <<~RUBY
+    require "spec_helper"
+
+    RSpec.describe Cart do
+      subject(:cart) { described_class.new(prices) }
+
+      let(:prices) { [1] }
+
+      def doubled(value) = twice(value)
+
+      def twice(value) = value * 2
+
+      describe "#total" do
+        before { prices << subtotal }
+
+        it "sums" do
+          expect(cart.total).to eq(doubled(1))
+        end
+      end
+
+      context "when empty" do
+        let(:prices) { [] }
+
+        it("labels") { expect(cart.label).to eq("cart") }
+      end
+
+      it "is plain" do
+        expect(1 + 1).to eq(2)
+      end
+    end
+
+    describe Other do
+      it("stands apart") { Other.build }
+    end
+  RUBY
+
+  def index
+    JitCatch::SourceIndex.parse(SPEC, file: "cart_spec.rb")
+  end
+
+  def test_an_example_reads_its_block_its_groups_setup_and_helpers
+    assert_equal %w[* << Cart Cart.new cart described_class doubled eq expect new prices subtotal to total twice], index.example_references(15)
+  end
+  
+  def test_a_sibling_group_setup_and_a_neighbor_are_not_read
+    assert_equal %w[Cart Cart.new cart described_class eq expect label new prices to], index.example_references(23)
+    refute_includes index.example_references(26), "label"
+  end
+  
+  def test_a_group_described_as_a_method_names_it
+    index = JitCatch::SourceIndex.parse(%(describe "#total" do\n  it("works") { expect(1).to eq(1) }\nend\n), file: "t_spec.rb")
+    assert_includes index.example_references(2), "total"
+  end
+  
+def test_only_described_class_new_names_the_described_constant
+  source = %(describe Cart do\n  it("a") { factory.new }\n  it("b") { x.described_class.new }\n  it("c") { described_class.new }\nend\n)
+  index = JitCatch::SourceIndex.parse(source, file: "c_spec.rb")
+  refute_includes index.example_references(2), "Cart.new"
+  refute_includes index.example_references(3), "Cart.new"
+  assert_includes index.example_references(4), "Cart.new"
+end
+
+def test_a_describe_sent_to_another_constant_is_not_a_group
+  index = JitCatch::SourceIndex.parse(%(Shop.describe(Cart) do\n  it("b") { 1 }\nend\n), file: "c_spec.rb")
+  assert_equal [], index.example_references(2)
+end
+
+def test_a_top_level_describe_without_rspec_is_a_group_too
+    assert_equal %w[Other build], index.example_references(32)
+  end
+  
+  def test_a_line_with_no_example_reads_nothing
+    assert_nil index.example_references(3)
+    assert_nil index.example_references(13)
+  end
+  
+  def test_a_plain_block_call_is_not_an_example
+    other = JitCatch::SourceIndex.parse("items.each { |item| it(item) }\n[1].map do |x| it x end\n", file: "x_spec.rb")
+    assert_nil other.example_references(1)
+    assert_nil other.example_references(2)
+  end
+end

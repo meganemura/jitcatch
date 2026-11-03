@@ -115,4 +115,20 @@ class TestRSpecParser < Minitest::Test
     assert_equal({ "Calc works" => 3, "Calc works (line 7)" => 7 }, parsed["lines"])
     assert_equal %w[pass error], parsed["tests"].values.map { |test| test["status"] }
   end
+
+  def test_a_report_that_is_not_an_object_falls_back_to_stdout
+    parsed = JitCatch::RSpecParser.parse("[]", "boom (RuntimeError)\n", "")
+
+    assert_equal ["RuntimeError", "boom (RuntimeError)"], parsed["file_error"].values_at("error_class", "message")
+  end
+
+  def test_a_file_with_no_examples_and_no_error_has_no_rows_and_no_file_error
+    assert_equal({ "tests" => {}, "lines" => {}, "file_error" => nil }, JitCatch::RSpecParser.parse(report([], messages: ["No examples found."]), "", ""))
+  end
+
+  def test_an_outside_error_without_a_class_line_keeps_its_text
+    parsed = JitCatch::RSpecParser.parse(report([], messages: ["something broke in a hook"], outside: 1), "", "")
+
+    assert_equal ["RuntimeError", "something broke in a hook"], parsed["file_error"].values_at("error_class", "message")
+  end
 end
