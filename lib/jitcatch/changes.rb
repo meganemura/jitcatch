@@ -174,7 +174,7 @@ module JitCatch
         new_c = new_map[key]
         file = (new_c || old_c).file
         file_hunks = hunks[file]
-        next unless file_hunks
+        next if file_hunks.nil? || test_file?(file)
 
         old_hit = old_c && DiffParser.overlaps?(old_c.start_line, old_c.end_line, file_hunks["hunks"], "old")
         new_hit = new_c && DiffParser.overlaps?(new_c.start_line, new_c.end_line, file_hunks["hunks"], "new")
@@ -204,10 +204,10 @@ module JitCatch
       removed = base_idx["namespaces"].reject { |node| new_names.include?(node.qualified) }
       added = head_idx["namespaces"].reject { |node| old_names.include?(node.qualified) }
       found = removed.uniq(&:qualified).filter_map { |node|
-        { "change" => "removed", "old" => node, "new" => nil, "readers" => [], "namespace" => true } if hunks[node.file]
+        { "change" => "removed", "old" => node, "new" => nil, "readers" => [], "namespace" => true } if hunks[node.file] && !test_file?(node.file)
       }
       found + added.uniq(&:qualified).filter_map { |node|
-        { "change" => "added", "old" => nil, "new" => node, "readers" => [], "namespace" => true } if hunks[node.file]
+        { "change" => "added", "old" => nil, "new" => node, "readers" => [], "namespace" => true } if hunks[node.file] && !test_file?(node.file)
       }
     end
 
@@ -346,8 +346,8 @@ module JitCatch
       classes.filter_map do |qualifier|
         next if qualifier.empty?
 
-        pool = head_idx["methods"].select { |method| method.qualifier == qualifier && method.visibility == "public" }
-        pool = base_idx["methods"].select { |method| method.qualifier == qualifier && method.visibility == "public" } if pool.empty?
+        pool = public_methods_of(head_idx, qualifier)
+        pool = public_methods_of(base_idx, qualifier) if pool.empty?
         changed = methods.to_h { |method| [(method["new"] || method["old"]).qualified, method["change"]] }
         listed = pool.map { |method|
           { "name" => method.qualified, "role" => changed[method.qualified] || "unchanged" }
@@ -356,6 +356,10 @@ module JitCatch
 
         { "class" => qualifier, "methods" => listed.first(ENTRY_CAP) }
       end
+    end
+
+    def public_methods_of(idx, qualifier)
+      idx["methods"].select { |method| method.qualifier == qualifier && method.visibility == "public" && !test_file?(method.file) }
     end
 
     def edges_for(idx)

@@ -344,6 +344,23 @@ class TestChanges < Minitest::Test
     end
   end
 
+  def test_constants_classes_and_reopened_methods_in_test_files_are_not_listed
+    with_repo do |repo|
+      repo.write("lib/calc.rb", "class Calc\n  LIMIT = 1\n\n  def add(a, b)\n    a + b\n  end\nend\n")
+      repo.write("test/fixtures/stub.rb", "STUB = 1\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/calc.rb", "class Calc\n  LIMIT = 2\n\n  def add(a, b)\n    b + a\n  end\nend\n")
+      repo.write("test/fixtures/stub.rb", "STUB = 2\n")
+      repo.write("test/calc_test.rb", "class CalcTest\n  WANT = 3\nend\n\nclass Calc\n  def debug_add\n    add(1, 2)\n  end\nend\n")
+      repo.commit("Swap operands.", date: "2026-02-12T00:00:00Z")
+
+      doc = JitCatch::Changes.between(repo.dir, "base", "HEAD")
+      assert_equal ["Calc::LIMIT"], doc["constants"].map { |const| const["name"] }
+      assert_equal ["Calc#add"], doc["entrypoints"].flat_map { |entry| entry["methods"].map { |method| method["name"] } }
+    end
+  end
+
   def test_reachable_from_keeps_the_nearest_callers_when_it_is_cut
     with_repo do |repo|
       near = (1..6).map { |n| "  def z#{n}\n    leaf\n  end\n" }.join("\n")
