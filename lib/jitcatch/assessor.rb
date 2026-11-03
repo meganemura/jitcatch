@@ -86,7 +86,8 @@ module JitCatch
 
       if arity_error?(head)
         target = method_from_backtrace(test) || method
-        return "signature_change" if target && target["signature"] == "changed"
+        # A removed method leaves the inherited one, whose arity differs.
+        return "signature_change" if target && %w[changed removed].include?(target["signature"])
       end
 
       nil

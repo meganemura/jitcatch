@@ -294,6 +294,80 @@ class TestRunner < Minitest::Test
     end
   end
 
+  def test_a_removed_constructor_or_reader_is_a_signature_change_of_the_class_new_names
+    with_repo do |repo|
+      repo.write("lib/mismatch.rb", <<~RUBY)
+        class Mismatch < StandardError
+          attr_reader :reason, :seed
+
+          def initialize(reason = nil, seed: nil)
+            @reason, @seed = reason, seed
+            super(reason)
+          end
+        end
+
+        class Spec
+          def initialize(path)
+            @path = path
+          end
+
+          def path = @path
+        end
+      RUBY
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/mismatch.rb", <<~RUBY)
+        class Mismatch < StandardError
+          attr_reader :seed
+        end
+
+        class Spec
+          def initialize(path)
+            @path = path.to_s
+          end
+
+          def path = @path
+        end
+      RUBY
+      repo.commit("Raise Mismatch with a message alone.", date: "2026-02-12T00:00:00Z")
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, {
+        "mismatch_test.rb" => <<~RUBY
+          require "minitest/autorun"
+          require "mismatch"
+
+          class MismatchTest < Minitest::Test
+            def test_takes_a_seed
+              assert_equal "9", Mismatch.new("lost", seed: "9").seed
+            end
+
+            def test_reads_its_reason
+              assert_equal "lost", Mismatch.new("lost").reason
+            end
+
+            def test_keeps_its_path
+              assert_equal 3, Spec.new(3).path
+            end
+          end
+        RUBY
+      })
+
+      doc = execute(repo, tests)
+
+      ids = doc["methods"].to_h { |method| [method["name"], method["id"]] }
+      rows = doc["tests"].to_h { |test| [test["name"].delete_prefix("MismatchTest#"), test] }
+      seed = rows.fetch("test_takes_a_seed")
+      assert_equal [ids["Mismatch#initialize"], []], [seed["method_id"], seed["method_ids"] - [ids["Mismatch#initialize"]]]
+      assert_equal ["discarded", "discard:signature_change"], [seed["disposition"], seed["tags"].first]
+      reason = rows.fetch("test_reads_its_reason")
+      assert_equal ids.fetch("Mismatch#reason"), reason["method_id"]
+      assert_equal ["discarded", "discard:signature_change"], [reason["disposition"], reason["tags"].first]
+      path = rows.fetch("test_keeps_its_path")
+      assert_equal [ids["Spec#initialize"], "reported"], path.values_at("method_id", "disposition")
+      refute_includes path["tags"], "related:guess"
+    end
+  end
+
   def test_a_test_that_names_a_changed_constant_mentions_it
     with_repo do |repo|
       repo.write("lib/geo.rb", "module Geo\n  SCALE = 2\n  Point = Struct.new(:x) do\n    def scaled\n      x * SCALE\n    end\n  end\nend\n")
