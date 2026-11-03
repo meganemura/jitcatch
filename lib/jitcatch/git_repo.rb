@@ -122,8 +122,10 @@ module JitCatch
       @empty_tree ||= git("hash-object", "-t", "tree", "--end-of-options", File::NULL).strip
     end
 
+    # git quotes a path with non-ASCII bytes by default, and a quoted path
+    # names no file in `show` and matches no hunk path.
     def capture(*args, env: nil)
-      command = ["git", "--no-pager", "-C", @dir, *args]
+      command = ["git", "--no-pager", "-c", "core.quotePath=false", "-C", @dir, *args]
       merged = ENV.to_h.merge(env || {})
       stdout, stderr, status = Open3.capture3(merged, *command)
       [as_utf8(stdout), as_utf8(stderr), status]

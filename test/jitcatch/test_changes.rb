@@ -302,6 +302,24 @@ class TestChanges < Minitest::Test
     end
   end
 
+  def test_a_file_over_the_blob_cap_is_not_indexed_and_a_non_ascii_path_is
+    with_repo do |repo|
+      big = ->(body) { "class Big\n  def size\n    #{body}\n  end\nend\n#{"# pad\n" * 40_000}" }
+      repo.write("lib/big.rb", big.call(1))
+      repo.write("lib/café.rb", "class Cafe\n  def price\n    1\n  end\nend\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/big.rb", big.call(2))
+      repo.write("lib/café.rb", "class Cafe\n  def price\n    2\n  end\nend\n")
+      repo.commit("Raise both.", date: "2026-02-12T00:00:00Z")
+
+      doc = JitCatch::Changes.between(repo.dir, "base", "HEAD")
+
+      assert_operator File.size(File.join(repo.dir, "lib/big.rb")), :>, JitCatch::Changes::MAX_BLOB
+      assert_equal [["Cafe#price", "lib/café.rb"]], doc["methods"].map { |method| method.values_at("name", "file") }
+    end
+  end
+
   def test_methods_in_test_files_are_not_listed
     with_repo do |repo|
       repo.write("lib/calc.rb", "class Calc\n  def add(a, b)\n    a + b\n  end\nend\n")
