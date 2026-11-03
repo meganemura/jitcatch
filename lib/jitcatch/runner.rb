@@ -177,13 +177,7 @@ module JitCatch
 
       values = execution.tests.values
       failed = values.find { |test| test["status"] != "pass" }
-      failed || {
-        "status" => "error",
-        "error_class" => "RuntimeError",
-        "message" => "no tests ran",
-        "message_first_line" => "no tests ran",
-        "backtrace" => []
-      }
+      failed || Failure.result("error", "RuntimeError", "no tests ran", [])
     end
 
     def build_row(relative, name, line, base_result, head_result, mentions)
@@ -394,15 +388,15 @@ module JitCatch
     end
 
     def pass_result
-      { "status" => "pass", "error_class" => nil, "message" => "", "message_first_line" => "", "backtrace" => [] }
+      Failure.passed("pass")
     end
 
     def missing_result
-      { "status" => "error", "error_class" => "Missing", "message" => "test did not run", "message_first_line" => "test did not run", "backtrace" => [] }
+      Failure.result("error", "Missing", "test did not run", [])
     end
 
     def timeout_result
-      { "status" => "timeout", "error_class" => "Timeout", "message" => "timeout", "message_first_line" => "timeout", "backtrace" => [] }
+      Failure.result("timeout", "Timeout", "timeout", [])
     end
   end
 end
