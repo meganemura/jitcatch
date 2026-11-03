@@ -87,7 +87,7 @@ Tags are hints, not a verdict. They are sorted:
 
 ## Judge
 
-For each reported row, compare the failure (the message lines, usually expected and actual, and the related id) with the intent and with the diff in the brief:
+For each reported row, compare the failure (the message lines, usually expected and actual, and the related id) with the intent and with the diff in the brief. When Minitest printed a diff, the two lines are its first removed line (`-`, expected) and first added line (`+`, actual). The whole message is `head.message` in the `--json` document.
 
 - **likely-regression** — behavior changed, and the intent does not ask for that change.
 - **intended** — the intent explicitly wants that behavior.

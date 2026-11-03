@@ -34,6 +34,26 @@ class TestRender < Minitest::Test
     TEXT
   end
 
+  def test_assess_text_shows_the_changed_lines_of_a_minitest_diff
+    diff = "--- expected\n+++ actual\n@@ -1,3 +1,3 @@\n \"a\n-b\n+c\n d\"\n"
+    doc = JitCatch::Assessor.apply({
+      "version" => "0.1.0", "base" => "b", "head" => "h",
+      "tests" => [
+        { "id" => "t01", "name" => "A#test_a", "classification" => "candidate", "base" => { "status" => "pass" },
+          "head" => { "status" => "fail", "error_class" => "Minitest::Assertion", "message" => diff } },
+        { "id" => "t02", "name" => "B#test_b", "classification" => "candidate", "base" => { "status" => "pass" },
+          "head" => { "status" => "fail", "error_class" => "Minitest::Assertion", "message" => "Keys.\n#{diff}" } }
+      ]
+    })
+    assert_equal [
+      "  c01 A#test_a base=pass head=fail - assertion,report",
+      "    -b",
+      "    +c",
+      "  c02 B#test_b base=pass head=fail - assertion,report",
+      "    Keys."
+    ], JitCatch::Render.assess_text(doc).split("assess:\n").last.lines(chomp: true)
+  end
+
   def test_run_text_names_omitted_files_and_an_empty_run
     doc = JitCatch::Assessor.apply({
       "version" => "0.1.0", "base" => "b", "head" => "h", "reruns" => 2, "timeout_s" => 10,

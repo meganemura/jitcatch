@@ -219,11 +219,15 @@ module JitCatch
 
       lines = head["message"].to_s.lines.map(&:strip).reject(&:empty?)
       if lines[1]&.match?(/\AActual:/)
-        lines = lines.first(2)
+        lines.first(2)
+      elsif lines[0] == "--- expected" && lines[1] == "+++ actual"
+        # Minitest prints a unified diff when either side spans lines or is
+        # long; its header says nothing, so show the first removed and added line.
+        changed = lines.drop(2)
+        [changed.find { |line| line.start_with?("-") }, changed.find { |line| line.start_with?("+") }].compact
       else
-        lines = lines.first(1)
+        lines.first(1)
       end
-      lines
     end
 
     def finish(lines)
