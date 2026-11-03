@@ -216,7 +216,7 @@ module JitCatch
     # expected value, and the value that moves between runs is on a later line.
     def failure_key(result)
       lines = result["message"].to_s.lines.map(&:strip).reject(&:empty?).join("\n")
-      message = temp_roots.reduce(lines) { |text, root| Text.mask_temp_names(text, root) }
+      message = Text.mask_addresses(temp_roots.reduce(lines) { |text, root| Text.mask_temp_names(text, root) })
       [result["status"], result["error_class"].to_s, message].join("\x1f")
     end
 

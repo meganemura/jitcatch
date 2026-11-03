@@ -31,6 +31,16 @@ class TestTextProperty < Minitest::Test
     end
   end
 
+  def test_mask_addresses_forgets_which_address_an_object_had
+    Hegel.test do |tc|
+      prefix = tc.draw(from_regex("[A-Za-z: ]{0,8}#<[A-Z][a-z]{0,5}:"))
+      first, second = tc.draw(arrays(from_regex("0x[0-9a-f]{6,16}"), min_size: 2, max_size: 2))
+      masked = JitCatch::Text.mask_addresses("#{prefix}#{first}>")
+      assert_equal masked, JitCatch::Text.mask_addresses("#{prefix}#{second}>")
+      assert_equal masked, JitCatch::Text.mask_addresses(masked)
+    end
+  end
+
   def test_dedent_undoes_indent
     Hegel.test do |tc|
       lines = tc.draw(arrays(from_regex("[a-z#][a-z ]{0,5}"), min_size: 1, max_size: 6))

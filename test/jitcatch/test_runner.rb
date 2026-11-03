@@ -139,6 +139,35 @@ class TestRunner < Minitest::Test
     end
   end
 
+  def test_an_object_address_in_the_message_does_not_make_a_rerun_disagree
+    with_repo do |repo|
+      repo.write("lib/flag.rb", "module Flag\n  class Error < StandardError; end\n  def self.kind = Error\nend\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/flag.rb", "module Flag\n  class Error < StandardError; end\n  def self.kind = Class.new(Error)\nend\n")
+      repo.commit("Build a new class.", date: "2026-02-12T00:00:00Z")
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, {
+        "kind_test.rb" => <<~RUBY
+          require "minitest/autorun"
+          require "flag"
+
+          class KindTest < Minitest::Test
+            def test_kind
+              assert_equal Flag::Error, Flag.kind
+            end
+          end
+        RUBY
+      })
+
+      doc = execute(repo, tests, reruns: 2)
+
+      row = doc["tests"].fetch(0)
+      assert_equal "reported", row["disposition"], row["reruns"].inspect
+      assert_match(/Actual: #<Class:0x\h+>/, row["head"]["message"])
+    end
+  end
+
   def test_a_rerun_whose_actual_value_moves_is_flaky
     with_repo do |repo|
       repo.write("lib/flag.rb", "module Flag; def self.ok; true; end; end\n")

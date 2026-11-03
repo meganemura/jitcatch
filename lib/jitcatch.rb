@@ -53,6 +53,12 @@ module JitCatch
       text.gsub(%r{(?<![\w./-])#{Regexp.escape(root)}/[^/\s"'`:]+}, "{tmp}")
     end
 
+    # An object's inspect (`#<Class:0x00007f...>`) names its address, which
+    # is new on every run.
+    def mask_addresses(text)
+      text.gsub(/\b0x\h{6,}\b/, "0x{address}")
+    end
+
     def message_lines(message)
       message.to_s.lines.map(&:strip).reject(&:empty?)
     end
