@@ -271,6 +271,11 @@ class TestChanges < Minitest::Test
       assert_includes JitCatch::Render.context_text(doc), "\nwarning: base is not an ancestor of head"
       assert_equal [], JitCatch::Changes.between(repo.dir, fork, "main")["warnings"]
       assert_equal [], JitCatch::Changes.between(repo.dir, "main^^", "main")["warnings"]
+      repo.git("checkout", "--orphan", "alone")
+      repo.commit("Start over.", date: "2026-02-14T00:00:00Z")
+      assert_equal [
+        "base is not an ancestor of head: the diff also undoes the 2 commits only base has. The two revisions share no history."
+      ], JitCatch::Changes.between(repo.dir, "main", "alone")["warnings"]
     end
   end
 
