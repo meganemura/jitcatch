@@ -205,7 +205,7 @@ Without the CLI, copy or symlink `skills/jitcatch` into the agent's skills direc
 
 ## Limits
 
-- Call sites are matched by name, not by type. Two methods with the same name can drop a caller or point the related id at the wrong method.
+- A call site counts only when the source names its receiver's class: a call on `self` (or with no receiver), on a constant (`Cart.build`), on `self.class`, on `new` of one of those, or on an instance variable that the class assigns only from one `Const.new`. A call on a local variable, a parameter, or a method's return value makes no edge, so `reachable_from` can miss a caller. A call on `self` that its class does not define goes to the one indexed method of that name, for a method from a module or a superclass.
 - `define_method`, `class_eval`, and `def` inside a conditional are not indexed. A definition with a receiver other than `def self.foo` is coarse.
 - A rename is a deletion plus an addition (`git diff --no-renames`).
 - Coverage is not collected. `--coverage` only reads the JSON you pass.
