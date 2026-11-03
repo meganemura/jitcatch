@@ -65,9 +65,24 @@ A test that only asserts the new feature fails on base and is not a candidate. A
 
 ## Using with coding agents
 
-The procedure an agent follows while reviewing or landing a change is [skills/jitcatch/SKILL.md](skills/jitcatch/SKILL.md). [AGENTS.md](AGENTS.md) is for changing this repository.
+Install the skill with the [`skills`](https://github.com/vercel-labs/skills) CLI (Node.js 22.20 or newer). This repository is private, so the command needs GitHub access through a Git credential, the GitHub CLI, or SSH.
 
-Install the skill by copying or symlinking the `skills/jitcatch` directory into the agent's skills directory, for example `.agents/skills/`, `.claude/skills/`, or `.cursor/skills/`. The agent still needs this repository's `bin/jitcatch` on `PATH` (Ruby 3.3 or newer). Copying the skill does not install the executable.
+```sh
+npx skills add meganemura/jitcatch
+```
+
+Select this skill, install it globally, or target one agent:
+
+```sh
+npx skills add meganemura/jitcatch --skill jitcatch
+npx skills add meganemura/jitcatch -g
+npx skills add meganemura/jitcatch -a cursor
+npx skills add meganemura/jitcatch -a claude-code
+```
+
+Add `-y` to skip prompts. Put `bin/jitcatch` on `PATH` separately (Ruby 3.3 or newer).
+
+Without the CLI, copy or symlink `skills/jitcatch` into the agent's skills directory, for example `.agents/skills/`, `.claude/skills/`, or `.cursor/skills/`.
 
 ## Mapping to Meta's pipeline
 

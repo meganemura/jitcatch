@@ -65,9 +65,24 @@ ruby -Ilib test/run.rb          # エンジンテスト
 
 ## コーディングエージェントと使う
 
-レビューや取り込みのときにエージェントが踏む手順は [skills/jitcatch/SKILL.md](skills/jitcatch/SKILL.md) にある。[AGENTS.md](AGENTS.md) はこのリポジトリを変更する人向け。
+[`skills`](https://github.com/vercel-labs/skills) CLI でスキルを入れる（Node.js 22.20 以降）。このリポジトリは非公開なので、Git の認証情報、GitHub CLI、または SSH で GitHub にアクセスできる必要がある。
 
-スキルを入れるには、`skills/jitcatch` をエージェントの skills ディレクトリへコピーまたはシンボリックリンクする（例: `.agents/skills/`、`.claude/skills/`、`.cursor/skills/`）。実行ファイル `bin/jitcatch`（Ruby 3.3 以降）は別途 `PATH` に置く。スキルをコピーしても実行ファイルは入らない。
+```sh
+npx skills add meganemura/jitcatch
+```
+
+このスキルだけ、グローバル、または特定のエージェントへ入れる:
+
+```sh
+npx skills add meganemura/jitcatch --skill jitcatch
+npx skills add meganemura/jitcatch -g
+npx skills add meganemura/jitcatch -a cursor
+npx skills add meganemura/jitcatch -a claude-code
+```
+
+確認を飛ばすときは `-y` を足す。`bin/jitcatch` は別に `PATH` へ置く（Ruby 3.3 以降）。
+
+CLI を使わない場合は、`skills/jitcatch` をエージェントの skills ディレクトリへコピーまたはシンボリックリンクする（例: `.agents/skills/`、`.claude/skills/`、`.cursor/skills/`）。
 
 ## Meta のパイプラインとの対応
 
