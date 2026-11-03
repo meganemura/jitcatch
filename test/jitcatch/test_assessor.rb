@@ -158,6 +158,30 @@ class TestAssessor < Minitest::Test
     }, out)
   end
 
+  def test_a_keyword_or_arity_error_inside_assert_raises_is_a_signature_change
+    raised = ->(message) { failure("[Unsupported] exception expected, not\nClass: <ArgumentError>\nMessage: <#{message.inspect}>\n---Backtrace---") }
+    at_scale = frames("test/scale_test.rb", 4) + frames("lib/calc.rb", 40)
+    doc = {
+      "methods" => [
+        method("m01", "modified", "changed", "scale", [], 40),
+        method("m02", "modified", "same", "show", [], 30)
+      ],
+      "constants" => [],
+      "tests" => [
+        candidate("t01", "ScaleTest#test_a", [], raised.call("missing keyword: :steps"), at_scale),
+        candidate("t02", "ScaleTest#test_b", [], raised.call("unknown keywords: :a, :b"), at_scale),
+        candidate("t03", "ScaleTest#test_c", [], raised.call("wrong number of arguments (given 1, expected 2)"), at_scale),
+        candidate("t04", "ScaleTest#test_d", [], raised.call("qty must be > 0"), at_scale),
+        candidate("t05", "ShowTest#test_a", [], raised.call("missing keyword: :steps"), frames("lib/calc.rb", 31)),
+        candidate("t06", "ScaleTest#test_e", [], error("ArgumentError", "missing keyword: :steps"), at_scale),
+        candidate("t07", "ScaleTest#test_f", [], failure("Expected: \"missing keyword: :steps\"\n  Actual: nil"), at_scale)
+      ]
+    }
+    out = JitCatch::Assessor.apply(doc)["tests"].to_h { |test| [test["id"], test["disposition"]] }
+    assert_equal({ "t01" => "discarded", "t02" => "discarded", "t03" => "discarded", "t04" => "reported",
+                   "t05" => "reported", "t06" => "discarded", "t07" => "reported" }, out)
+  end
+
   def test_removed_constants_match_by_bare_name_full_name_or_suffix
     doc = {
       "methods" => [],

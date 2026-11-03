@@ -204,6 +204,36 @@ class TestRunner < Minitest::Test
     end
   end
 
+  def test_discards_a_new_required_keyword_raised_inside_assert_raises
+    with_repo do |repo|
+      repo.write("lib/trace.rb", "class Trace\n  class Unsupported < StandardError; end\n\n  def self.replay(path)\n    raise Unsupported, path\n  end\nend\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/trace.rb", "class Trace\n  class Unsupported < StandardError; end\n\n  def self.replay(path, steps:)\n    raise Unsupported, path\n  end\nend\n")
+      repo.commit("Take a step count.", date: "2026-02-12T00:00:00Z")
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, {
+        "trace_test.rb" => <<~RUBY
+          require "minitest/autorun"
+          require "trace"
+
+          class TraceTest < Minitest::Test
+            def test_unsupported
+              assert_raises(Trace::Unsupported) { Trace.replay("x.itf.json") }
+            end
+          end
+        RUBY
+      })
+
+      doc = execute(repo, tests)
+
+      row = doc["tests"].fetch(0)
+      assert_match(/missing keyword: :steps/, row["head"]["message"])
+      assert_equal "discarded", row["disposition"]
+      assert_includes row["tags"], "discard:signature_change"
+    end
+  end
+
   def test_reruns_judge_only_candidates_and_run_every_rerun
     with_repo do |repo|
       repo.write("lib/calc.rb", BASE_CALC)

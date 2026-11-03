@@ -170,7 +170,7 @@ When a revision has a `Gemfile`, its files run with `-rbundler/setup` and `BUNDL
 
 Files named `*_test.rb` or `test_*.rb` run. When none have those names, every `.rb` file runs. At most 40 files run. A test that passes on base and fails, errors, or times out on head is a candidate. `--reruns` repeats candidates on head. One disagreement makes the test `flaky`. The comparison masks the name directly under the temp directory, so a `Dir.mktmpdir` path in a message is not a disagreement. The text report prints each rerun under a `flaky` row, and the JSON row keeps them in `reruns`. A timeout is not rerun.
 
-Three rules then turn a candidate into `discarded`: a `LoadError` on head, a timeout, or a `NameError`, `NoMethodError`, or arity `ArgumentError` on a name the diff removed or whose signature it rewrote. A removed class or module counts as a removed name. An `ArgumentError` the code raises on purpose, such as `qty must be > 0`, stays `reported`.
+Three rules then turn a candidate into `discarded`: a `LoadError` on head, a timeout, or a `NameError`, `NoMethodError`, or arity `ArgumentError` on a name the diff removed or whose signature it rewrote. A removed class or module counts as a removed name. An arity `ArgumentError` is `wrong number of arguments`, `missing keyword`, or `unknown keyword`, also when `assert_raises` caught it and failed. An `ArgumentError` the code raises on purpose, such as `qty must be > 0`, stays `reported`.
 
 The same repository and the same tests produce the same bytes. Order is fixed, the text has no timestamps, and absolute worktree paths are removed.
 

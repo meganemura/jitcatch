@@ -88,7 +88,7 @@ Tags are hints, not a verdict. They are sorted:
 
 - `touches:changed_method` — the test names a method the diff changed.
 - `touches:unchanged_caller` — the test goes through an entry point the diff did not edit, and that entry point reaches a changed method.
-- `discard:signature_change` — `NameError`, `NoMethodError`, or an arity `ArgumentError` on a symbol the diff removed or rewrote, including a removed nested class such as `Model::Unsupported`. An `ArgumentError` raised on purpose is kept.
+- `discard:signature_change` — `NameError`, `NoMethodError`, or an arity `ArgumentError` on a symbol the diff removed or rewrote, including a removed nested class such as `Model::Unsupported`. An arity `ArgumentError` is `wrong number of arguments`, `missing keyword`, or `unknown keyword`, raised in a method whose signature changed. It counts too when `assert_raises(X)` caught it and failed with `[X] exception expected, not ArgumentError`. An `ArgumentError` raised on purpose is kept.
 - `discard:load_error` — `LoadError` on head. `discard:timeout` — the head run timed out. Timeouts are not rerun.
 - The related id (`m05`, or `-` when none) is the downstream modified method when several changed methods sit on the path. Read that method's old and new source before you judge.
 

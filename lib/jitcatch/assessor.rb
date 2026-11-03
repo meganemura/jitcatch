@@ -4,6 +4,8 @@ module JitCatch
   # Rule-based filter. It does not decide intended-versus-regression.
   # That judgment needs the change intent and belongs to the agent.
   class Assessor
+    ARITY = /wrong number of arguments|missing keywords?: |unknown keywords?: /
+
     def self.apply(doc)
       new(doc).apply
     end
@@ -71,12 +73,24 @@ module JitCatch
         return "signature_change"
       end
 
-      if head["error_class"] == "ArgumentError" && head["message"].to_s.include?("wrong number of arguments")
+      if arity_error?(head)
         target = method_from_backtrace(test) || method
         return "signature_change" if target && target["signature"] == "changed"
       end
 
       nil
+    end
+
+    # assert_raises turns an unexpected ArgumentError into an assertion
+    # failure, so the call that no longer fits its method looks like a
+    # claim the test made.
+    def arity_error?(head)
+      message = head["message"].to_s
+      case head["error_class"]
+      when "ArgumentError" then message.match?(/\A(?:#{ARITY})/)
+      when "Minitest::Assertion" then message.match?(/exception expected, not\nClass: <ArgumentError>\nMessage: <"(?:#{ARITY})/)
+      else false
+      end
     end
 
     def tags_for(test, method, reason)
