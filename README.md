@@ -1,14 +1,14 @@
 # jitcatch
 
-Ruby 向けの Just-in-Time catching test の決定的なプロトタイプ。変更ごとに、その diff を狙ったテストを **親（base）と変更後（head）の両方**で走らせ、base で通り head で落ちるものだけを残す。フレークは落とし、明らかな非シグナルはルールで捨て、残りをエージェントが「意図した変更か、回帰か」を判断する。
+A deterministic prototype of Just-in-Time catching tests for Ruby. For each change, run tests aimed at the diff on both the parent (base) and the change (head). Keep only the tests that pass on base and fail on head. Drop flakes and obvious non-signals with rules. An agent then decides whether each remaining failure is intended or a regression.
 
-**このツールは LLM を呼ばない。** テストを書くのも、意図を判断するのも、Claude Code や Cursor や人間である。CLI は短い文脈を作り、テストを実行し、分類するだけ。
+**This tool never calls an LLM.** A coding agent (Claude Code, Cursor, or a person) writes the tests and judges intent. The CLI only prepares a short brief, runs the tests, and classifies them.
 
-Ruby 3.3 以降（4.0 でも可）。追加 gem はない。`minitest` と `prism` は標準添付。動作確認は Ruby 3.3.13。
+Ruby 3.3 or newer (4.0 is fine). No extra gems. `minitest` and `prism` ship with Ruby. Checked on Ruby 3.3.13.
 
-## 設計
+## Design
 
-対象は git リポジトリの 2 つのコミット。出力は同じ入力ならバイト単位で同じになる。並びは固定、コンパクトな出力に時刻は出さない。テストの順序は Minitest の `--seed 1`。ワークツリーの絶対パスは結果から除く。どのコマンドも `--json` で同じ内容の JSON を出す。
+The subject is two commits in a git repository. The same inputs produce the same bytes. Order is fixed, and the compact output has no timestamps. Minitest runs with `--seed 1`. Absolute worktree paths are stripped from results. Every command prints the same document as JSON with `--json`.
 
 ```
 jitcatch context [--json] [--repo DIR] [--coverage FILE] BASE HEAD
@@ -16,87 +16,87 @@ jitcatch run     [--json] [--repo DIR] [--coverage FILE] [--reruns N] [--timeout
 jitcatch assess  [--json] RUN.json
 ```
 
-終了コードは 0 が成功、1 が使い方の誤り、2 が git の失敗。候補が見つかっても 0 のまま。回帰かどうかはツールが決めない。
+Exit status 0 is success, 1 is a usage error, and 2 is a git failure. Finding candidates still exits 0. The tool does not decide whether something is a regression.
 
-`context` はエージェント向けの短いブリーフを出す。
+`context` prints a short brief for an agent:
 
-- 変更されたファイル
-- Prism で diff のハンクをメソッドに対応づける。メソッドごとの安定な id（`m01`…）
-- 各メソッドの旧ソースと新ソース。定数だけが変わったときは、その定数を読むメソッドを `affected` として出す（`k01`）
-- 変更メソッドの呼び出し元（ライブラリ内）と、そこから届く公開エントリ
-- 既存テストの参照。既定はテストファイルの grep。`--coverage` を渡すとそのファイルだけを使う
+- Changed files.
+- Diff hunks mapped to methods with Prism. Each method gets a stable id (`m01`, …).
+- Old and new source of each changed method. When only a constant changes, methods that read it are listed as `affected` (`k01`).
+- Callers of changed methods inside the library, and the public entry points that reach them.
+- Existing tests that reference them. The default is a grep of test files. `--coverage` uses that file instead.
 
-`run` は一時ディレクトリに base と head の git worktree を作り、候補ファイルをそれぞれ `.jitcatch/` にコピーして、ファイルごとに `ruby -Ilib -I.` で実行する。タイムアウトは既定 10 秒。分類は次のとおり。
+`run` creates git worktrees for base and head in a temporary directory, copies each candidate file to `.jitcatch/`, and runs it with `ruby -Ilib -I.`. The default timeout is 10 seconds. Classification:
 
-| 結果 | 意味 |
+| Result | Meaning |
 | --- | --- |
-| pass / pass | `no_signal`。証拠にならない |
-| pass / fail | catching candidate。古いコードが満たしていた主張を、新しいコードが壊した |
-| base で失敗 | `fail_on_base`。テストが壊れているか、新機能だけを書いている。捨てる |
-| 候補を head で再実行 | 既定 2 回。1 回でも結果が変われば `flaky` として捨てる |
-| LoadError、タイムアウト、シグネチャ変更に伴う NameError / NoMethodError / 引数個数の ArgumentError | `discarded` |
+| pass / pass | `no_signal`. Not evidence. |
+| pass / fail | Catching candidate. The old code satisfied the claim, and the new code broke it. |
+| Fail on base | `fail_on_base`. The test is broken, or it only describes a new feature. Discarded. |
+| Rerun candidates on head | Default 2 extra runs. If any rerun disagrees, the test is `flaky` and dropped. |
+| `LoadError`, timeout, or `NameError` / `NoMethodError` / arity `ArgumentError` on a signature the diff changed | `discarded` |
 
-`assess` はルールだけを適用する。残った候補について、テスト名、base と head の結果、失敗メッセージの先頭、関連メソッド id、タグを出す。タグは `touches:changed_method`（テストがそのメソッド名を呼んでいる）と `touches:unchanged_caller`（変更していない入口から、変更されたメソッドへ届いている）のどちらか、または両方。複数の変更メソッドが経路上にあるときは、追加されたメソッドより、もともとあったメソッドのうち最も下流のものを関連 id にする。
+`assess` applies rules only. For each remaining candidate it prints the test name, the base and head results, the first line of the failure, the related method id, and tags. `touches:changed_method` means the test names a method the diff changed. `touches:unchanged_caller` means an entry point the diff did not edit still reaches a changed method. When several changed methods sit on the path, the related id is the downstream method that already existed, rather than one the diff only added.
 
-意図した変更と回帰の切り分けはしない。それはエージェントの仕事で、手順は [AGENTS.md](AGENTS.md) にある。
+The tool does not separate intended changes from regressions. That is the agent's job. The steps are in [AGENTS.md](AGENTS.md).
 
-## 実行
+## Run
 
 ```sh
-ruby script/setup_shop          # examples/shop に再現可能な git 履歴を作る
+ruby script/setup_shop          # build a reproducible git history at examples/shop
 bin/jitcatch context --repo examples/shop base regression
 bin/jitcatch run --repo examples/shop base regression examples/runs/regression/tests
-ruby -Ilib test/run.rb          # エンジンテスト
+ruby -Ilib test/run.rb          # engine tests
 ```
 
-`examples/shop` は生成物なのでリポジトリには入らない。中身のソースは `examples/fixtures/shop/` にある。
+`examples/shop` is generated and is not part of this repository. The sources live in `examples/fixtures/shop/`.
 
-候補テストは対象リポジトリへコミットしない。このリポジトリの `examples/runs/` は、デモでエージェント役をやった記録である。
+Do not commit candidate tests into the target repository. `examples/runs/` in this repository is the record of acting as the agent on the demo.
 
-## エージェントのループ
+## Agent loop
 
-1. `jitcatch context BASE HEAD` を読む。意図は `BASE..HEAD` のコミットメッセージとして出る。
-2. 変更メソッドと、その近くの変わっていない振る舞い（境界、丸め、異常系）に対して、Minitest を 3〜6 ファイル書く。
-3. `jitcatch run BASE HEAD tests_dir/` を実行する。
-4. reported の各行を、意図と照らして likely-regression / intended / unclear に分ける。
-5. カウントと判断を短いレポートに書く。テストは捨てる。
+1. Read `jitcatch context BASE HEAD`. The intent is the commit messages from `BASE` to `HEAD`.
+2. Write 3 to 6 Minitest files for the changed methods and for unchanged behavior next to the change: boundaries, rounding, and error paths.
+3. Run `jitcatch run BASE HEAD tests_dir/`.
+4. Judge each reported row against the intent: likely-regression, intended, or unclear.
+5. Write a short report with the counts and the judgments. Discard the tests.
 
-新機能だけを assert するテストは base で落ち、候補にならない。catching test は「古いコードがすでに満たしていること」を書く。
+A test that only asserts the new feature fails on base and is not a candidate. A catching test states something the old code already satisfied.
 
-## Meta のパイプラインとの対応
+## Mapping to Meta's pipeline
 
-Meta の Just-in-Time Catching Test Generation（arXiv 2601.22832、engineering.fb.com の 2026-02-11 と 2026-10-29）は、変更のたびに diff 向けのテストを生成し、親と head で走らせ、親で成功し head で失敗するものだけを残す。再実行でフレークを落とし、ルールと LLM の判定で「意図した振る舞いの変更」と「回帰らしい失敗」を分け、回帰だけを報告する。テストは使い捨て。
+Meta's Just-in-Time Catching Test Generation (arXiv 2601.22832; engineering.fb.com, 2026-02-11 and 2026-10-29) generates tests for a diff, runs them on the parent and on head, and keeps tests that pass on the parent and fail on head. A rerun drops flakes. Rules and an LLM judge separate intended behavior changes from likely regressions. Only likely regressions are reported. The tests are throwaway.
 
-Vitest での実験（github.com/hbmartin/catching-jit-tests-vitest）も、同じ pass/fail フィルタを外に出している。
+The Vitest experiment (github.com/hbmartin/catching-jit-tests-vitest) puts the same pass/fail filter outside the model.
 
 | Meta | jitcatch |
 | --- | --- |
-| 変更の選択 | `git diff BASE HEAD` と Prism |
-| テスト生成（モデル） | エージェントが `context` を読んで Minitest を書く |
-| base と head で実行 | worktree を作り、ファイルごとに `ruby` |
-| pass/fail だけ残す | `candidate` |
-| フレーク除去 | `--reruns`（既定 2） |
-| ルール判定 + LLM 判定 | ルールは `assess`。意図の判断はエージェント |
-| 回帰の報告 | エージェントが書く最終レポート |
-| テストは捨てる | 対象リポジトリには入れない |
+| Select the change | `git diff BASE HEAD` and Prism |
+| Generate tests (a model) | An agent reads `context` and writes Minitest |
+| Run on base and head | Worktrees, one `ruby` process per file |
+| Keep pass/fail only | `candidate` |
+| Drop flakes | `--reruns` (default 2) |
+| Rules plus an LLM judge | Rules are `assess`. The agent judges intent. |
+| Report regressions | The agent writes the final report |
+| Tests are throwaway | They are not added to the target repository |
 
-## デモ
+## Demo
 
-`examples/fixtures/shop` はセント単位のカート（base のライブラリは 73 行）。10% のボリューム割引は小計 10000 セント以上、税は 8% で half-up。既存テストは 4000 と 15000 と、12 セントの丸めだけを見ており、10000 ちょうどは見ていない。
+`examples/fixtures/shop` is a cart priced in integer cents (73 lines of library code at base). A 10% volume discount applies once the subtotal reaches 10000 cents. Tax is 8%, rounded half up. The existing tests cover 4000 cents, 15000 cents, and rounding at 12 cents. They never check exactly 10000.
 
-`ruby script/setup_shop` が作る履歴は固定の作者と日付なので、コミット SHA は環境が同じなら一致する。
+`ruby script/setup_shop` builds that history with a fixed author and dates, so the commit SHAs match on any machine that runs the script.
 
-| ブランチ | SHA | 内容 |
+| Branch | SHA | Contents |
 | --- | --- | --- |
-| base | `cf7f35144524b7a0606df29197ac609b2f17773f` | 初期実装 |
-| regression | `f2f5f6c3778bca3f65d06728583ca9e089523dfc` | SAVE5 を足し、閾値の比較を `<` から `<=` に変えた。メッセージはクーポンの話だけ |
-| intended | `f8505c45e71a6f219d1e0dfa26728c296b4d2d42` | 閾値を 5000 に下げる。メッセージがその変更だと明記している |
+| base | `cf7f35144524b7a0606df29197ac609b2f17773f` | Initial implementation |
+| regression | `f2f5f6c3778bca3f65d06728583ca9e089523dfc` | Adds SAVE5 and changes the threshold comparison from `<` to `<=`. The message talks only about the coupon. |
+| intended | `f8505c45e71a6f219d1e0dfa26728c296b4d2d42` | Lowers the threshold to 5000. The message says that change is intentional. |
 
-既存の `test/test_cart.rb` は 3 つのどれでも通る。回帰は元のスイートの穴に入っている。
+The existing `test/test_cart.rb` passes on all three. The regression sits in a gap in the original suite.
 
-### ケース 1: 機能追加と、既存境界の回帰
+### Case 1: a feature, and a regression on an existing boundary
 
-意図は「SAVE5 は税引前に 500 セント」。`context` の m05 はこう出る（全文は `examples/runs/regression/context.txt`、93 行）。
+The intent is "SAVE5 takes 500 cents off before tax." m05 in `context` looks like this (the full brief is `examples/runs/regression/context.txt`, 93 lines):
 
 ```
   [m05] modified Shop::Cart#volume_discount_cents lib/shop/cart.rb:50-54 signature=same visibility=public
@@ -117,7 +117,7 @@ Vitest での実験（github.com/hbmartin/catching-jit-tests-vitest）も、同�
       end
 ```
 
-このブリーフを読んで書いたテストは 5 ファイル、13 メソッド。境界（9999 / 10000 / 10001）、10000 の合計、丸め、入力チェック、SAVE5。実行結果（`examples/runs/regression/run.txt`）:
+The tests written from that brief are 5 files and 13 methods: the boundary (9999 / 10000 / 10001), the total at 10000, rounding, input checks, and SAVE5. The run (`examples/runs/regression/run.txt`):
 
 ```
 counts generated=13 no_signal=8 fail_on_base=3 candidates=2 flaky=0 discarded=0 reported=2
@@ -130,13 +130,13 @@ assess:
     Actual: 0
 ```
 
-判断はどちらも **likely-regression**。10800 は割引なしの税込み、9720 は割引後で、どちらも `<=` が 10000 ちょうどを割引から外したことが原因。意図はその変更を頼んでいない。SAVE5 の 3 件は base で落ちる（`apply_coupon` が無くて `NoMethodError` が 2 件、`Shop::UnknownCoupon` が無くて `NameError` が 1 件）。候補にならない。丸めと 9999 / 10001 は pass/pass。flaky は 0、ルールで捨てた候補も 0。unclear はない。
+Both are **likely-regression**. 10800 is the taxed total with no discount, and 9720 is the total after the discount. Both come from `<=` dropping the discount at exactly 10000 cents. The intent does not ask for that. The three SAVE5 tests fail on base (two `NoMethodError`s because `apply_coupon` is missing, one `NameError` because `Shop::UnknownCoupon` is missing) and are not candidates. Rounding and 9999 / 10001 are pass/pass. Flaky is 0, and the rules discarded 0. Nothing is unclear.
 
-報告は 2 テスト、中身は回帰 1 種類。詳細は `examples/runs/regression/report.md`。
+That is 2 reported tests and 1 regression. The write-up is `examples/runs/regression/report.md`.
 
-### ケース 2: 意図した振る舞いの変更
+### Case 2: an intended behavior change
 
-定数だけが変わる。メソッド本体は同じなので、`affected` として出る（全文は `examples/runs/intended/context.txt`、35 行）。
+Only a constant changes. The method body is the same, so it is listed as `affected` (the full brief is `examples/runs/intended/context.txt`, 35 lines):
 
 ```
 constants:
@@ -148,7 +148,7 @@ methods:
   [m01] affected Shop::Cart#volume_discount_cents lib/shop/cart.rb:30-34 signature=same visibility=public via=k01
 ```
 
-9 メソッド。古い境界をそのまま書いたものと、新しい規則を直接書いたもの、丸めと数量チェック。結果（`examples/runs/intended/run.txt`）:
+Nine methods: tests that still state the old boundary, a test that states the new rule directly, and checks for rounding and quantity. The run (`examples/runs/intended/run.txt`):
 
 ```
 counts generated=9 no_signal=6 fail_on_base=1 candidates=2 flaky=0 discarded=0 reported=2
@@ -161,37 +161,35 @@ assess:
     Actual: 500
 ```
 
-判断はどちらも **intended**。5000 セント以上を 10% にする、と意図が書いている。7500 の合計が 8100 から 7290 になるのはその範囲。新しい規則を直接書いたテストは base で落ち、候補にならない。likely-regression は 0。unclear はない。flaky も 0。
+Both are **intended**. The intent says orders of 5000 cents or more get 10% off. A 7500-cent total moving from 8100 to 7290 is inside that change. The test that asserts the new rule directly fails on base and is not a candidate. Likely-regression is 0. Nothing is unclear. Flaky is 0.
 
-同じ pass/fail が、ケース 1 では回帰、ケース 2 では意図した変更になる。差は diff の形ではなくコミットメッセージにある。
+The same pass/fail shape is a regression in case 1 and an intended change in case 2. The difference is the commit message, not the shape of the diff.
 
-## なぜツールの中で LLM を呼ばないか
+## Why the tool does not call an LLM
 
-- **決定性。** 同じリポジトリと同じテストなら、出力はバイト単位で一致する。エンジンテストがデモの記録と突き合わせている。モデルの版や温度で結果が変わらない。
-- **費用。** 生成も判断も、すでにエージェントに払っているモデルで足りる。CLI が毎回 API を叩く必要はない。
-- **どのエージェントでも駆動できる。** Claude Code でも Cursor でも人間でも、同じコマンド列になる。ツールが特定のモデルに縛られない。
-- **意図の判断は、PR の文章と会話が要る。** それはエージェントがすでに持っている。CLI に一つの判定モデルを埋め込むと、その選択が固定され、テストもできなくなる。
+- **Determinism.** The same repository and the same tests produce the same bytes. The engine tests compare the demo record to a fresh run. Model version and temperature cannot change the result.
+- **Cost.** Generation and judgment can use the model the agent is already paying for. The CLI does not need its own API call.
+- **Any agent can drive it.** Claude Code, Cursor, or a person follow the same commands. The tool is not tied to one model.
+- **Judging intent needs the pull request and the conversation.** The agent already has that context. Baking one judge into the CLI would freeze that choice and make the output untestable.
 
-## 制限
+## Limitations
 
-正直に書いておく。
+- Call sites are matched by name, not by type. Two methods with the same name can drop a caller or point the related id at the wrong method.
+- `define_method`, `class_eval`, and `def` inside a conditional are not indexed. Definitions with a receiver other than `def self.foo` are coarse.
+- Renames are seen as a deletion plus an addition (`--no-renames`).
+- The tool does not collect coverage. It only reads the JSON passed to `--coverage`.
+- The rules drop signature changes, `LoadError`, and timeouts. An `ArgumentError` raised on purpose, such as `qty must be > 0`, is kept. The rules do not separate intent from regression.
+- If the candidate tests do not state the old behavior, the regression is not found. This bug is a gap in the existing suite. Without a boundary test, reported stays 0.
+- Tests of a new feature fail on base and disappear. That is the design. They are not a substitute for catching a regression.
+- The related id is a heuristic. The cause can sit one step further upstream.
+- A mention is a word in the test method's source. Naming a method in a comment pulls the tag toward it.
+- Timeouts are not rerun. Files run one at a time, with no parallelism.
+- The target's existing suite is not executed. The repository must be a git repo that can make worktrees.
+- An assertion failure's backtrace usually stops in the test, so tags for library lines fall back to method names mentioned in the test.
 
-- 呼び出しは名前ベースで、型を見ていない。同名メソッドが複数あると、呼び出し元を落としたり、関連 id を外したりする。
-- `define_method` や `class_eval`、条件の中の `def` は索引しない。`def self.foo` 以外のレシーバ付き定義も粗い。
-- リネームは `--no-renames` なので削除と追加に見える。
-- カバレッジは自分では集めない。`--coverage` の JSON を読むだけ。
-- ルールはシグネチャ変更、LoadError、タイムアウトを捨てるだけ。`ArgumentError` でも `qty must be > 0` のような明示的なものは残す。意図と回帰は分けない。
-- 候補テストが古い振る舞いを書いていなければ、回帰は見つからない。今回のバグは既存スイートの穴で、境界のテストを書かなかった場合 reported は 0 のまま。
-- 新機能のテストは base で落ちて消える。それは仕様で、回帰検出の代わりにはならない。
-- 関連 id はヒューリスティックである。失敗の原因がもう一つ上流にあることもある。
-- 言及はテストメソッドのソースの単語。コメントにメソッド名を書くとタグが寄る。
-- タイムアウトは再実行しない。1 ファイルずつで、並列ではない。
-- 対象の既存スイートは走らせない。ワークツリーが使える git リポジトリが要る。
-- アサーション失敗のバックトレースはテスト側で止まりがちなので、ライブラリ行へのタグはメソッド名の言及に頼る。
+## Next steps
 
-## 次のステップ
-
-**simplecov のテスト単位カバレッジ。** いま受け付ける形は `jitcatch-coverage-v1`（例は `examples/coverage/jitcatch-coverage-v1.sample.json`）。
+**Per-test simplecov coverage.** The accepted shape is `jitcatch-coverage-v1` (see `examples/coverage/jitcatch-coverage-v1.sample.json`).
 
 ```json
 {
@@ -206,20 +204,26 @@ assess:
 }
 ```
 
-`--coverage` を渡すと grep の代わりに、変更メソッドの行範囲と重なるテストだけをブリーフへ出す。simplecov の per-test 結果、または `simplecov affected` が挙げる変更行を、この JSON に変換するアダプタが次の一段。収集自体はツールの外に置く。
+`--coverage` lists tests whose covered lines overlap a changed method, instead of grepping. The next piece is an adapter from simplecov's per-test result, or from the lines `simplecov affected` reports, into this JSON. Collection stays outside the tool.
 
-**hegel-ruby（gem `hegeltest`）のプロパティテストを、生成するテストの形にする。** 境界を 1 点ずつ書く代わりに、割引の閾値や丸めの性質をプロパティで書く。実行と比較は今の pass/fail フィルタのまま。gem は入れていない。
+**Property tests from hegel-ruby (gem `hegeltest`) as the generated tests.** Write the discount threshold and the rounding rule as properties instead of single points. The same pass/fail filter runs them. The gem is not a dependency here.
 
-**GitHub Actions の `@jitcatch` コメント。** PR コメントをトリガに context を出し、エージェントがテストとレポートを書き、コメントで返す。アカウントもワークフローも、このプロトタイプには作っていない。
+**A GitHub Actions `@jitcatch` comment.** A pull-request comment triggers `context`, an agent writes tests and a report, and the report is posted back. This prototype does not include the account or the workflow.
 
-**一回きりの E2E へ広げる。** 同じ base/head フィルタを、変更した入口を 1 度だけ叩くリクエストやブラウザのスモークに使う。テストはやはり捨てる。
+**One-shot end-to-end.** Use the same base/head filter for a single request or browser smoke that hits the changed entry point. Those tests are throwaway too.
 
-**LLM を中に置いた変種との比較。** 中にモデルを置く CLI は、テスト生成も intended / regression の判定もコマンドの中でやる。出力はバイト安定でなくなり、秘密と費用が要り、エンジンテストで固定できない。このプロトタイプは逆で、モデルはループの外、ツールは純関数。ハイブリッドにするなら、既定は今のままにして、明示したときだけ外のコマンドへ委譲する。
+**An in-tool LLM variant.** A CLI with a model inside would generate tests and judge intended versus regression in the command. The output would no longer be byte-stable, and the tool would need secrets and a budget that the engine tests could not pin down. This prototype keeps the model outside the loop and the tool a pure function. A hybrid can keep that default and shell out only when asked.
 
-## 開発
+## Development
 
 ```sh
 ruby -Ilib test/run.rb
 ```
 
-エンジンテストは一時 git リポジトリで context、実行、フレーク、タイムアウト、シグネチャ変更の破棄を見る。ショップのデモは `test/jitcatch/test_shop_demo.rb` が、記録した `context.txt` と `run.txt` を新しいフィクスチャの出力とバイト比較する。
+The engine tests use temporary git repositories to cover context, execution, flakes, timeouts, and signature-change discards. The shop demo in `test/jitcatch/test_shop_demo.rb` rebuilds the fixture and compares `context.txt` and `run.txt` to the recorded files, byte for byte.
+
+## License
+
+No license has been chosen yet.
+
+Japanese documentation: [README.ja.md](README.ja.md).

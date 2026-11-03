@@ -1,10 +1,10 @@
-# ケース: SAVE5 クーポン（回帰あり）
+# Case: SAVE5 coupon, with a regression
 
-意図（`base..regression`）: SAVE5 は税引前に 500 セント引く。未知のコードは `Shop::UnknownCoupon`。閾値には触れていない。
+Intent (`base..regression`): SAVE5 takes 500 cents off before tax. Unknown codes raise `Shop::UnknownCoupon`. The message does not mention the volume-discount threshold.
 
-## カウント
+## Counts
 
-| 項目 | 数 |
+| Item | Count |
 | --- | ---: |
 | generated | 13 |
 | no_signal | 8 |
@@ -14,16 +14,16 @@
 | discarded | 0 |
 | reported | 2 |
 
-candidates は、base で通り head で落ち、再実行でも落ちたテスト。reported はそのうちルールで捨てなかったもの。
+`candidates` passed on base, failed on head, and failed the same way on the reruns. `reported` is what remained after the rules.
 
-## 判断
+## Judgment
 
-- c02 `VolumeBoundaryTest#test_threshold_is_inclusive` — **likely-regression**。10000 セントちょうどで割引は 1000 であるべきところが 0。context の m05 は比較が `<` から `<=` に変わっている。メソッドのコメントは inclusive のまま。意図はクーポン追加だけなので、既存の境界を壊している。
-- c01 `ThresholdTotalTest#test_at_threshold_total_includes_the_volume_discount` — **likely-regression**。同じ境界を、変更していない `total_cents` から見ている。期待 9720（割引後の税込み）、実際 10800（割引なし）。タグは `touches:unchanged_caller`、関連メソッドは m05。
-- SAVE5 の 3 件は base で落ちた。`apply_coupon` が無く `NoMethodError` が 2 件、`Shop::UnknownCoupon` が無く `NameError` が 1 件。新機能のテストであり、候補にならない。回帰の証拠ではない。
-- 9999 と 10001、15000 セントの合計、税の half-up、数量と価格のチェックは pass/pass。そこは壊れていない。
-- unclear はない。
+- c02 `VolumeBoundaryTest#test_threshold_is_inclusive` — **likely-regression**. At exactly 10000 cents the discount should be 1000. Head returns 0. In the context brief, m05 changes `<` to `<=`. The method comment still says the threshold is inclusive. The intent only adds a coupon, so this breaks existing behavior.
+- c01 `ThresholdTotalTest#test_at_threshold_total_includes_the_volume_discount` — **likely-regression**. The same boundary, seen through unchanged `total_cents`. Expected 9720 (tax after the discount), actual 10800 (no discount). Tag `touches:unchanged_caller`, related method m05.
+- The three SAVE5 tests fail on base: two `NoMethodError`s because `apply_coupon` does not exist, and one `NameError` because `Shop::UnknownCoupon` does not exist. They describe the new feature and are not candidates. They are not evidence of a regression.
+- 9999, 10001, the 15000-cent total, half-up tax, and the price and quantity checks are pass/pass. Those paths are intact.
+- Nothing is unclear.
 
-報告する回帰は 1 種類（閾値の off-by-one）で、テストは 2 件。ツールは「回帰」とは言わない。この仕分けは意図を読んだ結果。
+The report is two tests and one regression (an off-by-one on the threshold). The tool does not say "regression". That label comes from reading the intent.
 
-既存の `test/test_cart.rb` は 4000 と 15000 しか見ていない。10000 ちょうどは元から穴だった。境界のテストを書かなければ、このバグは reported 0 のまま残る。
+The existing `test/test_cart.rb` only covers 4000 and 15000 cents. Exactly 10000 was already a gap. Without a boundary test, this bug stays at reported 0.

@@ -1,10 +1,10 @@
-# ケース: 閾値を 5000 セントへ（意図した変更）
+# Case: threshold lowered to 5000 cents (intended)
 
-意図（`base..intended`）: ボリューム割引の閾値を 10000 から 5000 セントへ下げる。5000 以上は 10% 引き。意図した振る舞いの変更であり、税の丸めは変えない。
+Intent (`base..intended`): lower the volume-discount threshold from 10000 to 5000 cents. Orders of 5000 cents or more get 10% off. The message says this is an intentional behavior change, and that tax rounding stays the same.
 
-## カウント
+## Counts
 
-| 項目 | 数 |
+| Item | Count |
 | --- | ---: |
 | generated | 9 |
 | no_signal | 6 |
@@ -14,12 +14,12 @@
 | discarded | 0 |
 | reported | 2 |
 
-## 判断
+## Judgment
 
-- c02 `ThresholdTest#test_five_thousand_had_no_discount` — **intended**。古い規則（5000 では割引なし）を書いたテスト。head では 500。context の k01 が `10_000` から `5_000` になり、m01 がその定数を読んでいる。意図がその変更を明記している。
-- c01 `ThresholdTest#test_between_old_and_new_threshold_total_had_no_discount` — **intended**。7500 セントの合計が 8100 から 7290 になった。5000 と 10000 の間に 10% が付いたということで、意図の範囲。変更していない `total_cents` 経由（`touches:unchanged_caller`）。
-- `NewThresholdTest` は「5000 で割引がある」という新しい規則を直接書いている。base では失敗するので候補にならない。回帰ではない。
-- 4999、10000、15000、税の half-up、数量 0 は pass/pass。
-- likely-regression はない。unclear もない。
+- c02 `ThresholdTest#test_five_thousand_had_no_discount` — **intended**. The test states the old rule (no discount at 5000). Head returns 500. In the context brief, k01 changes `10_000` to `5_000`, and m01 reads that constant. The intent asks for this change.
+- c01 `ThresholdTest#test_between_old_and_new_threshold_total_had_no_discount` — **intended**. A 7500-cent total moves from 8100 to 7290. That is the 10% discount applying between 5000 and 10000, which the intent covers. Seen through unchanged `total_cents` (`touches:unchanged_caller`).
+- `NewThresholdTest` states the new rule directly ("5000 receives the discount"). It fails on base, so it is not a candidate and not a regression.
+- 4999, 10000, 15000, half-up tax, and quantity 0 are pass/pass.
+- No likely-regression. Nothing is unclear.
 
-同じ形の pass/fail が、ケース 1 では回帰、このケースでは意図した変更になる。違いは diff ではなくコミットメッセージにある。だから判定はツールの外に置いている。
+The same pass-on-base / fail-on-head shape is a regression in case 1 and an intended change here. The difference is the commit message, which is why that judgment stays outside the tool.
