@@ -21,6 +21,8 @@ They cover the assessor's counts and ids, the call edges a receiver names, the d
 
 CI (`.github/workflows/ci.yml`) runs `test/run.rb` on Ruby 3.3 with no bundle, and both suites on Ruby 4.0.
 
+`test/jitcatch/test_rspec_runner.rb` runs the real `rspec-core` on a Rails-shaped fixture (`.rspec`, `spec/spec_helper.rb`, `spec/rails_helper.rb`, no Rails gem). `rspec-core` is not a dependency of jitcatch, so those tests skip on a Ruby that does not have it installed, which includes CI today. Run them locally on a Ruby with `rspec` installed. `test/jitcatch/test_rspec_parser.rb` reads recorded RSpec json reports and needs no gem.
+
 The engine tests build temporary git repositories and cover context, execution, flakes, timeouts, and signature-change discards. `test/jitcatch/test_shop_demo.rb` runs `script/setup_shop` in a temp directory and compares `context` and `run` to `examples/runs/*/context.txt` and `run.txt`, byte for byte.
 
 `ruby script/setup_shop` writes a gitignored history at `examples/shop`. The sources are `examples/fixtures/shop/`. `examples/runs/` is the recorded demo, not a place to check in new candidate tests. If a change to rendering or the fixture moves those bytes, regenerate from the fixture and review the diff. Do not hand-edit the records to hide a mismatch. To regenerate a record, write the history to a scratch directory and run the CLI from this checkout:

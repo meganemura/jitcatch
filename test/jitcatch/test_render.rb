@@ -200,4 +200,11 @@ constants: (none)
     assert_includes text, "intent: (none)\nfiles:\n  (none)\n"
     assert text.end_with?("entrypoints: (none)\nparse_errors:\n  h lib/bad.rb L1: unexpected end-of-input\n"), text
   end
+
+  def test_an_rspec_eq_failure_shows_expected_and_got_or_the_entries_that_differ
+    assert_equal ["expected: 3", "got: 4"], JitCatch::Render.message_lines({ "message" => "\nexpected: 3\n     got: 4\n\n(compared using ==)\n" })
+    long = "x" * 90
+    message = "expected: {a: 2, b: \"#{long}\"}\n     got: {a: 1, b: \"#{long}\"}\n"
+    assert_equal ["hash keys differ: a", "-a => 2", "+a => 1"], JitCatch::Render.message_lines({ "message" => message })
+  end
 end

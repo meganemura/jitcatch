@@ -14,12 +14,15 @@ jitcatch はそのテストを両方のリビジョンで走らせ、フレー�
 Ruby 3.3 以降。
 追加の gem はない。
 `minitest` と `prism` は Ruby に付いている。
+RSpec の候補には、実行する場所に `rspec-core` が要る。
+プロジェクトの bundle に入れるか、`Gemfile` が無いプロジェクトならその Ruby にインストールしておく。
 `BASE` は親のリビジョン、`HEAD` は変更である。
 どちらもコミットを指す。
 未コミットのファイルは diff に入らない。
 
-Minitest のファイルはスクラッチディレクトリに自分で書く。
-`require "minitest/autorun"` のあと、リポジトリがライブラリを読むのと同じ `require` を書く。
+候補のファイルはスクラッチディレクトリに自分で書く。
+Minitest のファイルは `require "minitest/autorun"` で始め、リポジトリがライブラリを読むのと同じ `require` を書く。
+RSpec のファイルは `*_spec.rb` という名前にし、プロジェクト自身の spec と同じく `require "spec_helper"` か `require "rails_helper"` で始める。
 実行は jitcatch が行う。
 `reported` の各行を、意図と diff と照らして判断する。
 ブリーフの意図は `BASE` から `HEAD` までのコミットメッセージである。
@@ -142,9 +145,12 @@ base で通り head で落ちる結果の形は、回帰の実行と同じであ
 likely-regression のテストは、バグを直したあとに置ける。
 intended のテストは、古い振る舞いを書いている。
 
-branchout の特性テストも候補にできる。
-base のリビジョンのチェックアウトで出力し、対象の `require_relative` を `require "<lib>"` に書き換える。
+branchout の特性テストも、Minitest のファイルとしても RSpec の spec（`--format rspec`）としても候補にできる。
+base のリビジョンのチェックアウトで `--require-by-name` を付けて出力する。
 そうすると、それぞれの側が自分のワークツリーのコードを読み込む。
+これを付けずに出力したテストは `require_relative` か絶対パスを持つ。
+チェックアウトの `.jitcatch/` の下に出力したテストのように、そのパスがワークツリーの中を指すなら問題ない。
+ワークツリーの外を指すと、両側が同じファイルを読み、すべての行が `no_signal` になる。
 
 別のリポジトリでは、そのリポジトリが作業ディレクトリでなければ `--repo` を渡す。
 
@@ -245,34 +251,54 @@ gem の中から始まったエラーには `touches:changed_method` を付け�
 
 ```sh
 ruby -Ilib -I. .jitcatch/<file> -v --seed 1
+ruby -Ilib -I. -e 'require "rspec/core"; exit(RSpec::Core::Runner.run(ARGV))' -- \
+  --format json --out .jitcatch-report.json --seed 1 --backtrace --no-color .jitcatch/<file>_spec.rb
 ```
+
+`*_spec.rb` という名前のファイルは RSpec で実行する。
+ただし `minitest` を require するファイル（minitest/spec のファイル）は Minitest で実行する。
+RSpec はワークツリーの `.rspec` を読むので、そこにある `--require spec_helper` も効き、`spec/` もロードパスに入る。
+コマンドラインで渡したフォーマッタが、`.rspec` にあるフォーマッタに代わる。
+1 つの example が 1 行になり、行の名前はその full description（`Cart#total sums the prices`）である。
+テキストの報告にはその行番号（`cart_spec.rb:11`）も出る。
+期待が外れた失敗は `fail`、それ以外のエラーは `error`、`pending` は `skip` になる。
+RSpec がファイルを読む途中のエラーは、Minitest と同じく `<file>#load` の 1 行になる。
 
 リビジョンに `Gemfile` があるときは、`-rbundler/setup` を付け、`BUNDLE_GEMFILE` をその `Gemfile` にして実行する。
 そのため、それぞれの側は自分のロックファイルにある gem を読む。
 `run` は側ごとに 1 回 bundle を確かめ、`bundle base ok` や `bundle head failed: <メッセージ>` を出す。
-たとえばロックした gem がインストールされていないときや、bundle に `minitest` が無いときである。
+たとえばロックした gem がインストールされていないときや、bundle に `minitest`（Minitest の候補のとき）や `rspec-core`（RSpec の候補のとき）が無いときである。
 プロセスに渡す環境変数は、決まった一覧と `--env` で名前を挙げたものだけである。
 
-実行されるのは `*_test.rb` か `test_*.rb` である。
+実行されるのは `*_test.rb`、`test_*.rb`、`*_spec.rb` である。
 その名前が 1 つも無いときは、すべての `.rb` を実行する。
 上限は 40 ファイル。
 base で通り、head で失敗、エラー、またはタイムアウトになったテストが候補になる。
 `--reruns` は候補を head で繰り返す。
 1 回でも結果が違えば `flaky` である。
-比べる前に一時ディレクトリ直下の名前を伏せるので、メッセージにある `Dir.mktmpdir` のパスは違いにならない。
+比べるのは失敗メッセージの全体である。
+比べる前に一時ディレクトリ直下の名前とオブジェクトのアドレス（`#<Class:0x00007f...>`）を伏せるので、メッセージにある `Dir.mktmpdir` のパスや新しい無名クラスは違いにならない。
+再実行の行には、メッセージのうち変わった最初の行が出る。
 テキストの報告は `flaky` の行の下に各再実行の結果を出し、JSON の行は `reruns` に持つ。
 タイムアウトは再実行しない。
 
 候補を `discarded` にするルールは 3 つある。
 head での `LoadError`、タイムアウト、そして diff が消したかシグネチャを書き換えた名前に対する `NameError`、`NoMethodError`、引数個数の `ArgumentError` である。
 消えたクラスやモジュールも消えた名前に数える。
-引数個数の `ArgumentError` とは `wrong number of arguments`、`missing keyword`、`unknown keyword` のことで、`assert_raises` が受け取って失敗にしたときも同じに扱う。
+引数個数の `ArgumentError` とは `wrong number of arguments`、`missing keyword`、`unknown keyword` のことで、`assert_raises` や RSpec の `raise_error` が受け取って失敗にしたときも同じに扱う。
 コードが意図して起こす `ArgumentError`（`qty must be > 0` のようなもの）は `reported` のまま残る。
 
 同じリポジトリと同じテストなら、出力は同じバイトになる。
 順序は固定で、テキストに時刻は無い。
 メッセージの中の worktree の絶対パスの根は `{worktree}/lib/cart.rb` のように `{worktree}/` と書き、バックトレースのフレームからは除く。
 Ruby 自身の prefix は `{ruby}/` と書く。
+
+`assess:` の下の候補の行は、それぞれ `rerun:` の行で終わる。
+`--json` のすべての行にも `rerun` がある。
+これは、手元のチェックアウトでリポジトリの根からそのテスト 1 つだけを再実行するコマンドである。
+`{tests}/` は渡した `TESTS_DIR` を表す。
+たとえば `rspec {tests}/cart_spec.rb:11` や `ruby -Ilib -I. {tests}/cart_test.rb -n CartTest#test_total` で、head に `Gemfile` があれば `bundle exec` が前に付く。
+`<file>#load` と `<file>#timeout` の行は、ファイル全体を再実行する。
 
 ## インストール
 
@@ -330,6 +356,15 @@ CLI を使わない場合は、`skills/jitcatch` をエージェントの skills
   リポジトリの既存スイートは走らない。
   worktree を追加できる git リポジトリが要る。
 - アサーションのバックトレースはテストの中で止まりがちなので、ライブラリの行はテストが言及した名前から探す。
+- RSpec の example の言及は、その example のブロック、それを囲むグループの `let`、`subject`、フックのブロック、それらのグループの引数、そしてそれらが呼ぶ同じファイルのヘルパーから取る。
+  `"#total"` や `".build"` と記述したグループは、そのメソッドを指す。
+  `described_class.new` は `Owner.new` を指す。
+  暗黙の `subject`、共有 example グループ、`spec/support` のヘルパーは読まない。
+  別のファイルで定義した共有グループの example は、候補ファイル全体を読む。
+- Rails 風の `rails_helper` はそれぞれのワークツリーで読み込めるが、base と head は同じ `config/database.yml` で同時に走る。
+  データベースに書く候補は、その書き込み先をもう一方の側と共有する。
+  ここで試したのは Rails プロジェクトの形だけで、Rails の gem は試していない。
+- RSpec のすべての example の外で起きたエラー（`after(:suite)` フックの中など）は、example が 1 つも走らなかったときだけ報告する。
 
 ## 開発
 

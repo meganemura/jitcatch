@@ -1,6 +1,6 @@
 ---
 name: jitcatch
-description: Use when reviewing or landing a code change and you want throwaway tests that catch regressions it introduces. Drives the jitcatch CLI (context, run, assess) for a Ruby diff. Write Minitest files that pass on the base revision and fail on head, drop flakes, then judge each reported failure as a likely regression or an intended change. The tool never calls a model.
+description: Use when reviewing or landing a code change and you want throwaway tests that catch regressions it introduces. Drives the jitcatch CLI (context, run, assess) for a Ruby diff. Write Minitest or RSpec files that pass on the base revision and fail on head, drop flakes, then judge each reported failure as a likely regression or an intended change. The tool never calls a model.
 ---
 
 # jitcatch
@@ -11,7 +11,7 @@ Do not commit the candidate tests unless the human asks to promote one.
 
 ## Prerequisites
 
-Ruby 3.3 or newer, and git. No gems. `minitest` and `prism` ship with Ruby. The subject must be a git repository that can add worktrees. The tool reads commits only. Uncommitted files are not in the diff.
+Ruby 3.3 or newer, and git. No gems. `minitest` and `prism` ship with Ruby. RSpec candidates need `rspec-core`: in the project's bundle when it has a `Gemfile`, otherwise installed for the Ruby that runs jitcatch. The subject must be a git repository that can add worktrees. The tool reads commits only. Uncommitted files are not in the diff.
 
 The executable is `bin/jitcatch` in the jitcatch repository. Run `jitcatch` when that `bin` directory is on `PATH`. Otherwise run `ruby /path/to/jitcatch/bin/jitcatch`. There is no gem. `jitcatch --help` prints the commands.
 
@@ -53,11 +53,11 @@ The brief ends with one `entrypoints <Const>:` section for each class or module 
 
 ## Write candidate tests
 
-Write 3 to 6 Minitest files in a scratch directory you can delete.
+Write 3 to 6 candidate files in a scratch directory you can delete. Use the framework the project's own tests use: Minitest files, or RSpec specs named `*_spec.rb` (see RSpec candidates below). One directory can hold both.
 
 A catching test states a behavior the old code already satisfies. Aim it at a changed or affected method, and at unchanged callers that reach that method (`reachable_from`). Prefer a boundary, a rounding case, or an error path the diff could disturb. One claim per test method. A test that only describes the new feature fails on base and is not evidence. Assert on one field, not on a whole returned Hash: a whole-Hash test (such as a branchout characterization test) fails on any added key, even one the intent asked for.
 
-To use branchout characterization tests as candidates, run `branchout explore` on a checkout of `BASE`, not of `HEAD`: a test emitted on head pins the new behavior and is `fail_on_base`. Then replace the `require_relative` lines it writes for the target (an absolute path, or a path relative to the checkout it ran in) with `require "<lib>"`. Left as written, both sides load the same file outside the worktree and every test is `no_signal`. On jitcatch itself, 14 tests emitted on head and kept as written gave 14 `no_signal`; emitted on base with the require rewritten, they gave 8 `reported`.
+To use branchout characterization tests as candidates, run `branchout explore` on a checkout of `BASE`, not of `HEAD`: a test emitted on head pins the new behavior and is `fail_on_base`. Pass `--require-by-name`, so the emitted test requires the target through the load path (`require "shop/cart"`) and each side loads its own worktree's code. Pass `--format rspec` for an RSpec project. Without `--require-by-name`, check where the emitted `require_relative` or absolute path points. A path that resolves inside the worktree is fine as written: tests emitted under `.jitcatch/` of the base checkout keep `require_relative "../lib/legacy_register.rb"`, which each side resolves in its own worktree. A path outside the worktree makes both sides load the same file, so every row is `no_signal`; rewrite it to `require "<lib>"`. On jitcatch itself, 14 tests emitted on head with an outside path gave 14 `no_signal`; emitted on base with the require rewritten, they gave 8 `reported`.
 
 The `mentions` and the `touches:` tags read the test method's body and the bodies of the methods in the same file that it calls, directly or through other such methods. A helper in another file (`require "test/support/..."`) is not read, so call the changed method or its public caller from the candidate file. Prefer a public entry point over `send(:private_helper)`: a private helper can move between base and head, and the test then fails on base.
 
@@ -65,11 +65,44 @@ Each file:
 
 - `require "minitest/autorun"`, then require the library the way the repo loads it (`require "shop"` when `lib/` is on the load path). The worktree root is on the load path too, so a test can reuse the repository's own helpers by path from the root (`require "test/support/repo"`). When you start from a copy of a repository test, rewrite `require_relative "../test_helper"` to `require "test/test_helper"`: the copy runs from `.jitcatch/`, where the relative path points at the worktree root and fails with `LoadError` on both sides.
 - Name it `*_test.rb` or `test_*.rb`. When any file matches, other `*.rb` files are not executed. At most 40 files run.
-- The runner copies the directory into each worktree at `.jitcatch/` and runs one process per file: `ruby -Ilib -I. .jitcatch/<file> -v --seed 1`.
-- When the worktree has a `Gemfile`, the process also gets `-rbundler/setup` and `BUNDLE_GEMFILE` set to that worktree's `Gemfile`. Base and head then each load the gem versions their own `Gemfile.lock` names, so a test can catch a dependency bump. Only gems in the bundle load. When the `Gemfile` does not list `minitest`, no candidate can load it, and the report says `bundle base failed: minitest is not in the bundle`. Do not add `require "bundler/setup"` to the file yourself.
+- The runner copies the directory into each worktree at `.jitcatch/` and runs one process per file: `ruby -Ilib -I. .jitcatch/<file> -v --seed 1`. A `*_spec.rb` file runs through RSpec instead (below).
+- When the worktree has a `Gemfile`, the process also gets `-rbundler/setup` and `BUNDLE_GEMFILE` set to that worktree's `Gemfile`. Base and head then each load the gem versions their own `Gemfile.lock` names, so a test can catch a dependency bump. Only gems in the bundle load. When the `Gemfile` does not list `minitest`, no Minitest candidate can load it, and the report says `bundle base failed: minitest is not in the bundle`. For RSpec candidates the check asks for `rspec-core` instead. Do not add `require "bundler/setup"` to the file yourself.
 - Do not depend on the original path, on order, or on the clock. The base run and the head run of a file run at the same time, each in its own worktree, so do not write a fixed path outside the worktree (use `Dir.mktmpdir`) or listen on a fixed port. The child keeps only `PATH`, `HOME`, `USER`, `LOGNAME`, `TMPDIR`, `TEMP`, `TMP`, `LD_LIBRARY_PATH`, `GEM_HOME`, and `GEM_PATH`, and sets `LANG` and `LC_ALL` to `C.UTF-8` and `TERM` to `dumb`. Other variables, such as `RUBYOPT` from `bundle exec` or `CI`, do not reach it. When the library reads a variable of its own (for example `QUINT`, the command it runs), pass it with `--env QUINT`. Without it, the library falls back to its default, which can time out on both sides.
-- A failure message shows the root of the worktree as `{worktree}/` (`{worktree}/lib/cart.rb`) and Ruby's prefix as `{ruby}/`, so an absolute path is still visibly a path. The worktrees sit under `Dir.tmpdir`, so a claim such as `refute_includes File.expand_path(__FILE__), Dir.tmpdir` fails on both sides. A failure message may name a path under the temp directory. The rerun check masks the name directly under `Dir.tmpdir`, so a new `Dir.mktmpdir` name on each run is not a disagreement. Another source of change in the message, such as a pid, a time, or an object id, still makes the test `flaky`.
+- A failure message shows the root of the worktree as `{worktree}/` (`{worktree}/lib/cart.rb`) and Ruby's prefix as `{ruby}/`, so an absolute path is still visibly a path. The worktrees sit under `Dir.tmpdir`, so a claim such as `refute_includes File.expand_path(__FILE__), Dir.tmpdir` fails on both sides. A failure message may name a path under the temp directory. The rerun check compares the whole message. It masks the name directly under `Dir.tmpdir` and an object address (`#<Class:0x00007f...>`), so a new `Dir.mktmpdir` name or a new anonymous class on each run is not a disagreement. Another source of change in the message, such as a pid, a time, or a value that moves between runs, still makes the test `flaky`, and the rerun line shows the first message line that moved.
 - A file that builds a repository, starts processes, or runs a slow fixture needs more than the default 10 seconds. Raise `--timeout`. A timeout on head is discarded, and a timeout on base turns the whole file into one `fail_on_base` row (`<file>#timeout`). The text report prints `hint: head timed out after 10s; raise --timeout if the file needs longer` under that row.
+
+## RSpec candidates
+
+A file named `*_spec.rb` runs with the project's RSpec, one process per file, from the worktree root:
+
+```sh
+ruby -Ilib -I. -e 'require "rspec/core"; exit(RSpec::Core::Runner.run(ARGV))' -- \
+  --format json --out .jitcatch-report.json --seed 1 --backtrace --no-color .jitcatch/<file>_spec.rb
+```
+
+- Start the file with `require "spec_helper"` or `require "rails_helper"`, as the project's specs do. RSpec puts `spec/` and `lib/` on the load path and reads the worktree's `.rspec`, so its `--require spec_helper` also loads. Do not write `require_relative "spec_helper"`: the copy runs from `.jitcatch/`, where that path does not exist.
+- A `*_spec.rb` file that requires `minitest` (minitest/spec) runs as Minitest.
+- One example is one row, named by its full description. The text report shows the example's line after the file (`message_lines_spec.rb:31`). Two examples with the same description get ` (line N)` on the later one.
+- `expect(...).to` failures are `fail` (tag `assertion`), any other error is `error`, `pending` is `skip`. An error while RSpec loads the file is one `<file>#load` row. `raise_error` that caught an arity `ArgumentError` counts as a signature change, as `assert_raises` does.
+- An example's mentions come from its own block, the `let`, `subject`, and `before`/`after`/`around` blocks of the groups around it, those groups' arguments, and the same-file helpers they call. `describe "#total"` and `describe ".build"` name that method. `described_class.new` names `Owner.new`. An implicit `subject` and `spec/support` helpers are not read, so call the changed method in the example or its `let`.
+- A Rails `rails_helper` loads in each worktree, but base and head run at the same time with the same `config/database.yml`. Keep candidates off the database, or expect the two sides to see each other's rows.
+
+On jitcatch itself (the commit that added RSpec, with `rspec-core` in a scratch clone's bundle), six specs that `branchout explore --format rspec --require-by-name` emitted on base for `JitCatch::Render.message_lines`, next to four Minitest tests, gave:
+
+```text
+  t05 reported JitCatch::Render.message_lines [{"message":"\nexpected: 3\n     got: 4\n\n(compared using ==)\n"}] returns ["expected: 3"] message_lines_spec.rb:31 m29
+  ...
+counts generated=10 no_signal=9 fail_on_base=0 candidates=1 flaky=0 discarded=0 reported=1
+assess:
+  c01 JitCatch::Render.message_lines [...] returns ["expected: 3"] base=pass head=fail m29 assertion,report,touches:changed_method
+    expected: ["expected: 3"]
+    got: ["expected: 3", "got: 4"]
+    rerun: bundle exec rspec {tests}/message_lines_spec.rb:31
+```
+
+That row is intended: the change shows RSpec's `got:` line too.
+
+Not supported yet: shared example groups (an example from a group in another file reads the whole candidate file for mentions), an error outside every example when some example ran (such as in `after(:suite)`), and a project whose bundle has no `rspec-core`.
 
 ## Run
 
@@ -83,6 +116,8 @@ jitcatch run --json --repo DIR --reruns 2 --timeout 10 --workers 2 BASE HEAD TES
 When either worktree has a `Gemfile`, the report prints `bundle base ok` or `bundle head failed: <message>` before `tests:`. A `failed` side cannot load its bundle, usually because a locked gem is not installed, or its bundle has no `minitest`. Every file on that side then fails to load. Install the gems (`bundle install` at that revision), or run from a copy of the repository whose `Gemfile` lists `minitest`, and run again before you judge any row.
 
 Judge only rows whose disposition is `reported`.
+
+Each candidate row under `assess:` ends with `rerun:`, the command that runs that one test again from the repository root on the checkout you have (`--json` rows carry it as `rerun`). `{tests}/` stands for your `TESTS_DIR`. A Minitest row reads `ruby -Ilib -I. {tests}/cart_test.rb -n CartTest#test_total`, an RSpec row `rspec {tests}/cart_spec.rb:11`, both behind `bundle exec` when head has a `Gemfile`. Use it to rerun a row on head after you read the diff.
 
 | Bucket | Meaning |
 | --- | --- |
@@ -100,7 +135,7 @@ Tags are hints, not a verdict. They are sorted:
 - `touches:changed_dependency` — the error came from inside a gem that `dependencies:` lists: the first frame outside the candidate file is in that gem. An error whose first such frame is in any gem gets no `touches:changed_method`.
 - `touches:changed_constant` — the test names a constant the diff changed, added, or removed. The row's `mentions` lists the bare names of changed methods, their classes' public methods, and changed constants that the test method or its same-file helpers name.
 - `touches:unchanged_caller` — the test goes through an entry point the diff did not edit, and that entry point reaches a changed method.
-- `discard:signature_change` — `NameError`, `NoMethodError`, or an arity `ArgumentError` on a symbol the diff removed or rewrote, including a removed nested class such as `Model::Unsupported`. An arity `ArgumentError` is `wrong number of arguments`, `missing keyword`, or `unknown keyword`, raised in a method whose signature changed. It counts too when `assert_raises(X)` caught it and failed with `[X] exception expected, not ArgumentError`. An `ArgumentError` raised on purpose is kept.
+- `discard:signature_change` — `NameError`, `NoMethodError`, or an arity `ArgumentError` on a symbol the diff removed or rewrote, including a removed nested class such as `Model::Unsupported`. An arity `ArgumentError` is `wrong number of arguments`, `missing keyword`, or `unknown keyword`, raised in a method whose signature changed. It counts too when `assert_raises(X)` caught it and failed with `[X] exception expected, not ArgumentError`, or when RSpec's `raise_error` failed with `expected X, got #<ArgumentError: ...>`. An `ArgumentError` raised on purpose is kept.
 - `discard:load_error` — `LoadError` on head. `discard:timeout` — the head run timed out. Timeouts are not rerun.
 - The related id (`m05`, or `-` when none) is the downstream modified method when several changed methods sit on the path. When the failure's backtrace runs through changed methods, it is the innermost of them. Read that method's old and new source before you judge.
 - `related:guess` — the evidence that picked the related id points at several changed methods, most often because the test names only an unchanged caller (`build`, `between`) that reaches all of them. The next line, `related guess: m02 of m01,m02,m03`, lists every one (`method_ids` in `--json`). Read each of them before you judge, not only the pick. A test that names the method itself (through `send` when it is private) gets a firm id.
@@ -108,7 +143,7 @@ Tags are hints, not a verdict. They are sorted:
 
 ## Judge
 
-For each reported row, compare the failure (the message lines, usually expected and actual, and the related id) with the intent and with the diff in the brief. When Minitest printed a diff, the two lines are its first removed line (`-`, expected) and first added line (`+`, actual). When either line is longer than 100 characters and both are one Hash literal, the row prints `hash keys differ:` and one `-` and `+` line for each of the first 4 keys whose values differ. Otherwise it prints 61 characters around the first column that differs, with a `^ column N` line under it. The whole message is `head.message` in the `run --json` document and `message` in the `assess --json` document.
+For each reported row, compare the failure (the message lines, usually expected and actual, and the related id) with the intent and with the diff in the brief. When Minitest printed a diff, the two lines are its first removed line (`-`, expected) and first added line (`+`, actual). An RSpec `eq` failure shows its `expected:` and `got:` lines. When either line is longer than 100 characters and both are one Hash literal, the row prints `hash keys differ:` and one `-` and `+` line for each of the first 4 keys whose values differ. Otherwise it prints 61 characters around the first column that differs, with a `^ column N` line under it. The whole message is `head.message` in the `run --json` document and `message` in the `assess --json` document.
 
 - **likely-regression** — behavior changed, and the intent does not ask for that change.
 - **intended** — the intent explicitly wants that behavior.

@@ -8,9 +8,9 @@ The method follows Meta's catching JiT tests ([Harden and Catch](https://arxiv.o
 
 ## Usage
 
-Ruby 3.3 or newer. No gems. `minitest` and `prism` ship with Ruby. `BASE` is the parent revision and `HEAD` is the change. Each must resolve to a commit. Uncommitted files are not in the diff.
+Ruby 3.3 or newer. No gems. `minitest` and `prism` ship with Ruby. RSpec candidates need `rspec-core` where they run: in the project's bundle, or installed for that Ruby when the project has no `Gemfile`. `BASE` is the parent revision and `HEAD` is the change. Each must resolve to a commit. Uncommitted files are not in the diff.
 
-You write the Minitest files in a scratch directory: `require "minitest/autorun"`, then require the library the way the repository loads it. jitcatch runs those files. You judge each `reported` row against the intent and the diff. The intent in the brief is the commit messages from `BASE` to `HEAD`, without the trailer lines git parses at the end of each message (such as `Co-Authored-By:`). likely-regression means the behavior changed and the intent does not ask for that change. intended means the intent asks for it. unclear means the intent is not enough to tell.
+You write the candidate files in a scratch directory. A Minitest file starts with `require "minitest/autorun"`, then requires the library the way the repository loads it. An RSpec file is named `*_spec.rb` and starts with `require "spec_helper"` or `require "rails_helper"`, as the project's own specs do. jitcatch runs those files. You judge each `reported` row against the intent and the diff. The intent in the brief is the commit messages from `BASE` to `HEAD`, without the trailer lines git parses at the end of each message (such as `Co-Authored-By:`). likely-regression means the behavior changed and the intent does not ask for that change. intended means the intent asks for it. unclear means the intent is not enough to tell.
 
 `examples/fixtures/shop` is a cart priced in integer cents. A 10% volume discount applies once the subtotal reaches 10000 cents. Tax is 8%, rounded half up. The existing tests never check exactly 10000 cents. `ruby script/setup_shop` writes a git history at `examples/shop` (that directory is gitignored):
 
@@ -105,7 +105,7 @@ The full text is `examples/runs/intended/context.txt` and `examples/runs/intende
 
 Delete the scratch directory when you are done. Keep a test in the project's suite only when you mean to promote it. A likely-regression test belongs there after the bug is fixed. An intended-change test states the old behavior.
 
-Characterization tests from branchout can be candidates. Emit them on a checkout of the base revision, and rewrite the `require_relative` of the target to `require "<lib>"`, so that each side loads its own worktree's code.
+Characterization tests from branchout can be candidates, as Minitest files or as RSpec specs (`--format rspec`). Emit them on a checkout of the base revision with `--require-by-name`, so that each side loads its own worktree's code. A test emitted without it keeps a `require_relative` or an absolute path. That is fine when the path resolves inside the worktree, as for a test emitted under `.jitcatch/` of the checkout. When it points outside the worktree, both sides load the same file and every row is `no_signal`.
 
 On another repository, pass `--repo` when that repository is not the working directory:
 
@@ -172,15 +172,21 @@ A tag is a hint, not the judgment. `touches:changed_method` means the test names
 
 ```sh
 ruby -Ilib -I. .jitcatch/<file> -v --seed 1
+ruby -Ilib -I. -e 'require "rspec/core"; exit(RSpec::Core::Runner.run(ARGV))' -- \
+  --format json --out .jitcatch-report.json --seed 1 --backtrace --no-color .jitcatch/<file>_spec.rb
 ```
 
-When a revision has a `Gemfile`, its files run with `-rbundler/setup` and `BUNDLE_GEMFILE` set to that `Gemfile`, so each side loads the gems its own lock names. `run` checks the bundle once per side and prints `bundle base ok` or `bundle head failed: <message>`, for example when a locked gem is not installed or the bundle has no `minitest`. The process keeps only a fixed list of environment variables and the ones named with `--env`.
+A file named `*_spec.rb` runs with RSpec, unless it requires `minitest` (a minitest/spec file). RSpec reads the worktree's `.rspec`, so `--require spec_helper` there still loads, and puts `spec/` on the load path. The formatter given on the command line replaces the ones `.rspec` names. One example is one row, named by its full description (`Cart#total sums the prices`), and the text report shows its line (`cart_spec.rb:11`). An expectation failure is `fail`, any other error is `error`, and `pending` is `skip`. An error while RSpec loads the file is one `<file>#load` row, as for Minitest.
 
-Files named `*_test.rb` or `test_*.rb` run. When none have those names, every `.rb` file runs. At most 40 files run. A test that passes on base and fails, errors, or times out on head is a candidate. `--reruns` repeats candidates on head. One disagreement makes the test `flaky`. The comparison masks the name directly under the temp directory, so a `Dir.mktmpdir` path in a message is not a disagreement. The text report prints each rerun under a `flaky` row, and the JSON row keeps them in `reruns`. A timeout is not rerun.
+When a revision has a `Gemfile`, its files run with `-rbundler/setup` and `BUNDLE_GEMFILE` set to that `Gemfile`, so each side loads the gems its own lock names. `run` checks the bundle once per side and prints `bundle base ok` or `bundle head failed: <message>`, for example when a locked gem is not installed, or the bundle has no `minitest` (for a Minitest candidate) or no `rspec-core` (for an RSpec candidate). The process keeps only a fixed list of environment variables and the ones named with `--env`.
 
-Three rules then turn a candidate into `discarded`: a `LoadError` on head, a timeout, or a `NameError`, `NoMethodError`, or arity `ArgumentError` on a name the diff removed or whose signature it rewrote. A removed class or module counts as a removed name. An arity `ArgumentError` is `wrong number of arguments`, `missing keyword`, or `unknown keyword`, also when `assert_raises` caught it and failed. An `ArgumentError` the code raises on purpose, such as `qty must be > 0`, stays `reported`.
+Files named `*_test.rb`, `test_*.rb`, or `*_spec.rb` run. When none have those names, every `.rb` file runs. At most 40 files run. A test that passes on base and fails, errors, or times out on head is a candidate. `--reruns` repeats candidates on head. One disagreement makes the test `flaky`. The comparison reads the whole failure message. It masks the name directly under the temp directory and an object address (`#<Class:0x00007f...>`), so a `Dir.mktmpdir` path or a new anonymous class in a message is not a disagreement. The rerun line shows the first message line that moved. The text report prints each rerun under a `flaky` row, and the JSON row keeps them in `reruns`. A timeout is not rerun.
+
+Three rules then turn a candidate into `discarded`: a `LoadError` on head, a timeout, or a `NameError`, `NoMethodError`, or arity `ArgumentError` on a name the diff removed or whose signature it rewrote. A removed class or module counts as a removed name. An arity `ArgumentError` is `wrong number of arguments`, `missing keyword`, or `unknown keyword`, also when `assert_raises` or RSpec's `raise_error` caught it and failed. An `ArgumentError` the code raises on purpose, such as `qty must be > 0`, stays `reported`.
 
 The same repository and the same tests produce the same bytes. Order is fixed, the text has no timestamps, and a worktree's absolute root is written as `{worktree}/` in a message (as in `{worktree}/lib/cart.rb`) and dropped from a backtrace frame. Ruby's own prefix is written as `{ruby}/`.
+
+Each candidate row under `assess:` ends with a `rerun:` line, and every `--json` row has `rerun`. It runs that one test again from the repository root on the checkout you have, with `{tests}/` standing for the `TESTS_DIR` you passed: `rspec {tests}/cart_spec.rb:11`, or `ruby -Ilib -I. {tests}/cart_test.rb -n CartTest#test_total`, behind `bundle exec` when head has a `Gemfile`. A `<file>#load` or `<file>#timeout` row reruns the whole file.
 
 ## Install
 
@@ -218,6 +224,9 @@ Without the CLI, copy or symlink `skills/jitcatch` into the agent's skills direc
 - A mention is a method call, a constant, or a symbol in that test method or in a method of the same file that it calls, directly or through other such methods. `Owner.new` mentions `Owner#initialize`. Words in strings and comments are not mentions, except a method name passed as a plain string to `send`, `public_send`, `method`, or `respond_to?`, as in `send("total")`. A symbol that keys a Hash, as in `snap[:total]`, `snap.fetch(:total)`, or `{ total: 1 }`, is not a mention. A helper in another file is not read.
 - Files run one at a time unless you pass `--workers`. The base run and the head run of one file run at the same time, each in its own worktree, so a test that writes a fixed path outside the worktree or listens on a fixed port can collide with its other side, and with other files under `--workers`. The repository's existing suite is not run. The repository has to be able to add worktrees.
 - An assertion backtrace usually stops in the test, so a library line is found from names the test mentions.
+- An RSpec example's mentions come from its own block, the `let`, `subject`, and hook blocks of the groups around it, those groups' arguments, and the same-file helpers they call. A group described as `"#total"` or `".build"` names that method, and `described_class.new` names `Owner.new`. An implicit `subject`, a shared example group, and a helper in `spec/support` are not read; an example from a shared group defined in another file reads the whole candidate file.
+- A Rails-style `rails_helper` loads in each worktree, but base and head run at the same time with the same `config/database.yml`. A candidate that writes to a database shares it with its other side. Only the shape of a Rails project is tested here; no Rails gem is.
+- An RSpec error outside every example, such as in an `after(:suite)` hook, is reported only when no example ran.
 
 ## Development
 
