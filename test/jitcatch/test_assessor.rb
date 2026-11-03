@@ -15,7 +15,7 @@ class TestAssessor < Minitest::Test
       ],
       "tests" => [
         candidate("t01", "LabelTest#test_label", ["label"], error("NoMethodError", "undefined method `label' for Calc")),
-        candidate("t02", "AddTest#test_arity", ["add"], error("ArgumentError", "wrong number of arguments (given 2, expected 3)"), frames("lib/calc.rb", 11)),
+        candidate("t02", "AddTest#test_arity", ["add"], error("ArgumentError", "wrong number of arguments (given 2, expected 3)"), frames("lib/calc.rb", 11) + frames(".jitcatch/addtest.rb", 5)),
         candidate("t03", "GuardTest#test_qty", ["add"], error("ArgumentError", "qty must be > 0")),
         candidate("t04", "LoadTest#test_load", [], error("LoadError", "cannot load such file -- shop")),
         candidate("t05", "SlowTest#test_slow", [], timeout_result),
@@ -217,7 +217,7 @@ class TestAssessor < Minitest::Test
       "t01" => ["m04", ["discard:signature_change", "error:NoMethodError"]],
       "t02" => ["m02", ["error:NoMethodError", "report"]],
       "t03" => ["m01", ["error:RuntimeError", "report"]],
-      "t04" => ["m05", ["discard:signature_change", "error:ArgumentError", "related:guess", "touches:changed_method"]],
+      "t04" => ["m05", ["caller:changed:lib/calc.rb:31", "error:ArgumentError", "related:guess", "report", "touches:changed_method"]],
       "t05" => ["m03", ["error:ArgumentError", "report", "touches:changed_method"]],
       "t06" => [nil, ["assertion", "report"]],
       "t07" => ["m02", ["assertion", "report", "touches:changed_method"]],
@@ -228,7 +228,7 @@ class TestAssessor < Minitest::Test
 
   def test_a_keyword_or_arity_error_inside_assert_raises_is_a_signature_change
     raised = ->(message) { failure("[Unsupported] exception expected, not\nClass: <ArgumentError>\nMessage: <#{message.inspect}>\n---Backtrace---") }
-    at_scale = frames("test/scale_test.rb", 4) + frames("lib/calc.rb", 40)
+    at_scale = frames(".jitcatch/scale_test.rb", 4) + frames("lib/calc.rb", 40) + frames(".jitcatch/scale_test.rb", 4)
     doc = {
       "methods" => [
         method("m01", "modified", "changed", "scale", [], 40),
@@ -242,12 +242,15 @@ class TestAssessor < Minitest::Test
         candidate("t04", "ScaleTest#test_d", [], raised.call("qty must be > 0"), at_scale),
         candidate("t05", "ShowTest#test_a", [], raised.call("missing keyword: :steps"), frames("lib/calc.rb", 31)),
         candidate("t06", "ScaleTest#test_e", [], error("ArgumentError", "missing keyword: :steps"), at_scale),
-        candidate("t07", "ScaleTest#test_f", [], failure("Expected: \"missing keyword: :steps\"\n  Actual: nil"), at_scale)
+        candidate("t07", "ScaleTest#test_f", [], failure("Expected: \"missing keyword: :steps\"\n  Actual: nil"), at_scale),
+        candidate("t08", "PlanTest#test_a", [], raised.call("missing keyword: :steps"), frames(".jitcatch/plan_test.rb", 4) + frames("lib/calc.rb", 40) + frames("lib/plan.rb", 7) + frames(".jitcatch/plan_test.rb", 4))
       ]
     }
-    out = JitCatch::Assessor.apply(doc)["tests"].to_h { |test| [test["id"], test["disposition"]] }
+    rows = JitCatch::Assessor.apply(doc)["tests"].to_h { |test| [test["id"], test] }
+    out = rows.transform_values { |test| test["disposition"] }
     assert_equal({ "t01" => "discarded", "t02" => "discarded", "t03" => "discarded", "t04" => "reported",
-                   "t05" => "reported", "t06" => "discarded", "t07" => "reported" }, out)
+                   "t05" => "reported", "t06" => "discarded", "t07" => "reported", "t08" => "reported" }, out)
+    assert_includes rows["t08"]["tags"], "caller:unchanged:lib/plan.rb:7"
   end
 
   def test_an_error_raised_inside_a_gem_does_not_touch_the_changed_method

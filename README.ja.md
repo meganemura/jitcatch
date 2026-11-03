@@ -226,6 +226,10 @@ bin/jitcatch assess --json run.json
 gem の中から始まったエラーには `touches:changed_method` を付けない。
 `touches:unchanged_caller` は、diff が編集していない入口を通り、その入口から変更メソッドへ届いている。
 `discard:signature_change`、`discard:load_error`、`discard:timeout` は、候補を除いたルールの名前である。
+`discard:signature_change` は、削除したメソッドや新しいシグネチャが壊した呼び出しを、テスト自身がしているときだけ使う。
+変更されていないコードがその呼び出しをしているときは、行を報告する。
+たとえば `class B < A` が、head で削除した `A#helper` をまだ呼んでいるときである。
+その行には、呼び出しの位置を示す `caller:unchanged:lib/b.rb:5` を付ける（変更メソッドの中の行なら `caller:changed:`）。
 関連 id（`m05`、無ければ `-`）は、経路上に変更メソッドが複数あるときの、最も下流の変更メソッドである。
 失敗のバックトレースが変更メソッドを通るときは、そのうち最も内側のものである。
 `related:guess` は、id を選んだ根拠が複数の変更メソッドを指している。

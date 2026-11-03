@@ -77,8 +77,8 @@ class TestRunner < Minitest::Test
         "fail_on_base" => 1,
         "candidates" => 3,
         "flaky" => 0,
-        "discarded" => 2,
-        "reported" => 1
+        "discarded" => 1,
+        "reported" => 2
       }, doc["counts"])
 
       by_name = doc["tests"].to_h { |test| [test["name"], test] }
@@ -89,8 +89,10 @@ class TestRunner < Minitest::Test
       assert_includes by_name["DoubleTest#test_double"]["head"]["message"], "Actual: 5"
       assert_equal "discarded", by_name["AddArityTest#test_two_args"]["disposition"]
       assert_includes by_name["AddArityTest#test_two_args"]["tags"], "discard:signature_change"
-      assert_equal "discarded", by_name["TotalTest#test_total"]["disposition"]
-      assert_includes by_name["TotalTest#test_total"]["tags"], "discard:signature_change"
+      # The unchanged total still calls add with two arguments, so head is
+      # broken and the row is reported.
+      assert_equal "reported", by_name["TotalTest#test_total"]["disposition"]
+      assert_includes by_name["TotalTest#test_total"]["tags"], "caller:unchanged:lib/calc.rb:11"
       assert_includes by_name["TotalTest#test_total"]["tags"], "touches:unchanged_caller"
       assert_equal %w[bare_name callsites_omitted change end_line file id kind name new_end new_start
         old_end old_start reachable_from signature start_line via_constant visibility],
@@ -291,6 +293,57 @@ class TestRunner < Minitest::Test
       assert_match(/missing keyword: :steps/, row["head"]["message"])
       assert_equal "discarded", row["disposition"]
       assert_includes row["tags"], "discard:signature_change"
+    end
+  end
+
+  def test_a_removed_method_that_unchanged_code_still_calls_is_reported
+    with_repo do |repo|
+      inherited_history(repo)
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, {
+        "b_test.rb" => <<~RUBY
+          require "minitest/autorun"
+          require "b"
+
+          class BTest < Minitest::Test
+            def test_m
+              assert_equal 4, B.new.m(2)
+            end
+
+            def test_m_rejects_nil
+              assert_raises(ArgumentError) { B.new.m(nil) }
+            end
+
+            def test_k
+              assert_equal 6, B.new.k(2)
+            end
+
+            def test_helper
+              assert_equal 4, A.new.send(:helper, 2)
+            end
+
+            def test_helper_rejects_nil
+              assert_raises(ArgumentError) { A.new.send(:helper, nil) }
+            end
+
+            def test_scale
+              assert_equal 6, A.new.send(:scale, 2, 3)
+            end
+          end
+        RUBY
+      })
+
+      doc = execute(repo, tests)
+
+      rows = doc["tests"].to_h { |test| [test["name"].delete_prefix("BTest#"), [test["disposition"], test["tags"].first(2)]] }
+      assert_equal({
+        "test_m" => ["reported", ["caller:unchanged:lib/b.rb:5", "error:NoMethodError"]],
+        "test_m_rejects_nil" => ["reported", ["assertion", "caller:unchanged:lib/b.rb:5"]],
+        "test_k" => ["reported", ["caller:unchanged:lib/b.rb:9", "error:ArgumentError"]],
+        "test_helper" => ["discarded", ["discard:signature_change", "error:NoMethodError"]],
+        "test_helper_rejects_nil" => ["discarded", ["assertion", "discard:signature_change"]],
+        "test_scale" => ["discarded", ["discard:signature_change", "error:ArgumentError"]]
+      }, rows)
     end
   end
 

@@ -18,6 +18,50 @@ module JitCatch
       repo&.destroy
     end
 
+    # Head removes the private A#helper and adds an argument to A#scale,
+    # and the unchanged B still calls both: lib/b.rb:5 and lib/b.rb:9.
+    def inherited_history(repo)
+      repo.write("lib/a.rb", <<~RUBY)
+        class A
+          private
+
+          def helper(n)
+            raise ArgumentError, "n must be an Integer" unless n.is_a?(Integer)
+            n * 2
+          end
+
+          def scale(n, by)
+            n * by
+          end
+        end
+      RUBY
+      repo.write("lib/b.rb", <<~RUBY)
+        require "a"
+
+        class B < A
+          def m(n)
+            helper(n)
+          end
+
+          def k(n)
+            scale(n, 3)
+          end
+        end
+      RUBY
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/a.rb", <<~RUBY)
+        class A
+          private
+
+          def scale(n, by, offset)
+            n * by + offset
+          end
+        end
+      RUBY
+      repo.commit("Drop helper, offset scale.", date: "2026-02-12T00:00:00Z")
+    end
+
     def write_tests(dir, files)
       FileUtils.mkdir_p(dir)
       files.each do |name, body|

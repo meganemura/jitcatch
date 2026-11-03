@@ -63,8 +63,11 @@ module JitCatch
 
       exception = example["exception"] || {}
       error_class = exception["class"].to_s
-      message = @normalizer.call(exception["message"].to_s).lines.reject { |line| line.match?(QUOTED_FRAME) }.join
-      Failure.result(FAILURES.include?(error_class) ? "fail" : "error", error_class, message, frames(exception["backtrace"]))
+      quoted, lines = @normalizer.call(exception["message"].to_s).lines.partition { |line| line.match?(QUOTED_FRAME) }
+      own = frames(exception["backtrace"])
+      # The expectation's line comes first, then the frames of the error it
+      # got, as Minitest prints an assert_raises failure.
+      Failure.result(FAILURES.include?(error_class) ? "fail" : "error", error_class, lines.join, [*own.first(1), *frames(quoted), *own.drop(1)])
     end
 
     def frames(backtrace)

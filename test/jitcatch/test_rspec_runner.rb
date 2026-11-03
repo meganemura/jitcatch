@@ -155,6 +155,39 @@ class TestRSpecRunner < Minitest::Test
     end
   end
 
+  def test_a_removed_method_that_unchanged_code_still_calls_is_reported
+    with_repo do |repo|
+      inherited_history(repo)
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, {
+        "b_spec.rb" => <<~RUBY
+          require "b"
+
+          RSpec.describe B do
+            it("m doubles") { expect(B.new.m(2)).to eq(4) }
+            it("m rejects nil") { expect { B.new.m(nil) }.to raise_error(ArgumentError) }
+            it("k triples") { expect(B.new.k(2)).to eq(6) }
+            it("helper doubles") { expect(A.new.send(:helper, 2)).to eq(4) }
+            it("helper rejects nil") { expect { A.new.send(:helper, nil) }.to raise_error(ArgumentError) }
+            it("scale multiplies") { expect(A.new.send(:scale, 2, 3)).to eq(6) }
+          end
+        RUBY
+      })
+
+      doc = execute(repo, tests)
+
+      rows = doc["tests"].to_h { |test| [test["name"].delete_prefix("B "), [test["disposition"], test["tags"].first(2)]] }
+      assert_equal({
+        "m doubles" => ["reported", ["caller:unchanged:lib/b.rb:5", "error:NoMethodError"]],
+        "m rejects nil" => ["reported", ["assertion", "caller:unchanged:lib/b.rb:5"]],
+        "k triples" => ["reported", ["caller:unchanged:lib/b.rb:9", "error:ArgumentError"]],
+        "helper doubles" => ["discarded", ["discard:signature_change", "error:NoMethodError"]],
+        "helper rejects nil" => ["discarded", ["assertion", "discard:signature_change"]],
+        "scale multiplies" => ["discarded", ["discard:signature_change", "error:ArgumentError"]]
+      }, rows)
+    end
+  end
+
   def test_a_flaky_example_is_dropped_and_its_neighbors_are_not_rerun_as_flaky
     with_repo do |repo|
       cart_history(repo)
