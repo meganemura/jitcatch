@@ -10,6 +10,7 @@ module JitCatch
       lines << "version #{doc["version"]}"
       lines << "base #{doc["base"]}"
       lines << "head #{doc["head"]}"
+      lines.concat(warning_lines(doc))
       lines << "existing_tests #{doc["existing_tests_via"]}"
       if doc["intent"].empty?
         lines << "intent: (none)"
@@ -44,6 +45,7 @@ module JitCatch
       lines << "version #{doc["version"]}"
       lines << "base #{doc["base"]}"
       lines << "head #{doc["head"]}"
+      lines.concat(warning_lines(doc))
       lines << "reruns #{doc["reruns"]}"
       lines << "timeout_s #{doc["timeout_s"]}"
       lines << "env #{doc["env"].join(" ")}" unless doc["env"].to_a.empty?
@@ -96,6 +98,10 @@ module JitCatch
 
     def dump(obj)
       JSON.pretty_generate(obj) + "\n"
+    end
+
+    def warning_lines(doc)
+      Array(doc["warnings"]).map { |warning| "warning: #{warning}" }
     end
 
     def dependency_lines(dependencies)

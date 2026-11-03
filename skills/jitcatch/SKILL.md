@@ -21,6 +21,8 @@ Exit status 0 is success, including when catching tests were found. Exit status 
 
 `BASE` is the parent whose behavior should survive: the branch you would land onto, or `git merge-base` of that branch and the change. `HEAD` is the revision under review (a branch, `HEAD`, or a SHA). Both must resolve as `git rev-parse --verify REF^{commit}`. One exception: to review the first commit of a repository, pass `ROOT^` (or `ROOT~1`) as `BASE`. The parent of a root commit is read as the empty tree, so every file is added. On `run`, the base side is an empty directory, so every test is `fail_on_base`.
 
+When `BASE` is not an ancestor of `HEAD` (for example, a main branch that moved on after the change branched off), the diff also undoes the commits only `BASE` has, and their methods show up as changed. `context` and `run` print `warning: base is not an ancestor of head` under `head`, with the count and the merge base. Pass that merge base as `BASE` and run again.
+
 Pass `--repo DIR` when that repository is not the working directory.
 
 Commit messages from `BASE` to `HEAD` are the intent the CLI can see (`git log BASE..HEAD`, oldest first, commits separated by `---`). The CLI leaves out the trailer block that git parses at the end of each message (`Co-Authored-By:`, `Signed-off-by:`, and the like). Git counts a last paragraph made only of `Word: text` lines as trailers too, so a closing line such as `Note: callers must refresh.` is also left out. When the intent looks cut short, read `git log BASE..HEAD`. Also read the pull request or the task when you have it. The tool does not.

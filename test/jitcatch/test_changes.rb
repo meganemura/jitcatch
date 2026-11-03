@@ -252,6 +252,28 @@ class TestChanges < Minitest::Test
     end
   end
 
+  def test_a_base_that_is_not_an_ancestor_of_head_is_named_in_a_warning
+    with_repo do |repo|
+      repo.write("lib/calc.rb", "class Calc\n  def add(a, b)\n    a + b\n  end\nend\n")
+      fork = repo.commit("Add Calc.", date: "2026-02-11T00:00:00Z")
+      repo.branch("side")
+      repo.write("lib/calc.rb", "class Calc\n  def add(a, b)\n    a + b + 0\n  end\nend\n")
+      repo.commit("Pad add.", date: "2026-02-12T00:00:00Z")
+      repo.checkout("side")
+      repo.write("lib/other.rb", "class Other\nend\n")
+      repo.commit("Add Other.", date: "2026-02-13T00:00:00Z")
+
+      doc = JitCatch::Changes.between(repo.dir, "side", "main")
+      assert_equal [
+        "base is not an ancestor of head: the diff also undoes the 1 commit only base has. " \
+        "Pass `git merge-base BASE HEAD` (#{fork[0, 12]}) as BASE to review head's commits alone."
+      ], doc["warnings"]
+      assert_includes JitCatch::Render.context_text(doc), "\nwarning: base is not an ancestor of head"
+      assert_equal [], JitCatch::Changes.between(repo.dir, fork, "main")["warnings"]
+      assert_equal [], JitCatch::Changes.between(repo.dir, "main^^", "main")["warnings"]
+    end
+  end
+
   def test_dependencies_come_from_the_gemfile_lock_diff
     lock = lambda do |specs|
       "GEM\n  remote: https://rubygems.org/\n  specs:\n#{specs.map { |spec| "    #{spec}\n      dep (>= 0)\n" }.join}\nPLATFORMS\n  ruby\n\nBUNDLED WITH\n   2.6.0\n"

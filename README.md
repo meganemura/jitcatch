@@ -130,6 +130,8 @@ jitcatch run --repo DIR BASE HEAD TESTS_DIR
 
 To review the first commit, pass `ROOT^` as `BASE`. The parent of a root commit is read as the empty tree.
 
+When `BASE` is not an ancestor of `HEAD`, the diff also undoes the commits only `BASE` has. `context` and `run` then print a `warning:` line under `head` that counts those commits and names the merge base to pass as `BASE` instead.
+
 `assess` reprints the counts and the candidate rows. It applies the same rules as `run`.
 
 ```sh

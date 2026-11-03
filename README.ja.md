@@ -168,6 +168,10 @@ jitcatch run --repo DIR BASE HEAD TESTS_DIR
 最初のコミットを見るときは、`BASE` に `ROOT^` を渡す。
 ルートコミットの親は空のツリーとして読む。
 
+`BASE` が `HEAD` の祖先でないとき、diff は `BASE` にしかないコミットも打ち消す。
+そのとき `context` と `run` は `head` の下に `warning:` 行を出す。
+その行は、そのコミットの数と、代わりに `BASE` に渡すマージベースを示す。
+
 `assess` は件数と候補の行を再出力する。
 掛けるルールは `run` と同じである。
 

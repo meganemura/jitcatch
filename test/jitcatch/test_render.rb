@@ -57,13 +57,14 @@ class TestRender < Minitest::Test
   def test_run_text_names_omitted_files_and_an_empty_run
     doc = JitCatch::Assessor.apply({
       "version" => "0.1.0", "base" => "b", "head" => "h", "reruns" => 2, "timeout_s" => 10,
-      "test_files_omitted" => 3, "tests" => []
+      "test_files_omitted" => 3, "tests" => [], "warnings" => ["base is not an ancestor of head"]
     })
     assert_equal <<~TEXT, JitCatch::Render.run_text(doc)
       jitcatch run
       version 0.1.0
       base b
       head h
+      warning: base is not an ancestor of head
       reruns 2
       timeout_s 10
       test_files_omitted 3

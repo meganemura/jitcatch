@@ -58,6 +58,19 @@ module JitCatch
       end
     end
 
+    # The commits only base has, which `diff BASE HEAD` undoes, and the
+    # merge base `log BASE..HEAD` starts from. Nil when base is an ancestor.
+    def divergence(base, head)
+      return nil if empty_tree?(base)
+
+      _stdout, _stderr, status = capture("merge-base", "--is-ancestor", "--end-of-options", base, head)
+      return nil if status.success?
+
+      count = git("rev-list", "--count", "--end-of-options", "#{head}..#{base}").strip.to_i
+      fork = capture("merge-base", "--end-of-options", base, head).first.strip
+      { "base_only" => count, "merge_base" => fork.empty? ? nil : fork }
+    end
+
     def ruby_files(ref)
       git("ls-tree", "-r", "--name-only", "--end-of-options", ref)
         .lines

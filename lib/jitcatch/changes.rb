@@ -45,6 +45,7 @@ module JitCatch
         "base" => base,
         "head" => head,
         "existing_tests_via" => @coverage ? "coverage" : "grep",
+        "warnings" => warnings(base, head),
         "intent" => intent_lines(base, head),
         "files" => files,
         "dependencies" => dependencies(base, head),
@@ -56,6 +57,20 @@ module JitCatch
     end
 
     private
+
+    def warnings(base, head)
+      divergence = @git.divergence(base, head)
+      return [] unless divergence
+
+      count = divergence["base_only"]
+      commits = count == 1 ? "1 commit" : "#{count} commits"
+      fix = if divergence["merge_base"]
+        "Pass `git merge-base BASE HEAD` (#{divergence["merge_base"][0, 12]}) as BASE to review head's commits alone."
+      else
+        "The two revisions share no history."
+      end
+      ["base is not an ancestor of head: the diff also undoes the #{commits} only base has. #{fix}"]
+    end
 
     # Each spec line in a lockfile is four spaces, a name, and the version
     # in parentheses. A gem locked for several platforms has several lines.

@@ -68,6 +68,7 @@ module JitCatch
         "command" => "run",
         "base" => change["base"],
         "head" => change["head"],
+        "warnings" => change["warnings"],
         "reruns" => @reruns,
         "timeout_s" => @timeout,
         "env" => @env_names,
