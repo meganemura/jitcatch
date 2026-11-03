@@ -219,6 +219,51 @@ class TestChangesGraph < Minitest::Test
     end
   end
 
+  def test_a_local_variable_built_from_one_class_in_its_method_is_that_class
+    with_repo do |repo|
+      leaf = "class Repo\n  def read\n    BODY\n  end\nend\n\nclass Other\n  def read\n    0\n  end\nend\n"
+      users = <<~SRC
+        class Store
+          def load
+            repo = Repo.new
+            repo.read
+          end
+
+          def mixed(flag)
+            repo = flag ? Repo.new : Other.new
+            repo.read
+          end
+
+          def reassigned(given)
+            repo = Repo.new
+            repo = given
+            repo.read
+          end
+
+          def elsewhere
+            repo.read
+          end
+
+          def repo = Other.new
+
+          def in_a_block
+            [1].map { found = Repo.new; found.read }
+          end
+        end
+      SRC
+      repo.write("lib/repo.rb", leaf.sub("BODY", "1"))
+      repo.write("lib/store.rb", users)
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/repo.rb", leaf.sub("BODY", "2"))
+      repo.commit("Change read.", date: "2026-02-12T00:00:00Z")
+
+      doc = JitCatch::Changes.between(repo.dir, "base", "HEAD")
+
+      assert_equal [["Repo#read", ["Store#in_a_block", "Store#load"]]], doc["methods"].map { |method| method.values_at("name", "reachable_from") }
+    end
+  end
+
   def test_a_self_call_does_not_reach_another_class_method_or_past_an_attribute
     with_repo do |repo|
       leaf = "class Runner\n  def self.simulate\n    BODY\n  end\n\n  def label\n    BODY\n  end\n\n  def size\n    BODY\n  end\nend\n"
