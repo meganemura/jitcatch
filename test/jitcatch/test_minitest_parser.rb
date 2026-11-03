@@ -29,7 +29,7 @@ class TestMinitestParser < Minitest::Test
       3 runs, 2 assertions, 1 failures, 1 errors, 0 skips
     OUT
 
-    parsed = JitCatch::MinitestParser.parse(stdout, "", normalizer: ->(text) { text.gsub("/tmp/work/base/", "") })
+    parsed = JitCatch::MinitestParser.parse(stdout, "", normalizer: ->(text) { text.gsub("/tmp/work/base/", "{worktree}/") })
     assert parsed["summary"]
     assert_nil parsed["file_error"]
     assert_equal "pass", parsed["tests"]["DemoTest#test_ok"]["status"]
@@ -50,10 +50,11 @@ class TestMinitestParser < Minitest::Test
 
   def test_load_error_without_summary
     stderr = "/tmp/work/head/.jitcatch/bad_test.rb:1:in `require': cannot load such file -- nope (LoadError)\n"
-    parsed = JitCatch::MinitestParser.parse("", stderr, normalizer: ->(text) { text.gsub("/tmp/work/head/", "") })
+    parsed = JitCatch::MinitestParser.parse("", stderr, normalizer: ->(text) { text.gsub("/tmp/work/head/", "{worktree}/") })
     refute parsed["summary"]
     assert_equal "LoadError", parsed["file_error"]["error_class"]
     assert_equal ".jitcatch/bad_test.rb", parsed["file_error"]["backtrace"].first["file"]
+    assert_equal "{worktree}/.jitcatch/bad_test.rb:1:in `require': cannot load such file -- nope (LoadError)", parsed["file_error"]["message"]
   end
   def test_output_cut_off_inside_an_issue_block
     long = (1..25).map { |n| "line #{n}" }.join("\n")

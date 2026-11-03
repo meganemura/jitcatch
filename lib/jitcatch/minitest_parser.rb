@@ -9,6 +9,9 @@ module JitCatch
     HEADER = /^(\S+?)(?:\s+\[(.+):(\d+)\])?:\s*$/.freeze
     FRAME = /^\s*(.+):(\d+):in [`']([^`']*)[`']/.freeze
     LETTERS = { "." => "pass", "F" => "fail", "E" => "error", "S" => "skip" }.freeze
+    # The runner writes this where a worktree root was, so a message still
+    # shows that a path stood there. Frames drop it to match the diff's paths.
+    WORKTREE = "{worktree}/"
 
     def self.parse(stdout, stderr, normalizer: ->(text) { text })
       new(normalizer.call(stdout.to_s), normalizer.call(stderr.to_s)).parse
@@ -81,12 +84,12 @@ module JitCatch
 
       name = match[1]
       frames = []
-      frames << { "file" => match[2], "line" => match[3].to_i } if match[2]
+      frames << { "file" => match[2].delete_prefix(WORKTREE), "line" => match[3].to_i } if match[2]
       message_lines = []
       error_class = kind == "Failure" ? "Minitest::Assertion" : nil
       block.each do |line|
         if (frame = line.match(FRAME))
-          frames << { "file" => frame[1], "line" => frame[2].to_i }
+          frames << { "file" => frame[1].delete_prefix(WORKTREE), "line" => frame[2].to_i }
           next
         end
         if error_class.nil? && (err = line.match(/\A([A-Za-z0-9_:]+):\s*(.*)\z/))
@@ -129,7 +132,7 @@ module JitCatch
       text.each_line do |line|
         next unless (frame = line.match(FRAME))
 
-        frames << { "file" => frame[1], "line" => frame[2].to_i }
+        frames << { "file" => frame[1].delete_prefix(WORKTREE), "line" => frame[2].to_i }
       end
       message = text.lines.map(&:strip).reject(&:empty?).first.to_s
       {

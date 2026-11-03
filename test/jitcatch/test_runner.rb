@@ -444,7 +444,7 @@ class TestRunner < Minitest::Test
       assert_includes JitCatch::Render.dump(doc), "caf\u00e9"
       assert_equal "Expected: \"x\"\n  Actual: \".jitcatch/words_test.rb\"", by_name["WordsTest#test_file"]["head"]["message"]
       assert_equal "{ruby}/", by_name["WordsTest#test_parse"]["head"]["backtrace"].fetch(0)["file"][0, 7]
-      assert_includes by_name["WordsTest#test_path"]["head"]["message"], "+\"lib/calc.rb\""
+      assert_includes by_name["WordsTest#test_path"]["head"]["message"], "+\"{worktree}/lib/calc.rb\"", "a rewritten worktree root stays visible"
       assert_includes by_name["WordsTest#test_word"]["head"]["message"], "café"
       frames = doc["tests"].flat_map { |test| [test["base"], test["head"]] }.flat_map { |side| side["backtrace"] }.map { |frame| frame["file"] }
       assert_includes frames, ".jitcatch/words_test.rb"

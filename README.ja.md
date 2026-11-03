@@ -262,7 +262,9 @@ head での `LoadError`、タイムアウト、そして diff が消したかシ
 コードが意図して起こす `ArgumentError`（`qty must be > 0` のようなもの）は `reported` のまま残る。
 
 同じリポジトリと同じテストなら、出力は同じバイトになる。
-順序は固定で、テキストに時刻は無く、worktree の絶対パスは除かれる。
+順序は固定で、テキストに時刻は無い。
+メッセージの中の worktree の絶対パスの根は `{worktree}/lib/cart.rb` のように `{worktree}/` と書き、バックトレースのフレームからは除く。
+Ruby 自身の prefix は `{ruby}/` と書く。
 
 ## インストール
 

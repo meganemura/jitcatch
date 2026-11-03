@@ -178,7 +178,7 @@ Files named `*_test.rb` or `test_*.rb` run. When none have those names, every `.
 
 Three rules then turn a candidate into `discarded`: a `LoadError` on head, a timeout, or a `NameError`, `NoMethodError`, or arity `ArgumentError` on a name the diff removed or whose signature it rewrote. A removed class or module counts as a removed name. An arity `ArgumentError` is `wrong number of arguments`, `missing keyword`, or `unknown keyword`, also when `assert_raises` caught it and failed. An `ArgumentError` the code raises on purpose, such as `qty must be > 0`, stays `reported`.
 
-The same repository and the same tests produce the same bytes. Order is fixed, the text has no timestamps, and absolute worktree paths are removed.
+The same repository and the same tests produce the same bytes. Order is fixed, the text has no timestamps, and a worktree's absolute root is written as `{worktree}/` in a message (as in `{worktree}/lib/cart.rb`) and dropped from a backtrace frame. Ruby's own prefix is written as `{ruby}/`.
 
 ## Install
 

@@ -377,7 +377,7 @@ module JitCatch
       ordered = roots.compact.map { |root| File.expand_path(root).sub(%r{/+\z}, "") }.uniq.sort_by { |item| -item.length }
       lambda do |text|
         out = text.to_s.gsub("\r\n", "\n")
-        ordered.each { |root| out = out.gsub("#{root}/", "") }
+        ordered.each { |root| out = out.gsub("#{root}/", MinitestParser::WORKTREE) }
         out = out.gsub("#{prefix}/", "{ruby}/") unless prefix.empty?
         out
       end

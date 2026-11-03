@@ -46,5 +46,5 @@ BUNDLE_GEMFILE=/path/to/Gemfile bundle exec mutineer run --since origin/queue \
 ## Invariants
 
 - The CLI does not call a model. Generation and the intended-versus-regression judgment stay outside the tool.
-- The same repository and the same tests produce the same bytes. Fixed order, no timestamps, Minitest `--seed 1`, absolute worktree paths stripped. Every command prints that document as JSON with `--json`.
+- The same repository and the same tests produce the same bytes. Fixed order, no timestamps, Minitest `--seed 1`, a worktree root written as `{worktree}/` in messages and dropped from frames. Every command prints that document as JSON with `--json`.
 - Exit status 0 is success, 1 is a usage error, and 2 is a git error. Finding candidates still exits 0. The tool does not decide that something is a regression.
