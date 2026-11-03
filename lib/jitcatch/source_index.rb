@@ -26,6 +26,8 @@ module JitCatch
     # object (`self`), a class or module itself (`singleton`), an instance
     # of one (`instance`), or a value only a run would know (`unknown`).
     # `const` is the constant as written, or nil for the enclosing class.
+    # An instance variable is an `instance` when every `Const.new` assigned
+    # to it in the class names the same constant.
     Receiver = Data.define(:kind, :const)
     UNKNOWN_RECEIVER = Receiver.new(kind: "unknown", const: nil)
 
@@ -46,6 +48,7 @@ module JitCatch
       @private_constants = []
       @calls = []
       @references = Hash.new { |hash, key| hash[key] = [] }
+      @ivar_classes = Hash.new { |hash, key| hash[key] = [] }
       @parse_error = nil
     end
 
@@ -58,6 +61,7 @@ module JitCatch
 
       scan_body(result.value, "", :public, false)
       walk(result.value, "", false, nil)
+      type_instance_variables
       rename_module_function_callers
       @methods = self.class.hide_private_constants(@methods, @private_constants)
       self
@@ -285,6 +289,38 @@ module JitCatch
 
     # The walk names an enclosing method by its `def`, which reads as an
     # instance method; a module function is listed as `Mod.name`.
+    def type_instance_variables
+      @calls.map! do |call|
+        next call unless call.receiver.kind == "ivar"
+
+        qualifier, _sep, _bare = self.class.split_qualified(call.enclosing.to_s)
+        named = @ivar_classes[[qualifier, call.receiver.const]].uniq
+        call.with(receiver: named.size == 1 ? Receiver.new(kind: "instance", const: named.first) : UNKNOWN_RECEIVER)
+      end
+    end
+
+    # The constants a value builds with `Const.new`, through `a || b`,
+    # `c ? a : b`, and parentheses.
+    def built_constants(node)
+      case node
+      when Prism::CallNode
+        owner = constructor_owner(node)
+        owner ? [owner] : []
+      when Prism::OrNode, Prism::AndNode
+        built_constants(node.left) + built_constants(node.right)
+      when Prism::IfNode, Prism::UnlessNode
+        (node.compact_child_nodes - [node.predicate]).flat_map { |branch| built_constants(branch) }
+      when Prism::ElseNode
+        built_constants(node.statements)
+      when Prism::ParenthesesNode
+        built_constants(node.body)
+      when Prism::StatementsNode
+        built_constants(node.body.last)
+      else
+        []
+      end
+    end
+
     def rename_module_function_callers
       renamed = @module_functions.to_h { |name| [name, name.sub(/#(?=[^#]*\z)/, ".")] }
       @calls.map! { |call| renamed.key?(call.enclosing) ? call.with(enclosing: renamed[call.enclosing]) : call }
@@ -359,6 +395,9 @@ module JitCatch
         node.compact_child_nodes.each { |child| walk(child, qualifier, singleton_context, enclosing) }
       when Prism::SymbolNode
         refer(enclosing, node.unescaped)
+      when Prism::InstanceVariableWriteNode, Prism::InstanceVariableOrWriteNode
+        @ivar_classes[[qualifier.to_s, node.name.to_s]].concat(built_constants(node.value))
+        node.compact_child_nodes.each { |child| walk(child, qualifier, singleton_context, enclosing) }
       else
         node.compact_child_nodes.each { |child| walk(child, qualifier, singleton_context, enclosing) }
       end
@@ -381,6 +420,8 @@ module JitCatch
         Receiver.new(kind: "self", const: nil)
       when Prism::ConstantReadNode, Prism::ConstantPathNode
         Receiver.new(kind: "singleton", const: const_name(node))
+      when Prism::InstanceVariableReadNode
+        Receiver.new(kind: "ivar", const: node.name.to_s)
       when Prism::CallNode
         inner = receiver_of(node.receiver)
         if node.name == :class && inner.kind == "self" && !node.receiver.nil?
