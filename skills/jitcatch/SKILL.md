@@ -55,7 +55,7 @@ A catching test states a behavior the old code already satisfies. Aim it at a ch
 
 Each file:
 
-- `require "minitest/autorun"`, then require the library the way the repo loads it (`require "shop"` when `lib/` is on the load path). The worktree root is on the load path too, so a test can reuse the repository's own helpers by path from the root (`require "test/support/repo"`).
+- `require "minitest/autorun"`, then require the library the way the repo loads it (`require "shop"` when `lib/` is on the load path). The worktree root is on the load path too, so a test can reuse the repository's own helpers by path from the root (`require "test/support/repo"`). When you start from a copy of a repository test, rewrite `require_relative "../test_helper"` to `require "test/test_helper"`: the copy runs from `.jitcatch/`, where the relative path points at the worktree root and fails with `LoadError` on both sides.
 - Name it `*_test.rb` or `test_*.rb`. When any file matches, other `*.rb` files are not executed. At most 40 files run.
 - The runner copies the directory into each worktree at `.jitcatch/` and runs one process per file: `ruby -Ilib -I. .jitcatch/<file> -v --seed 1`.
 - When the worktree has a `Gemfile`, the process also gets `-rbundler/setup` and `BUNDLE_GEMFILE` set to that worktree's `Gemfile`. Base and head then each load the gem versions their own `Gemfile.lock` names, so a test can catch a dependency bump. Only gems in the bundle load. When the `Gemfile` does not list `minitest`, no candidate can load it, and the report says `bundle base failed: minitest is not in the bundle`. Do not add `require "bundler/setup"` to the file yourself.
