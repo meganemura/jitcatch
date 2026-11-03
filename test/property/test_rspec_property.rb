@@ -29,6 +29,24 @@ class TestRSpecProperty < Minitest::Test
     end
   end
 
+  def test_a_cause_takes_the_lines_after_its_marker_and_none_of_its_frames_reach_the_error
+    Hegel.test do |tc|
+      frame = -> { [tc.draw(from_regex("lib/[a-z]{1,6}\\.rb", fullmatch: true)), tc.draw(integers(min_value: 1, max_value: 99))] }
+      own = Array.new(tc.draw(integers(min_value: 0, max_value: 4))) { frame.call }
+      theirs = Array.new(tc.draw(integers(min_value: 0, max_value: 4))) { frame.call }
+      message = tc.draw(arrays(from_regex("[a-z][a-z :]{0,12}", fullmatch: true), min_size: 0, max_size: 3))
+      error_class = tc.draw(from_regex("[A-Z][a-z]{0,6}(::[A-Z][a-z]{0,6})?", fullmatch: true))
+      backtrace = own.map { |file, line| "./#{file}:#{line}:in 'g'" } + ["------------------", "--- Caused by: ---", "#{error_class}:"] +
+        message.map { |text| "  #{text}" } + theirs.map { |file, line| "  ./#{file}:#{line}:in 'h'" }
+      example = { "full_description" => "A g", "status" => "failed", "line_number" => 1, "exception" => { "class" => "W", "message" => "m", "backtrace" => backtrace } }
+
+      result = JitCatch::RSpecParser.parse(JSON.generate("examples" => [example], "summary" => {}), "", "")["tests"].fetch("A g")
+
+      assert_equal own, result["backtrace"].map { |item| [item["file"], item["line"]] }
+      assert_equal({ "error_class" => error_class, "message" => message.map(&:strip).join("\n") }, result["cause"])
+    end
+  end
+
   def test_a_rerun_command_reads_back_as_the_words_it_was_built_from
     Hegel.test do |tc|
       file = tc.draw(from_regex("[a-z _'\"$#]{1,8}_spec\\.rb"))
