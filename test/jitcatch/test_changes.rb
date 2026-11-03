@@ -447,6 +447,20 @@ class TestChanges < Minitest::Test
     end
   end
 
+  def test_a_method_that_only_turns_private_is_modified
+    with_repo do |repo|
+      repo.write("lib/calc.rb", "class Calc\n  def add(a, b)\n    a + b\n  end\n\n  def sub(a, b)\n    a - b\n  end\nend\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/calc.rb", "class Calc\n  def add(a, b)\n    a + b\n  end\n\n  private\n\n  def sub(a, b)\n    a - b\n  end\nend\n")
+      repo.commit("Hide sub.", date: "2026-02-12T00:00:00Z")
+
+      doc = JitCatch::Changes.between(repo.dir, "base", "HEAD")
+
+      assert_equal [["Calc#sub", "modified", "same", "private"]], doc["methods"].map { |method| method.values_at("name", "change", "signature", "visibility") }
+    end
+  end
+
   def test_whole_files_added_and_removed_and_a_changed_signature
     with_repo do |repo|
       repo.write("lib/old.rb", "module Old\n  LIMIT = 1\n\n  def self.gone\n    LIMIT\n  end\nend\n")

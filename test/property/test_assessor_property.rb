@@ -85,4 +85,15 @@ class TestAssessorProperty < Minitest::Test
       end
     end
   end
+
+  def test_a_test_mentions_a_constructor_as_new_on_the_last_name_segment
+    Hegel.test do |tc|
+      segments = tc.draw(arrays(sampled_from(%w[Shop Cart Mismatch]), min_size: 1, max_size: 3))
+      sep = tc.draw(sampled_from(%w[# .]))
+      bare = tc.draw(sampled_from(%w[initialize new total]))
+      constructor = { "#" => "initialize", "." => "new" }.fetch(sep) == bare
+      expected = constructor ? "#{segments.last}.new" : bare
+      assert_equal expected, JitCatch::Assessor.mention_of("#{segments.join("::")}#{sep}#{bare}")
+    end
+  end
 end

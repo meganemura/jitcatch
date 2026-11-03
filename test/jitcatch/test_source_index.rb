@@ -434,6 +434,7 @@ def test_a_top_level_describe_without_rspec_is_a_group_too
         attr_reader :trace, :seed
         attr_accessor :note
         private attr_writer :hidden
+        private delegate_to :hidden
 
         class << self
           attr_reader :count
@@ -448,19 +449,20 @@ def test_a_top_level_describe_without_rspec_is_a_group_too
       end
 
       Pick = Data.define(:name)
+      Plain = Builder.new(:name)
     RUBY
     index = JitCatch::SourceIndex.parse(source, file: "lib/mismatch.rb")
     assert_equal [
       ["Mismatch#hidden=", "private", "attr_writer :hidden", "value", 4],
       ["Mismatch#note", "public", "attr_reader :note", "", 3],
       ["Mismatch#note=", "public", "attr_writer :note", "value", 3],
-      ["Mismatch#secret", "private", "attr_reader :secret", "", 12],
+      ["Mismatch#secret", "private", "attr_reader :secret", "", 13],
       ["Mismatch#seed", "public", "attr_reader :seed", "", 2],
       ["Mismatch#trace", "public", "attr_reader :trace", "", 2],
-      ["Mismatch.count", "public", "attr_reader :count", "", 7],
-      ["Pair#left", "public", "Struct.new(:left)", "", 15],
-      ["Pair#left=", "public", "Struct.new(:left)", "value", 15],
-      ["Pick#name", "public", "Data.define(:name)", "", 18]
+      ["Mismatch.count", "public", "attr_reader :count", "", 8],
+      ["Pair#left", "public", "Struct.new(:left)", "", 16],
+      ["Pair#left=", "public", "Struct.new(:left)", "value", 16],
+      ["Pick#name", "public", "Data.define(:name)", "", 19]
     ], index.methods.map { |method| [method.qualified, method.visibility, method.source, method.params, method.start_line] }.sort
   end
 end
