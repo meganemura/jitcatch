@@ -181,8 +181,6 @@ module JitCatch
     end
 
     def walk(node, qualifier, singleton_context, enclosing)
-      return if node.nil?
-
       case node
       when Prism::ClassNode
         q = join_qual(qualifier, const_name(node.constant_path))
@@ -207,8 +205,6 @@ module JitCatch
         end
         node.compact_child_nodes.each { |child| walk(child, qualifier, singleton_context, enclosing) }
       else
-        return unless node.respond_to?(:compact_child_nodes)
-
         node.compact_child_nodes.each { |child| walk(child, qualifier, singleton_context, enclosing) }
       end
     end
@@ -233,8 +229,7 @@ module JitCatch
     end
 
     def extract_lines(start_line, end_line)
-      chunk = @lines[(start_line - 1)...end_line] || []
-      chunk.map(&:rstrip).join("\n")
+      @lines[(start_line - 1)...end_line].map(&:rstrip).join("\n")
     end
 
     def slice_of(node)
