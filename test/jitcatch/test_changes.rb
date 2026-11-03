@@ -278,6 +278,22 @@ class TestChanges < Minitest::Test
     end
   end
 
+  def test_reachable_from_keeps_the_nearest_callers_when_it_is_cut
+    with_repo do |repo|
+      near = (1..6).map { |n| "  def z#{n}\n    leaf\n  end\n" }.join("\n")
+      far = (1..4).map { |n| "  def a#{n}\n    z1\n  end\n" }.join("\n")
+      repo.write("lib/tree.rb", "class Tree\n  def leaf\n    1\n  end\n\n#{near}\n#{far}end\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/tree.rb", "class Tree\n  def leaf\n    2\n  end\n\n#{near}\n#{far}end\n")
+      repo.commit("Change the leaf.", date: "2026-02-12T00:00:00Z")
+
+      doc = JitCatch::Changes.between(repo.dir, "base", "HEAD")
+      assert_equal %w[Tree#a1 Tree#a2 Tree#z1 Tree#z2 Tree#z3 Tree#z4 Tree#z5 Tree#z6],
+        doc["methods"].find { |method| method["name"] == "Tree#leaf" }["reachable_from"]
+    end
+  end
+
   def test_whole_files_added_and_removed_and_a_changed_signature
     with_repo do |repo|
       repo.write("lib/old.rb", "module Old\n  LIMIT = 1\n\n  def self.gone\n    LIMIT\n  end\nend\n")

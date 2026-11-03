@@ -245,7 +245,7 @@ module JitCatch
           { "file" => edge["file"], "line" => edge["line"], "enclosing" => edge["from"] }
         }
         method["callsites_omitted"] = [direct.size - CALLSITE_CAP, 0].max
-        method["reachable_from"] = upstream(node.qualified, edges).first(REACHABLE_CAP)
+        method["reachable_from"] = upstream(node.qualified, edges)
       end
     end
 
@@ -366,21 +366,22 @@ module JitCatch
         .sort_by { |edge| [edge["file"], edge["line"], edge["from"], edge["to"]] }
     end
 
+    # The cap keeps the nearest callers; the kept names print sorted.
     def upstream(qualified, edges)
       reverse = Hash.new { |hash, key| hash[key] = [] }
       edges.each { |edge| reverse[edge["to"]] << edge["from"] }
-      seen = []
+      depths = {}
       queue = reverse[qualified].uniq.map { |name| [name, 1] }
       until queue.empty?
         name, depth = queue.shift
-        next if name == qualified || seen.include?(name)
+        next if name == qualified || depths.key?(name)
 
-        seen << name
+        depths[name] = depth
         next if depth >= UPSTREAM_DEPTH
 
-        reverse[name].each { |parent| queue << [parent, depth + 1] unless seen.include?(parent) }
+        reverse[name].each { |parent| queue << [parent, depth + 1] unless depths.key?(parent) }
       end
-      seen.sort
+      depths.sort_by { |name, depth| [depth, name] }.first(REACHABLE_CAP).map(&:first).sort
     end
 
     def intent_lines(base, head)
