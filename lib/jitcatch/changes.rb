@@ -108,7 +108,6 @@ module JitCatch
       constants = []
       namespaces = []
       calls = []
-      attributes = []
       private_constants = []
       errors = []
       sources = {}
@@ -127,11 +126,10 @@ module JitCatch
         constants.concat(index.constants)
         namespaces.concat(index.namespaces)
         calls.concat(index.calls)
-        attributes.concat(index.attributes)
         private_constants.concat(index.private_constants)
       end
       methods = SourceIndex.hide_private_constants(methods, private_constants.uniq)
-      { "methods" => methods, "constants" => constants, "namespaces" => namespaces, "calls" => calls, "attributes" => attributes, "errors" => errors, "sources" => sources }
+      { "methods" => methods, "constants" => constants, "namespaces" => namespaces, "calls" => calls, "errors" => errors, "sources" => sources }
     end
 
     def changed_methods(base_idx, head_idx, hunks)
@@ -149,8 +147,11 @@ module JitCatch
         new_hit = new_m && DiffParser.overlaps?(new_m.start_line, new_m.end_line, file_hunks["hunks"], "new")
         source_diff = norm(old_m&.source) != norm(new_m&.source)
         params_diff = old_m&.params.to_s != new_m&.params.to_s
+        # A macro line holds several names, so a hunk on it says nothing about one name.
+        line_hit = (old_hit || new_hit) && (old_m || new_m).macro.nil?
+        visibility_diff = old_m && new_m && old_m.visibility != new_m.visibility
         change = if old_m && new_m
-          next unless old_hit || new_hit || source_diff || params_diff
+          next unless line_hit || source_diff || params_diff || visibility_diff
 
           "modified"
         elsif new_m && (new_hit || file_hunks["old_path"].nil?)
@@ -372,12 +373,11 @@ module JitCatch
       by_class = methods.group_by { |method| [method.qualifier, method.bare_name] }
       by_bare = methods.group_by(&:bare_name)
       qualifiers = methods.group_by(&:qualifier)
-      attributes = idx["attributes"].group_by(&:itself)
       edges = []
       idx["calls"].each do |call|
         next if call.enclosing.nil? || test_file?(call.file)
 
-        target = call_target(call, by_class, by_bare, qualifiers, attributes)
+        target = call_target(call, by_class, by_bare, qualifiers)
         next if target.nil? || target.qualified == call.enclosing
 
         edges << { "from" => call.enclosing, "to" => target.qualified, "file" => call.file, "line" => call.line }
@@ -391,7 +391,7 @@ module JitCatch
     # `self` call still falls back to a unique bare name, for methods a class
     # gets from a module or a superclass; from an instance method, only to
     # an instance method, since no mixin turns a class method into one.
-    def call_target(call, by_class, by_bare, qualifiers, attributes)
+    def call_target(call, by_class, by_bare, qualifiers)
       qualifier, sep, _bare = SourceIndex.split_qualified(call.enclosing)
       receiver = call.receiver
       case receiver.kind
@@ -402,7 +402,7 @@ module JitCatch
           instance.first
         elsif same.size == 1
           same.first
-        elsif !attributes.key?([qualifier, call.bare_name])
+        else
           inherited = (by_bare[call.bare_name] || []).select { |method| sep == "." || method.kind == "instance" }
           inherited.first if inherited.size == 1
         end

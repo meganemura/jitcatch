@@ -393,6 +393,58 @@ class TestChanges < Minitest::Test
     end
   end
 
+  def test_attribute_readers_and_struct_members_are_methods
+    with_repo do |repo|
+      repo.write("lib/mismatch.rb", <<~RUBY)
+        class Mismatch < StandardError
+          attr_reader :reason, :trace
+          attr_accessor :seed
+
+          def initialize(reason = nil)
+            super
+          end
+
+          def to_s = super
+        end
+
+        Rule = Struct.new(:action, :args)
+        Pick = Data.define(:name, :value)
+      RUBY
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/mismatch.rb", <<~RUBY)
+        class Mismatch < StandardError
+          attr_reader :trace
+          attr_writer :seed
+
+          def to_s = super
+        end
+
+        Rule = Struct.new(:action, :args, :fixed)
+        Pick = Data.define(:name)
+      RUBY
+      repo.commit("Drop the reason.", date: "2026-02-12T00:00:00Z")
+
+      doc = JitCatch::Changes.between(repo.dir, "base", "HEAD")
+
+      changes = doc["methods"].map { |method| method.values_at("name", "change", "signature") }
+      assert_equal [
+        ["Mismatch#initialize", "removed", "removed"],
+        ["Mismatch#reason", "removed", "removed"],
+        ["Mismatch#seed", "removed", "removed"],
+        ["Pick#value", "removed", "removed"],
+        ["Rule#fixed", "added", "added"],
+        ["Rule#fixed=", "added", "added"]
+      ], changes
+      reason = doc["methods"].find { |method| method["name"] == "Mismatch#reason" }
+      assert_equal ["attr_reader :reason", 2], reason.values_at("old_source", "old_start")
+      entries = doc["entrypoints"].to_h { |entry| [entry["class"], entry["methods"].map { |method| method.values_at("name", "role") }] }
+      assert_equal [["Mismatch#seed=", "unchanged"], ["Mismatch#to_s", "unchanged"], ["Mismatch#trace", "unchanged"]], entries["Mismatch"].last(3)
+      assert_equal [["Pick#name", "unchanged"]], entries["Pick"]
+      assert_equal [["Rule#fixed", "added"], ["Rule#fixed=", "added"], ["Rule#action", "unchanged"]], entries["Rule"].first(3)
+    end
+  end
+
   def test_whole_files_added_and_removed_and_a_changed_signature
     with_repo do |repo|
       repo.write("lib/old.rb", "module Old\n  LIMIT = 1\n\n  def self.gone\n    LIMIT\n  end\nend\n")

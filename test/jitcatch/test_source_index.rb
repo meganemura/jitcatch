@@ -265,7 +265,7 @@ class TestSourceIndex < Minitest::Test
       end
     RUBY
     index = JitCatch::SourceIndex.parse(source, file: "lib/geo.rb")
-    assert_equal [["Geo::Line.build", "Geo::Line", 9], ["Geo::Point#norm", "Geo::Point", 3]],
+    assert_equal [["Geo::Line.build", "Geo::Line", 9], ["Geo::Point#norm", "Geo::Point", 3], ["Geo::Point#x", "Geo::Point", 2], ["Geo::Point#x=", "Geo::Point", 2], ["Geo::Point#y", "Geo::Point", 2], ["Geo::Point#y=", "Geo::Point", 2]],
       index.methods.map { |method| [method.qualified, method.qualifier, method.start_line] }.sort
     assert_equal [["Geo::LIMIT", "LIMIT = 3", 14, 14], ["Geo::Line", "Geo::Line = Class.new(Base)", 8, 8], ["Geo::Point", "Point = Struct.new(:x, :y)", 2, 2]],
       index.constants.map { |const| [const.qualified, const.source, const.start_line, const.end_line] }.sort
@@ -426,5 +426,41 @@ def test_a_top_level_describe_without_rspec_is_a_group_too
     other = JitCatch::SourceIndex.parse("items.each { |item| it(item) }\n[1].map do |x| it x end\n", file: "x_spec.rb")
     assert_nil other.example_references(1)
     assert_nil other.example_references(2)
+  end
+
+  def test_attribute_macros_and_member_lists_define_methods_with_their_visibility
+    source = <<~RUBY
+      class Mismatch < StandardError
+        attr_reader :trace, :seed
+        attr_accessor :note
+        private attr_writer :hidden
+
+        class << self
+          attr_reader :count
+        end
+
+        private
+
+        attr_reader :secret
+      end
+
+      class Pair < Struct.new(:left)
+      end
+
+      Pick = Data.define(:name)
+    RUBY
+    index = JitCatch::SourceIndex.parse(source, file: "lib/mismatch.rb")
+    assert_equal [
+      ["Mismatch#hidden=", "private", "attr_writer :hidden", "value", 4],
+      ["Mismatch#note", "public", "attr_reader :note", "", 3],
+      ["Mismatch#note=", "public", "attr_writer :note", "value", 3],
+      ["Mismatch#secret", "private", "attr_reader :secret", "", 12],
+      ["Mismatch#seed", "public", "attr_reader :seed", "", 2],
+      ["Mismatch#trace", "public", "attr_reader :trace", "", 2],
+      ["Mismatch.count", "public", "attr_reader :count", "", 7],
+      ["Pair#left", "public", "Struct.new(:left)", "", 15],
+      ["Pair#left=", "public", "Struct.new(:left)", "value", 15],
+      ["Pick#name", "public", "Data.define(:name)", "", 18]
+    ], index.methods.map { |method| [method.qualified, method.visibility, method.source, method.params, method.start_line] }.sort
   end
 end

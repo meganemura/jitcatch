@@ -13,11 +13,17 @@ module JitCatch
     HASH_KEY_CALLS = %i[[] []= fetch dig key? has_key? values_at fetch_values].freeze
     # These name a method by their first argument, as a symbol or a string.
     REFLECTIVE_CALLS = %i[send __send__ public_send method public_method respond_to?].freeze
-    ATTRIBUTE_READERS = { attr_reader: [""], attr: [""], attr_writer: ["="], attr_accessor: ["", "="] }.freeze
+    ATTRIBUTE_MACROS = { attr_reader: [""], attr: [""], attr_writer: ["="], attr_accessor: ["", "="] }.freeze
+    # The constant a member list is given to, and whether its members get writers.
+    MEMBER_BUILDERS = { %i[Struct new] => true, %i[Data define] => false }.freeze
 
+    # `macro` is nil for a `def`. A method an `attr_*` macro or a Struct or
+    # Data member list defines names that macro, and its source is the
+    # one-name form (`attr_reader :seed`), so dropping one name from a shared
+    # line does not read as a change to the names left on it.
     Method = Data.define(
       :file, :bare_name, :qualifier, :qualified, :kind, :visibility,
-      :start_line, :end_line, :source, :params
+      :start_line, :end_line, :source, :params, :macro
     )
     Constant = Data.define(
       :file, :bare_name, :qualifier, :qualified, :start_line, :end_line, :source
@@ -47,7 +53,7 @@ module JitCatch
     }.flat_map { |kind, names| names.map { |name| [name, kind] } }.to_h.freeze
     DESCRIBED_METHOD = /\A[#.]([a-z_][\w]*[?!=]?)\z/
 
-    attr_reader :methods, :constants, :namespaces, :calls, :private_constants, :attributes, :parse_error
+    attr_reader :methods, :constants, :namespaces, :calls, :private_constants, :parse_error
 
     def self.parse(source, file:)
       new(source, file).parse
@@ -62,7 +68,6 @@ module JitCatch
       @namespaces = []
       @module_functions = []
       @private_constants = []
-      @attributes = []
       @calls = []
       @references = Hash.new { |hash, key| hash[key] = [] }
       @ivar_classes = Hash.new { |hash, key| hash[key] = [] }
@@ -189,6 +194,7 @@ module JitCatch
         name = const_name(stmt.constant_path)
         nested = join_qual(qualifier, name)
         record_constant(@namespaces, nested, stmt.location.start_line, stmt.location.end_line, @lines[stmt.location.start_line - 1]) if name
+        record_members(stmt.superclass, nested) if stmt.is_a?(Prism::ClassNode) && stmt.superclass.is_a?(Prism::CallNode)
         scan_body(stmt, nested, :public, false)
         visibility
       when Prism::SingletonClassNode
@@ -201,6 +207,7 @@ module JitCatch
         full = constant_target(stmt, qualifier)
         source, end_line = constant_header(stmt)
         record_constant(@constants, full, stmt.location.start_line, end_line, source)
+        record_members(stmt.value, full) if stmt.value.is_a?(Prism::CallNode)
         block = value_block(stmt)
         scan_body(block, full, :public, false) if block
         visibility
@@ -212,6 +219,9 @@ module JitCatch
         record_private_constants(stmt, qualifier) if stmt.name == :private_constant && (stmt.receiver.nil? || stmt.receiver.is_a?(Prism::SelfNode))
 
         handle_class_visibility(stmt, qualifier) if stmt.receiver.nil? && CLASS_VISIBILITY.key?(stmt.name)
+        if stmt.receiver.nil? && ATTRIBUTE_MACROS.key?(stmt.name)
+          record_attributes_as_methods(stmt, qualifier, visibility == :module_function ? :public : visibility, singleton)
+        end
         visibility
       else
         visibility
@@ -232,6 +242,8 @@ module JitCatch
           record_method(arg, qualifier, stmt.name, singleton)
         when Prism::SymbolNode
           mark_visibility(qualifier, arg.unescaped.to_s, stmt.name, singleton)
+        when Prism::CallNode
+          record_attributes_as_methods(arg, qualifier, stmt.name, singleton) if arg.receiver.nil? && ATTRIBUTE_MACROS.key?(arg.name)
         end
       end
       visibility
@@ -301,7 +313,47 @@ module JitCatch
         start_line: node.location.start_line,
         end_line: node.location.end_line,
         source: extract_lines(node.location.start_line, node.location.end_line),
-        params: params
+        params: params,
+        macro: nil
+      )
+    end
+
+    def record_attributes_as_methods(stmt, qualifier, visibility, singleton)
+      suffixes = ATTRIBUTE_MACROS.fetch(stmt.name)
+      Array(stmt.arguments&.arguments).grep(Prism::SymbolNode).each do |arg|
+        suffixes.each do |suffix|
+          macro = suffix.empty? ? "attr_reader" : "attr_writer"
+          record_generated(arg, qualifier, "#{arg.unescaped}#{suffix}", visibility, singleton, macro, "#{macro} :#{arg.unescaped}")
+        end
+      end
+    end
+
+    def record_members(call, qualifier)
+      builder = const_name(call.receiver)
+      writers = MEMBER_BUILDERS[[builder&.to_sym, call.name]]
+      return if writers.nil?
+
+      macro = "#{builder}.#{call.name}"
+      Array(call.arguments&.arguments).grep(Prism::SymbolNode).each do |arg|
+        source = "#{macro}(:#{arg.unescaped})"
+        record_generated(arg, qualifier, arg.unescaped, :public, false, macro, source)
+        record_generated(arg, qualifier, "#{arg.unescaped}=", :public, false, macro, source) if writers
+      end
+    end
+
+    def record_generated(arg, qualifier, bare, visibility, singleton, macro, source)
+      @methods << self.class::Method.new(
+        file: @file,
+        bare_name: bare,
+        qualifier: qualifier.to_s,
+        qualified: self.class.qualify(qualifier, bare, singleton),
+        kind: singleton ? "singleton" : "instance",
+        visibility: visibility.to_s,
+        start_line: arg.location.start_line,
+        end_line: arg.location.start_line,
+        source: source,
+        params: bare.end_with?("=") ? "value" : "",
+        macro: macro
       )
     end
 
@@ -421,7 +473,6 @@ module JitCatch
             receiver: receiver_of(node.receiver)
           )
           refer(enclosing, node.name)
-          record_attributes(node, qualifier) unless singleton_context
           owner = constructor_owner(node) || described_owner(node)
           refer(enclosing, "#{owner}.new") if owner
           named = reflective_name(node)
@@ -486,15 +537,6 @@ module JitCatch
       @references[enclosing] << name.to_s
     end
 
-    # `attr_reader :name` defines a method the index does not list, so a call
-    # to `name` on self must not fall through to another class's `name`.
-    def record_attributes(node, qualifier)
-      suffixes = ATTRIBUTE_READERS[node.name]
-      return unless suffixes && node.receiver.nil?
-
-      names = Array(node.arguments&.arguments).grep(Prism::SymbolNode).map(&:unescaped)
-      @attributes.concat(names.product(suffixes).map { |name, suffix| [qualifier.to_s, "#{name}#{suffix}"] })
-    end
 
     def reflective_name(node)
       return nil unless REFLECTIVE_CALLS.include?(node.name)

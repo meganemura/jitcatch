@@ -237,6 +237,8 @@ gem の中から始まったエラーには `touches:changed_method` を付け�
 変更メソッドは `m01`、`m02` と付く。
 `Gemfile.lock` が変わったときは、`dependencies:` に gem ごとに `gem 旧 -> 新` を出す。
 変わった定数は `k01` で、その定数を読むだけで本体が変わっていないメソッドは `affected`（`via=k01`）になる。
+`attr_reader`、`attr_writer`、`attr_accessor`、`Struct.new` や `Data.define` のメンバーが定義する読み書きのメソッドもメソッドとして数え、ソースには名前一つの形（`attr_reader :seed`）が出る。
+そのため、その行から外した名前は `removed` になり、行に残った名前は変わらない。
 片方の側にしか無いクラスやモジュールも定数として `added` か `removed` になり、ソースには宣言の行が出る。
 各メソッドには、旧ソースと新ソース、ライブラリ内の呼び出し、そこへ届く入口（`reachable_from`）、それに言及している既存テストが出る。
 言及しているテストがないときは `entry_point_tests` が出る。
@@ -333,7 +335,8 @@ CLI を使わない場合は、`skills/jitcatch` をエージェントの skills
   ローカル変数、引数、メソッドの戻り値への呼び出しは辺にならないので、`reachable_from` が呼び出し元を落とすことがある。
   クラスが定義していないメソッドを `self` に呼ぶと、その名前を持つ索引上ただ一つのメソッドへ向かう。
   モジュールやスーパークラスのメソッドのためである。
-  インスタンスメソッドからはインスタンスメソッドだけが対象になり、クラスが `attr_reader`、`attr_writer`、`attr_accessor` で宣言した名前は辺にならない。
+  インスタンスメソッドからはインスタンスメソッドだけが対象になる。
+  クラスが `attr_reader`、`attr_writer`、`attr_accessor` で宣言した名前は、その読み書きのメソッドへの辺になる。
 - `define_method`、`class_eval`、条件の中の `def` は索引しない。
   `def self.foo` 以外のレシーバ付き定義は粗い。
 - リネームは削除と追加に見える（`git diff --no-renames`）。
