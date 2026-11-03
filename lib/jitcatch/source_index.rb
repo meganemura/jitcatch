@@ -526,7 +526,7 @@ module JitCatch
         refer(enclosing, node.write_name)
         node.compact_child_nodes.each { |child| walk(child, qualifier, singleton_context, enclosing) }
       when Prism::CallTargetNode, Prism::ConstantReadNode, Prism::ConstantPathNode
-        refer(enclosing, node.name)
+        refer(enclosing, name_of(node))
         node.compact_child_nodes.each { |child| walk(child, qualifier, singleton_context, enclosing) }
       when Prism::SymbolNode
         refer(enclosing, node.unescaped)
@@ -618,7 +618,14 @@ module JitCatch
       return nil unless node.name == :new
 
       receiver = node.receiver
-      receiver.name.to_s if receiver.is_a?(Prism::ConstantReadNode) || receiver.is_a?(Prism::ConstantPathNode)
+      name_of(receiver).to_s if receiver.is_a?(Prism::ConstantReadNode) || receiver.is_a?(Prism::ConstantPathNode)
+    end
+
+    # Prism 0.19, the default on Ruby 3.3, has no ConstantPathNode#name: the
+    # last segment is a ConstantReadNode in `child`, which Prism 1.x deprecates.
+    # `full_name` and the source text after `::` are not the same on both.
+    def name_of(node)
+      node.respond_to?(:name) ? node.name : node.child.name
     end
 
     def const_name(node)
@@ -627,7 +634,7 @@ module JitCatch
         node.name.to_s
       when Prism::ConstantPathNode
         parent = node.parent ? const_name(node.parent) : nil
-        [parent, node.name.to_s].compact.reject(&:empty?).join("::")
+        [parent, name_of(node).to_s].compact.reject(&:empty?).join("::")
       else
         nil
       end
