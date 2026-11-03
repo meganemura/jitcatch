@@ -452,6 +452,41 @@ class TestRunner < Minitest::Test
     end
   end
 
+  def test_keeps_a_long_failure_whose_temp_directory_name_changes_length
+    with_repo do |repo|
+      repo.write("lib/calc.rb", BASE_CALC)
+      repo.commit("Initial calc", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/calc.rb", HEAD_CALC)
+      repo.commit("Tweak calc helpers.", date: "2026-02-12T00:00:00Z")
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, {
+        "long_test.rb" => <<~RUBY
+          require "minitest/autorun"
+          require "tmpdir"
+          require "calc"
+
+          class LongTest < Minitest::Test
+            def test_long
+              count = File.join(__dir__, "runs")
+              runs = File.exist?(count) ? File.read(count).to_i + 1 : 0
+              File.write(count, runs.to_s)
+              Dir.mktmpdir("q" + "x" * runs) do |dir|
+                assert Calc.new.double(2) == 4, "\#{dir}/a \#{"y" * 200}"
+              end
+            end
+          end
+        RUBY
+      })
+
+      doc = execute(repo, tests, reruns: 2)
+
+      row = doc["tests"].fetch(0)
+      assert_equal "reported", row["disposition"]
+      assert_equal %w[fail fail], row["reruns"].map { |rerun| rerun["status"] }
+    end
+  end
+
   def test_runs_at_most_forty_files
     with_repo do |repo|
       repo.write("lib/flag.rb", "module Flag; end\n")

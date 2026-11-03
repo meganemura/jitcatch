@@ -180,8 +180,11 @@ module JitCatch
       end
     end
 
+    # The uncut line is compared: message_first_line is cut at a fixed width,
+    # and a temp name of another length moves the cut.
     def failure_key(result)
-      message = temp_roots.reduce(result["message_first_line"].to_s) { |text, root| Text.mask_temp_names(text, root) }
+      line = result["message"].to_s.lines.map(&:strip).reject(&:empty?).first.to_s
+      message = temp_roots.reduce(line) { |text, root| Text.mask_temp_names(text, root) }
       [result["status"], result["error_class"].to_s, message].join("\x1f")
     end
 
