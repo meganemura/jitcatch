@@ -76,11 +76,11 @@ Each file:
 A file named `*_spec.rb` runs with the project's RSpec, one process per file, from the worktree root:
 
 ```sh
-ruby -Ilib -I. -e 'require "rspec/core"; exit(RSpec::Core::Runner.run(ARGV))' -- \
+ruby -Ilib -I. -e 'require "rspec/core"; RSpec::Core::RubyProject.instance_variable_set(:@project_root, Dir.pwd); exit(RSpec::Core::Runner.run(ARGV))' -- \
   --format json --out .jitcatch-report.json --seed 1 --backtrace --no-color .jitcatch/<file>_spec.rb
 ```
 
-- Start the file with `require "spec_helper"` or `require "rails_helper"`, as the project's specs do. RSpec puts `spec/` and `lib/` on the load path and reads the worktree's `.rspec`, so its `--require spec_helper` also loads. Do not write `require_relative "spec_helper"`: the copy runs from `.jitcatch/`, where that path does not exist.
+- Start the file with `require "spec_helper"` or `require "rails_helper"`, as the project's specs do. RSpec puts `spec/` and `lib/` on the load path and reads the worktree's `.rspec`, so its `--require spec_helper` also loads. The launch pins RSpec's project root to the worktree, so those are the worktree's own `spec/` and `lib/` even when `TMPDIR` is under another project that holds `spec/`. Do not write `require_relative "spec_helper"`: the copy runs from `.jitcatch/`, where that path does not exist.
 - A `*_spec.rb` file that requires `minitest` (minitest/spec) runs as Minitest.
 - One example is one row, named by its full description. The text report shows the example's line after the file (`message_lines_spec.rb:31`). Two examples with the same description get ` (line N)` on the later one.
 - `expect(...).to` failures are `fail` (tag `assertion`), any other error is `error`, `pending` is `skip`. An error while RSpec loads the file is one `<file>#load` row. `raise_error` that caught an arity `ArgumentError` counts as a signature change, as `assert_raises` does.
@@ -101,6 +101,17 @@ assess:
 ```
 
 That row is intended: the change shows RSpec's `got:` line too.
+
+On the commit that pinned the project root, two hand-written specs next to two that branchout emitted for `JitCatch::Assessor.apply` gave this row, with the rerun line it now prints:
+
+```text
+counts generated=4 no_signal=2 fail_on_base=0 candidates=2 flaky=0 discarded=0 reported=2
+  c02 JitCatch::Framework::RSpec reruns a row with rspec base=pass head=fail m16 assertion,report,touches:changed_method
+    -"rspec {tests}/a_spec.rb:7"
+    +"ruby -Ilib -I. -e 'require \"rspec/core\"; RSpec::Core::Ruby...
+       ^ column 3
+    rerun: bundle exec ruby -Ilib -I. -e 'require "rspec/core"; RSpec::Core::RubyProject.instance_variable_set(:@project_root, Dir.pwd); exit(RSpec::Core::Runner.run(ARGV))' {tests}/rerun_spec.rb:4
+```
 
 Not supported yet: shared example groups (an example from a group in another file reads the whole candidate file for mentions), an error outside every example when some example ran (such as in `after(:suite)`), and a project whose bundle has no `rspec-core`.
 
