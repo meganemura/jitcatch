@@ -7,6 +7,7 @@ module JitCatch
   # Dynamic definitions (`define_method`, `class_eval`) are not indexed.
   class SourceIndex
     VISIBILITY = %i[public private protected].freeze
+    CLASS_VISIBILITY = { private_class_method: :private, public_class_method: :public }.freeze
 
     Method = Data.define(
       :file, :bare_name, :qualifier, :qualified, :kind, :visibility,
@@ -110,6 +111,7 @@ module JitCatch
       when Prism::CallNode
         return handle_visibility(stmt, qualifier, visibility, singleton) if visibility_modifier?(stmt)
 
+        handle_class_visibility(stmt, qualifier) if stmt.receiver.nil? && CLASS_VISIBILITY.key?(stmt.name)
         visibility
       else
         visibility
@@ -129,18 +131,30 @@ module JitCatch
         when Prism::DefNode
           record_method(arg, qualifier, stmt.name, singleton)
         when Prism::SymbolNode
-          mark_visibility(qualifier, arg.unescaped.to_s, stmt.name)
+          mark_visibility(qualifier, arg.unescaped.to_s, stmt.name, singleton)
         end
       end
       visibility
     end
 
-    def record_method(node, qualifier, visibility, singleton_context)
+    def handle_class_visibility(stmt, qualifier)
+      visibility = CLASS_VISIBILITY.fetch(stmt.name)
+      (stmt.arguments&.arguments || []).each do |arg|
+        case arg
+        when Prism::DefNode
+          record_method(arg, qualifier, visibility, true, explicit: true)
+        when Prism::SymbolNode, Prism::StringNode
+          mark_visibility(qualifier, arg.unescaped.to_s, visibility, true)
+        end
+      end
+    end
+
+    def record_method(node, qualifier, visibility, singleton_context, explicit: false)
       # `def self.foo` stays public; bare `private` does not apply to it.
       # Visibility inside `class << self` still applies to receiver-less defs.
       explicit_receiver = !node.receiver.nil?
       singleton = singleton_context || explicit_receiver
-      visibility = :public if explicit_receiver
+      visibility = :public if explicit_receiver && !explicit
       bare = node.name.to_s
       params = node.parameters&.location&.slice.to_s.gsub(/\s+/, "")
       @methods << self.class::Method.new(
@@ -157,9 +171,10 @@ module JitCatch
       )
     end
 
-    def mark_visibility(qualifier, bare, visibility)
+    def mark_visibility(qualifier, bare, visibility, singleton)
+      kind = singleton ? "singleton" : "instance"
       @methods.map! do |method|
-        if method.qualifier == qualifier.to_s && method.bare_name == bare && method.kind == "instance"
+        if method.qualifier == qualifier.to_s && method.bare_name == bare && method.kind == kind
           method.with(visibility: visibility.to_s)
         else
           method

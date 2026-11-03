@@ -125,6 +125,48 @@ class TestSourceIndex < Minitest::Test
     assert_equal ["lib/shop.rb", "public", "    def add(sku)\n      total\n    end"], [add.file, add.visibility, add.source]
   end
 
+  def test_private_class_method_and_private_names_inside_class_of_self
+    source = <<~RUBY
+      module Quint
+        def self.capture(cmd)
+          cmd
+        end
+        private_class_method :capture
+
+        private_class_method def self.spawn(cmd)
+          cmd
+        end
+
+        def self.run(cmd)
+          capture(cmd)
+        end
+
+        def capture(cmd)
+          cmd
+        end
+
+        class << self
+          def reset
+            1
+          end
+          private :reset
+        end
+
+        def self.later
+          2
+        end
+        private_class_method :later, :run
+        public_class_method :run
+      end
+    RUBY
+    index = JitCatch::SourceIndex.parse(source, file: "lib/quint.rb")
+    visibility = index.methods.to_h { |method| [method.qualified, method.visibility] }
+    assert_equal({
+      "Quint.capture" => "private", "Quint.spawn" => "private", "Quint.run" => "public",
+      "Quint#capture" => "public", "Quint.reset" => "private", "Quint.later" => "private"
+    }, visibility)
+  end
+
   def test_split_qualified_reverses_qualify
     assert_equal "Calc#add", JitCatch::SourceIndex.qualify("Calc", "add", false)
     assert_equal "Shop::Cart.build", JitCatch::SourceIndex.qualify("Shop::Cart", "build", true)
