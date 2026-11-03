@@ -61,6 +61,8 @@ module JitCatch
     private
 
     def warnings(base, head)
+      return ["base and head are the same commit, so the diff is empty. Pass the parent of the change as BASE."] if base == head
+
       divergence = @git.divergence(base, head)
       return [] unless divergence
 

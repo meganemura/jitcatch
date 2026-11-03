@@ -183,6 +183,7 @@ jitcatch run --repo DIR BASE HEAD TESTS_DIR
 `BASE` が `HEAD` の祖先でないとき、diff は `BASE` にしかないコミットも打ち消す。
 そのとき `context` と `run` は `head` の下に `warning:` 行を出す。
 その行は、そのコミットの数と、代わりに `BASE` に渡すマージベースを示す。
+2 つが同じコミットを指すときも、`warning:` 行がそう示す。
 
 `assess` は run の警告、件数、候補の行を再出力する。
 掛けるルールは `run` と同じである。
