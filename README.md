@@ -209,7 +209,7 @@ Without the CLI, copy or symlink `skills/jitcatch` into the agent's skills direc
 - If the candidate tests never state the old behavior, a regression in that gap stays at `reported` 0.
 - A test of a new feature fails on base and is not a candidate.
 - The related id can sit one step away from the line that caused the failure.
-- A mention is a word in that test method. A method name in a comment pulls the tag toward it.
+- A mention is a word in that test method or in a method of the same file that it calls, directly or through other such methods. A method name in a comment pulls the tag toward it. A helper in another file is not read.
 - Files run one at a time. The repository's existing suite is not run. The repository has to be able to add worktrees.
 - An assertion backtrace usually stops in the test, so a library line is found from names the test mentions.
 

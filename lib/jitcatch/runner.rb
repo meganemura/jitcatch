@@ -336,12 +336,32 @@ module JitCatch
       end
     end
 
-    # Mentions are taken from the individual test method so a neighbor in the
-    # same file does not change this test's tags.
+    # Mentions are taken from the test method and the same-file helpers it
+    # calls, so a neighbor test in the same file does not change its tags.
     def mentions_for(index, test_name, patterns, source)
-      method = index.methods.find { |item| item.qualified == test_name }
-      text = method ? method.source : source
+      text = test_text(index, test_name) || source
       patterns.filter_map { |bare, pattern| bare if text.match?(pattern) }
+    end
+
+    def test_text(index, test_name)
+      start = index.methods.find { |item| item.qualified == test_name }
+      return nil unless start
+
+      by_bare = index.methods.group_by(&:bare_name)
+      calls = index.calls.group_by(&:enclosing)
+      reached = { start.qualified => start }
+      queue = [start]
+      while (method = queue.shift)
+        calls.fetch(method.qualified, []).each do |call|
+          by_bare.fetch(call.bare_name, []).each do |helper|
+            next if reached.key?(helper.qualified)
+
+            reached[helper.qualified] = helper
+            queue << helper
+          end
+        end
+      end
+      reached.values.map(&:source).join("\n")
     end
 
     def assign_test_ids(rows)

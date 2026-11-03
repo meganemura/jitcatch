@@ -562,31 +562,48 @@ class TestRunner < Minitest::Test
     end
   end
 
-  def test_a_test_that_calls_new_mentions_initialize
+  def test_mentions_follow_same_file_helpers_and_read_new_as_initialize
     with_repo do |repo|
-      repo.write("lib/price.rb", "class Price\n  def initialize(cents)\n    @cents = cents\n  end\n\n  def cents\n    @cents\n  end\nend\n")
+      repo.write("lib/price.rb", "class Price\n  def initialize(cents)\n    @cents = cents\n  end\n\n  def cents\n    @cents\n  end\n\n  def doubled\n    @cents * 2\n  end\nend\n")
       repo.commit("base", date: "2026-02-11T00:00:00Z")
       repo.branch("base")
-      repo.write("lib/price.rb", "class Price\n  def initialize(cents)\n    @cents = cents + 1\n  end\n\n  def cents\n    @cents\n  end\nend\n")
+      repo.write("lib/price.rb", "class Price\n  def initialize(cents)\n    @cents = cents + 1\n  end\n\n  def cents\n    @cents\n  end\n\n  def doubled\n    @cents * 3\n  end\nend\n")
       repo.commit("Rework price.", date: "2026-02-12T00:00:00Z")
       tests = File.join(repo.dir, "candidates")
       write_tests(tests, {
-        "price_test.rb" => <<~TEST
+        "price_test.rb" => <<~RUBY
           require "minitest/autorun"
           require "price"
 
           class PriceTest < Minitest::Test
+            def test_doubled_through_a_helper
+              assert_equal 6, doubled_of(3)
+            end
+
             def test_new_keeps_the_cents
               assert_equal 3, Price.new(3).cents
             end
+
+            private
+
+            def doubled_of(amount)
+              build(amount).doubled
+            end
+
+            def build(amount)
+              Price.new(amount)
+            end
           end
-        TEST
+        RUBY
       })
 
-      row = execute(repo, tests)["tests"].fetch(0)
+      doc = execute(repo, tests)
 
-      assert_equal [%w[cents initialize], "m01"], row.values_at("mentions", "method_id")
-      assert_includes row["tags"], "touches:changed_method"
+      ids = doc["methods"].to_h { |method| [method["name"], method["id"]] }
+      rows = doc["tests"].to_h { |test| [test["name"], test.values_at("mentions", "method_id")] }
+      assert_equal [%w[doubled initialize], ids["Price#doubled"]], rows["PriceTest#test_doubled_through_a_helper"]
+      assert_equal [%w[cents initialize], ids["Price#initialize"]], rows["PriceTest#test_new_keeps_the_cents"]
+      doc["tests"].each { |test| assert_includes test["tags"], "touches:changed_method", test["name"] }
     end
   end
 

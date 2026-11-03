@@ -53,7 +53,7 @@ Write 3 to 6 Minitest files in a scratch directory you can delete.
 
 A catching test states a behavior the old code already satisfies. Aim it at a changed or affected method, and at unchanged callers that reach that method (`reachable_from`). Prefer a boundary, a rounding case, or an error path the diff could disturb. One claim per test method. A test that only describes the new feature fails on base and is not evidence.
 
-Call the changed method or its public caller in the test method itself. The `mentions` and the `touches:` tags read only the test method's own body, so a call made through a helper method in the same file leaves the row with no related id (`-`). Prefer a public entry point over `send(:private_helper)`: a private helper can move between base and head, and the test then fails on base.
+The `mentions` and the `touches:` tags read the test method's body and the bodies of the methods in the same file that it calls, directly or through other such methods. A helper in another file (`require "test/support/..."`) is not read, so call the changed method or its public caller from the candidate file. Prefer a public entry point over `send(:private_helper)`: a private helper can move between base and head, and the test then fails on base.
 
 Each file:
 
@@ -92,7 +92,7 @@ Tags are hints, not a verdict. They are sorted:
 
 - `touches:changed_method` — the test names a method the diff changed. `Owner.new` names `Owner#initialize`. Almost every test builds its object, so a changed constructor becomes the related id only when the test names no other changed method and reaches none through `reachable_from`.
 - `touches:changed_dependency` — the error came from inside a gem that `dependencies:` lists: the first frame outside the candidate file is in that gem. An error whose first such frame is in any gem gets no `touches:changed_method`.
-- `touches:changed_constant` — the test names a constant the diff changed, added, or removed. The row's `mentions` lists the bare names of changed methods and constants the test method names.
+- `touches:changed_constant` — the test names a constant the diff changed, added, or removed. The row's `mentions` lists the bare names of changed methods, their classes' public methods, and changed constants that the test method or its same-file helpers name.
 - `touches:unchanged_caller` — the test goes through an entry point the diff did not edit, and that entry point reaches a changed method.
 - `discard:signature_change` — `NameError`, `NoMethodError`, or an arity `ArgumentError` on a symbol the diff removed or rewrote, including a removed nested class such as `Model::Unsupported`. An arity `ArgumentError` is `wrong number of arguments`, `missing keyword`, or `unknown keyword`, raised in a method whose signature changed. It counts too when `assert_raises(X)` caught it and failed with `[X] exception expected, not ArgumentError`. An `ArgumentError` raised on purpose is kept.
 - `discard:load_error` — `LoadError` on head. `discard:timeout` — the head run timed out. Timeouts are not rerun.
