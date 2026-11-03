@@ -96,6 +96,7 @@ class TestRender < Minitest::Test
     marker = "#{" " * 34}^ column 71"
 
     assert_equal ["-#{"a" * 99}x"], JitCatch::Render.message_lines(diff.call("-#{"a" * 99}x\n", ""))
+    assert_equal ["--- expected"], JitCatch::Render.message_lines({ "message" => "--- expected\nnot a header\n-b\n+c\n" })
     assert_equal ["-#{"a" * 99}b", "+#{"a" * 99}c"], pair.call("#{"a" * 99}b", "#{"a" * 99}c")
     assert_equal ["-...#{window}b#{window}", "+...#{window}c#{window}", marker], pair.call("#{"a" * 70}b#{window}", "#{"a" * 70}c#{window}")
     assert_equal ["-...#{window}b#{window}...", "+...#{window}c#{window}...", marker], pair.call("#{"a" * 70}b#{window}a", "#{"a" * 70}c#{window}a")
