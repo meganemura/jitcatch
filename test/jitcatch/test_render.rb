@@ -120,6 +120,22 @@ constants: (none)
 "
   end
 
+  def test_context_text_starts_with_the_revisions_and_any_warning
+    doc = {
+      "version" => "0.1.0", "base" => "b", "head" => "h", "existing_tests_via" => "grep", "warnings" => ["w1"],
+      "intent" => [], "files" => [], "constants" => [], "methods" => [], "entrypoints" => [], "parse_errors" => []
+    }
+    assert_equal <<~TEXT, JitCatch::Render.context_text(doc).lines.first(7).join
+      jitcatch context
+      version 0.1.0
+      base b
+      head h
+      warning: w1
+      existing_tests grep
+      intent: (none)
+    TEXT
+  end
+
   def test_context_text_reports_parse_errors_and_no_entry_points
     doc = {
       "version" => "0.1.0", "base" => "b", "head" => "h", "existing_tests_via" => "grep",
