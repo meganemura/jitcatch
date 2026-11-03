@@ -103,7 +103,7 @@ class TestCLI < Minitest::Test
       end
       _out, err, status = cli("context", "--repo", repo.dir, "nope", "HEAD")
       assert_equal 2, status
-      assert_match(/\Ajitcatch: /, err)
+      assert_match(/\Ajitcatch: git rev-parse failed: fatal: /, err)
     end
   end
 
