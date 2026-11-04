@@ -198,7 +198,7 @@ class TestRunner < Minitest::Test
 
       row = doc["tests"].fetch(0)
       assert_equal "reported", row["disposition"], row["reruns"].inspect
-      assert_match(/created_at: "\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\d+ \+0000"/, row["head"]["message"])
+      assert_match(/created_at(?:: |=>)"\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\d+ \+0000"/, row["head"]["message"])
     end
   end
 
