@@ -240,6 +240,9 @@ gem の中から始まったエラーには `touches:changed_method` を付け�
 `related:guess` は、id を選んだ根拠が複数の変更メソッドを指している。
 たとえば、テストが変更されていない呼び出し元だけを含み、その呼び出し元から複数の変更メソッドへ届くときである。
 その行の次の行 `related guess: m05 of m02,m04,m05` が候補をすべて並べ、`--json` では `method_ids` が同じものを持つ。
+この選択は、diff が追加したメソッドより base にあったメソッドを選ぶ。
+ただし、追加したメソッドの呼び出しを足しただけの編集（`--json` の `forwards_to_added`）は、その追加したメソッドより下に置く。
+`net - volume` が `net - volume - coupon(n)` になる編集がその例で、新しい値は追加したメソッドから来る。
 `related:dynamic` は、関連する変更メソッドはないが、テストが `dynamic_callers:` のメソッドを呼んでいる。
 その行の次の行が `related: none, Emit.looked_up sends render to a receiver the source does not name` のようにそれを言う。
 

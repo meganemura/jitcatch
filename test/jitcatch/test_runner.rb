@@ -94,7 +94,7 @@ class TestRunner < Minitest::Test
       assert_equal "reported", by_name["TotalTest#test_total"]["disposition"]
       assert_includes by_name["TotalTest#test_total"]["tags"], "caller:unchanged:lib/calc.rb:11"
       assert_includes by_name["TotalTest#test_total"]["tags"], "touches:unchanged_caller"
-      assert_equal %w[bare_name callsites_omitted change dynamic_callers end_line file id kind name new_end new_start
+      assert_equal %w[bare_name callsites_omitted change dynamic_callers end_line file forwards_to_added id kind name new_end new_start
         old_end old_start reachable_from signature start_line via_constant visibility],
         doc["methods"].flat_map(&:keys).uniq.sort
 
@@ -615,6 +615,36 @@ class TestRunner < Minitest::Test
 
       assert_equal ["discarded", "struct size differs"], [row["disposition"], row.dig("head", "message")]
       assert_includes row["tags"], "discard:signature_change"
+    end
+  end
+
+  def test_a_guess_passes_over_an_edit_that_only_adds_a_call_to_an_added_method
+    with_repo do |repo|
+      source = <<~RUBY
+        class Price
+          def show(n) = "\#{total(n)}"
+
+          def total(n)
+            base(n) + 1
+          end
+
+          def base(n) = n * 2
+        end
+      RUBY
+      repo.write("lib/price.rb", source)
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/price.rb", source.sub("base(n) + 1\n", "base(n) + 1 - rebate(n)\n").sub("  def base(n) = n * 2\n", "  def base(n) = n * 2\n\n  def rebate(n) = n > 5 ? 3 : 0\n"))
+      repo.commit("Take a rebate off a large total.", date: "2026-02-12T00:00:00Z")
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, { "price_test.rb" => candidate_source("PriceTest", "test_show", 'assert_equal "21", Price.new.show(10)').sub('require "calc"', 'require "price"') })
+
+      doc = execute(repo, tests)
+      ids = doc["methods"].to_h { |method| [method["name"], method["id"]] }
+      row = doc["tests"].fetch(0)
+
+      assert_equal [true], doc["methods"].select { |method| method["change"] == "modified" }.map { |method| method["forwards_to_added"] }
+      assert_equal [ids.fetch("Price#rebate"), ids.values_at("Price#rebate", "Price#total").sort], row.values_at("method_id", "method_ids")
     end
   end
 

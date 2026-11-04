@@ -321,7 +321,9 @@ module JitCatch
     # A catching test passed on the old code, so a method that already existed
     # outranks one the diff only added. Among those, the method furthest
     # downstream (the one other changed methods call into) is the usual source
-    # of the new value. Between two that no changed method links, the one
+    # of the new value. An edit that only adds a call to an added method
+    # ranks with the added ones, since the value it routes is made below
+    # it. Between two that no changed method links, the one
     # above more changed code is the likelier: a test that names a setup call
     # and the call it checks reaches the change through the second.
     def best_guess(items)
@@ -334,6 +336,8 @@ module JitCatch
     end
 
     def preference(item)
+      return 2 if item["forwards_to_added"]
+
       case item["change"]
       when "modified", "affected" then 0
       when "removed" then 1

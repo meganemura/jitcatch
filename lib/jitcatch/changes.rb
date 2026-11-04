@@ -39,6 +39,7 @@ module JitCatch
       head_edges = edges_for(head_idx)
       base_edges = edges_for(base_idx)
       decorate_calls(methods, head_edges, base_edges)
+      mark_forwarders(methods, head_edges, hunks)
       decorate_dynamic_callers(methods, head_idx, base_idx)
       decorate_tests(methods, base_idx, head_idx)
       entrypoints = entrypoints_for(methods, head_idx, base_idx)
@@ -276,6 +277,33 @@ module JitCatch
       end
     end
 
+    # An edit whose every added line calls a method the diff added, and that
+    # removes no more lines than it adds, only routes a value from that
+    # method, as `net - volume` becoming `net - volume - coupon` does. The
+    # new value then comes from the added method, not from this one.
+    def mark_forwarders(methods, head_edges, hunks)
+      added = methods.select { |method| method["change"] == "added" }.map { |method| method["new"].qualified }
+      methods.each do |method|
+        method["forwards_to_added"] = method["change"] == "modified" && added.any? && forwards?(method["new"], added, head_edges, hunks)
+      end
+    end
+
+    def forwards?(node, added, head_edges, hunks)
+      lines = []
+      removed = 0
+      hunks.fetch(node.file, { "hunks" => [] })["hunks"].each do |hunk|
+        inside = (hunk["new_start"]...(hunk["new_start"] + hunk["new_count"])).select { |line| line.between?(node.start_line, node.end_line) }
+        # A pure deletion has no new lines; git puts it after new_start.
+        deletion = hunk["new_count"].zero? && hunk["new_start"] >= node.start_line && hunk["new_start"] < node.end_line
+        next if inside.empty? && !deletion
+
+        lines.concat(inside)
+        removed += hunk["old_count"]
+      end
+      calls = head_edges.filter_map { |edge| edge["line"] if edge["from"] == node.qualified && edge["file"] == node.file && added.include?(edge["to"]) }
+      lines.any? && removed <= lines.size && (lines - calls).empty?
+    end
+
     # A method that sends the name of a changed method, or of one that
     # reaches it, to a receiver the source does not name, as in
     # `EMITTERS.fetch(format).render`, may reach it, but no edge says so.
@@ -508,7 +536,8 @@ module JitCatch
         "dynamic_callers" => item["dynamic_callers"],
         "existing_tests" => item["existing_tests"],
         "entry_point_tests" => item["entry_point_tests"],
-        "via_constant" => item["via_constant"]
+        "via_constant" => item["via_constant"],
+        "forwards_to_added" => item["forwards_to_added"]
       }
     end
 
