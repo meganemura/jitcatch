@@ -21,9 +21,11 @@ class TestShopDemo < Minitest::Test
         assert_equal 0, context_status, context_err
         assert_equal File.read(File.join(recorded, "context.txt")), context
 
-        run, run_err, run_status = cli(
-          "run", "--repo", repo, "base", ref, File.join(recorded, "tests")
-        )
+        # The rerun lines name the candidates from the repository root.
+        tests = File.join(repo, "candidates", dirname)
+        FileUtils.mkdir_p(File.dirname(tests))
+        FileUtils.cp_r(File.join(recorded, "tests"), tests)
+        run, run_err, run_status = cli("run", "--repo", repo, "base", ref, tests)
         assert_equal 0, run_status, run_err
         assert_equal File.read(File.join(recorded, "run.txt")), ruby_34_quotes(run)
       end

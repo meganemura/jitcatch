@@ -21,8 +21,8 @@ assess:
   c01 ThresholdTest#test_between_old_and_new_threshold_total_had_no_discount base=pass head=fail m01 assertion,report,touches:unchanged_caller
     Expected: 8100
     Actual: 7290
-    rerun: ruby -Ilib -I. {tests}/threshold_test.rb -n ThresholdTest#test_between_old_and_new_threshold_total_had_no_discount
+    rerun: ruby -Ilib -I. candidates/intended/threshold_test.rb -n ThresholdTest#test_between_old_and_new_threshold_total_had_no_discount
   c02 ThresholdTest#test_five_thousand_had_no_discount base=pass head=fail m01 assertion,report,touches:changed_method
     Expected: 0
     Actual: 500
-    rerun: ruby -Ilib -I. {tests}/threshold_test.rb -n ThresholdTest#test_five_thousand_had_no_discount
+    rerun: ruby -Ilib -I. candidates/intended/threshold_test.rb -n ThresholdTest#test_five_thousand_had_no_discount

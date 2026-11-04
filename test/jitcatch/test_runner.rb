@@ -312,8 +312,36 @@ class TestRunner < Minitest::Test
         [KeyError] exception expected, not
         Class: <ArgumentError>
         Message: <"wrapped k">
-        rerun: ruby -Ilib -I. {tests}/a_test.rb -n ATest#test_f_raises_key_error
+        rerun: ruby -Ilib -I. candidates/a_test.rb -n ATest#test_f_raises_key_error
       ROW
+    end
+  end
+
+  # The rerun line runs from the repository root as printed: a tests
+  # directory inside the repository is named from its root, and any other
+  # by its whole path.
+  def test_a_rerun_line_names_the_tests_directory_it_runs_from_the_root
+    with_repo do |repo|
+      repo.write("lib/a.rb", "module A; def self.f = 1; end\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/a.rb", "module A; def self.f = 2; end\n")
+      repo.commit("Return 2.", date: "2026-02-12T00:00:00Z")
+      source = { "a_test.rb" => candidate_source("ATest", "test_f", "assert_equal 1, A.f").sub('"calc"', '"a"') }
+      inside = File.join(repo.dir, "cand dir")
+      write_tests(inside, source)
+      Dir.mktmpdir("jitcatch-outside-") do |outside|
+        write_tests(outside, source)
+
+        lines = [inside, outside].map { |tests| execute(repo, tests)["tests"].fetch(0)["rerun"] }
+
+        assert_equal ["ruby -Ilib -I. 'cand dir/a_test.rb' -n ATest#test_f", "ruby -Ilib -I. #{File.realpath(outside)}/a_test.rb -n ATest#test_f"], lines
+        lines.each do |line|
+          output, status = Open3.capture2e(*Shellwords.split(line), chdir: repo.dir)
+          refute status.success?, output
+          assert_includes output, "Expected: 1"
+        end
+      end
     end
   end
 
@@ -1056,8 +1084,8 @@ class TestRunner < Minitest::Test
 
       rows = doc["tests"].to_h { |test| [test["name"], [test["disposition"], test["rerun"]]] }
       assert_equal({
-        "Calc#test_0001_doubles two" => ["reported", "ruby -Ilib -I. {tests}/calc_spec.rb -n 'Calc#test_0001_doubles two'"],
-        "Calc#test_0002_labels" => ["no_signal", "ruby -Ilib -I. {tests}/calc_spec.rb -n Calc#test_0002_labels"]
+        "Calc#test_0001_doubles two" => ["reported", "ruby -Ilib -I. candidates/calc_spec.rb -n 'Calc#test_0001_doubles two'"],
+        "Calc#test_0002_labels" => ["no_signal", "ruby -Ilib -I. candidates/calc_spec.rb -n Calc#test_0002_labels"]
       }, rows)
       assert_equal "Expected: 4", doc["tests"].fetch(0)["head"]["message_first_line"]
     end
@@ -1536,7 +1564,7 @@ class TestRunner < Minitest::Test
 
       assert_equal "load", err.doc["stage"]
       assert_equal [%w[base base], %w[head HEAD]].map { |side, ref| [side, repo.git("rev-parse", ref).strip] }, err.doc["setup_failed"].map { |failure| failure.values_at("side", "commit") }
-      assert_equal ["ruby -Ilib -I. {tests}/a_test.rb"] * 2, err.doc["setup_failed"].map { |failure| failure["command"] }
+      assert_equal ["ruby -Ilib -I. candidates/a_test.rb"] * 2, err.doc["setup_failed"].map { |failure| failure["command"] }
       # Ruby 3.3 quotes the frame label with a backtick, Ruby 3.4 and later with '.
       quote = RUBY_VERSION < "3.4" ? "`" : "'"
       assert_equal [["{worktree}/.jitcatch/support.rb:1:in #{quote}<top (required)>': connection to server at 127.0.0.1 port 1 failed (IOError)"]] * 2, err.doc["setup_failed"].map { |failure| failure["stderr"] }

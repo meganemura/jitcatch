@@ -168,9 +168,9 @@ class TestRSpecRunner < Minitest::Test
       total = doc["tests"].find { |test| test["name"] == "Cart#total sums the prices" }
       assert_equal "expected: 6", total["head"]["message_first_line"]
       # The fixture has spec/, where RSpec finds its root without the pin.
-      assert_equal JitCatch::Framework::RSpec.rerun("cart_spec.rb", nil, 11, pin_root: false), total["rerun"]
-      assert_equal JitCatch::Framework::RSpec.rerun("broken_spec.rb", nil, nil, pin_root: false), doc["tests"].find { |test| test["name"] == "broken_spec.rb#load" }["rerun"]
-      words = Shellwords.split(total["rerun"]).map { |word| word.sub(JitCatch::Framework::TESTS, "#{tests}/") }
+      assert_equal JitCatch::Framework::RSpec.rerun("candidates/cart_spec.rb", nil, 11, pin_root: false), total["rerun"]
+      assert_equal JitCatch::Framework::RSpec.rerun("candidates/broken_spec.rb", nil, nil, pin_root: false), doc["tests"].find { |test| test["name"] == "broken_spec.rb#load" }["rerun"]
+      words = Shellwords.split(total["rerun"])
       stdout, status = Open3.capture2e(*words, chdir: repo.dir)
       refute status.success?, stdout
       assert_includes stdout, "got: 7"
@@ -237,7 +237,7 @@ class TestRSpecRunner < Minitest::Test
 
       row = doc["tests"].fetch(0)
       assert_equal "reported", row["disposition"], row["head"]["message"]
-      words = Shellwords.split(row["rerun"]).map { |word| word.sub(JitCatch::Framework::TESTS, "#{tests}/") }
+      words = Shellwords.split(row["rerun"])
       stdout, status = Open3.capture2e(*words, chdir: repo.dir)
       refute status.success?, stdout
       assert_includes stdout, "got: 101"
@@ -289,7 +289,7 @@ class TestRSpecRunner < Minitest::Test
 
       assert_equal({ "base" => "ok", "head" => "ok" }, doc["bundle"])
       row = doc["tests"].fetch(0)
-      assert_equal ["Flag is on", "reported", "bundle exec #{JitCatch::Framework::RSpec.rerun("flag_spec.rb", nil, 4)}"], row.values_at("name", "disposition", "rerun"), row["head"]["message"]
+      assert_equal ["Flag is on", "reported", "bundle exec #{JitCatch::Framework::RSpec.rerun("candidates/flag_spec.rb", nil, 4)}"], row.values_at("name", "disposition", "rerun"), row["head"]["message"]
     end
   end
 
@@ -324,7 +324,7 @@ class TestRSpecRunner < Minitest::Test
       row = execute(repo, tests)["tests"].fetch(0)
 
       assert_equal "expected KeyError, got #<ArgumentError: #{"x" * 200} wrapped k>", row["head"]["message"]
-      rerun = Shellwords.split(row["rerun"]).map { |part| part.sub("{tests}/", "#{tests}/") }
+      rerun = Shellwords.split(row["rerun"])
       out, _status = Open3.capture2e(*rerun, chdir: repo.dir)
       assert_includes out, "#{"x" * 200} wrapped k>"
     end

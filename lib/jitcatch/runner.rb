@@ -482,8 +482,16 @@ module JitCatch
     def rerun_command(row, bundled, pin_root)
       file_level = row["line"].nil? && row["name"].start_with?("#{File.basename(row["file"])}#")
       name = file_level ? nil : row["name"]
-      command = @frameworks.fetch(row["file"]).rerun(row["file"], name, row["line"], pin_root: pin_root)
+      command = @frameworks.fetch(row["file"]).rerun(File.join(tests_from_root, row["file"]), name, row["line"], pin_root: pin_root)
       bundled ? "bundle exec #{command}" : command
+    end
+
+    # The rerun line runs from the repository root, so a tests directory
+    # inside it is named from there, and any other by its whole path.
+    def tests_from_root
+      root = File.realpath(@git.dir)
+      tests = File.realpath(@tests_dir)
+      tests.start_with?(File.join(root, "")) ? tests.delete_prefix(File.join(root, "")) : tests
     end
 
     def assign_test_ids(rows)

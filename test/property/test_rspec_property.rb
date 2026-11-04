@@ -53,8 +53,8 @@ class TestRSpecProperty < Minitest::Test
       line = tc.draw(integers(min_value: 1, max_value: 999))
       name = tc.draw(from_regex("[A-Za-z#:' \"$`!]{1,12}"))
 
-      assert_equal ["ruby", "-Ilib", "-I.", "-e", JitCatch::Framework::RSpec::LAUNCH, "{tests}/#{file}:#{line}"], Shellwords.split(JitCatch::Framework::RSpec.rerun(file, nil, line))
-      assert_equal ["ruby", "-Ilib", "-I.", "{tests}/#{file}", "-n", name], Shellwords.split(JitCatch::Framework::Minitest.rerun(file, name, nil))
+      assert_equal ["ruby", "-Ilib", "-I.", "-e", JitCatch::Framework::RSpec::LAUNCH, "#{file}:#{line}"], Shellwords.split(JitCatch::Framework::RSpec.rerun(file, nil, line))
+      assert_equal ["ruby", "-Ilib", "-I.", "#{file}", "-n", name], Shellwords.split(JitCatch::Framework::Minitest.rerun(file, name, nil))
     end
   end
 

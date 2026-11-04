@@ -91,7 +91,7 @@ module JitCatch
         lines << "  not passed: #{names.join(" ")} (add #{names.map { |name| "--env #{name}" }.join(" ")})" unless names.empty?
       end
       lines << if load
-        "Run that command in a checkout of that side, with your tests directory in place of {tests}/, fix what it says (often a database, a credential, or a service the app needs at boot), and run jitcatch again. A file git ignores, such as config/master.key, is not in the checkouts jitcatch makes; pass its value with --env, such as RAILS_MASTER_KEY."
+        "Run that command from the repository root with that side checked out, fix what it says (often a database, a credential, or a service the app needs at boot), and run jitcatch again. A file git ignores, such as config/master.key, is not in the checkouts jitcatch makes; pass its value with --env, such as RAILS_MASTER_KEY."
       else
         "Run that command in a checkout of that side, fix what it says (often `bundle install` there), and run jitcatch again."
       end

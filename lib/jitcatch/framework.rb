@@ -6,9 +6,6 @@ module JitCatch
   # too); every other file is Minitest.
   module Framework
     MINITEST_REQUIRE = /^\s*require\s*\(?\s*["']minitest/.freeze
-    # A rerun command names the candidate under the directory passed to
-    # `run`, which the report writes as this so it reads the same anywhere.
-    TESTS = "{tests}/"
     REPORT = ".jitcatch-report.json"
 
     def self.for(relative, source)
@@ -46,11 +43,11 @@ module JitCatch
         bundled ? 'minitest is not in the bundle: add gem "minitest" to the Gemfile' : "minitest is not installed for this Ruby: gem install minitest"
       end
 
-      def rerun(file, name, _line, pin_root: true)
-        ["ruby", "-Ilib", "-I.", "#{TESTS}#{file}", *(["-n", name] if name)].map { |part| quote(part) }.join(" ")
+      def rerun(path, name, _line, pin_root: true)
+        ["ruby", "-Ilib", "-I.", path, *(["-n", name] if name)].map { |part| quote(part) }.join(" ")
       end
 
-      # A word a shell reads as written stays bare, so `{tests}/` and a
+      # A word a shell reads as written stays bare, so a path and a
       # `Class#test` name stay readable; any other word is single-quoted.
       def quote(part)
         return part if part.match?(BARE)
@@ -97,9 +94,9 @@ module JitCatch
       # the row loaded. In a checkout that holds spec/ RSpec already takes
       # the working directory as its root, so the line leaves out the pin,
       # the one part that sets rspec-core's private state.
-      def rerun(file, _name, line, pin_root: true)
+      def rerun(path, _name, line, pin_root: true)
         launch = pin_root ? LAUNCH : LAUNCH.sub(PIN_ROOT, "")
-        ["ruby", "-Ilib", "-I.", "-e", launch, "#{TESTS}#{file}#{":#{line}" if line}"].map { |part| Minitest.quote(part) }.join(" ")
+        ["ruby", "-Ilib", "-I.", "-e", launch, "#{path}#{":#{line}" if line}"].map { |part| Minitest.quote(part) }.join(" ")
       end
     end
   end

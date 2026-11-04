@@ -27,8 +27,8 @@ assess:
     related guess: m05 of m02,m04,m05
     Expected: 9720
     Actual: 10800
-    rerun: ruby -Ilib -I. {tests}/threshold_total_test.rb -n ThresholdTotalTest#test_at_threshold_total_includes_the_volume_discount
+    rerun: ruby -Ilib -I. candidates/regression/threshold_total_test.rb -n ThresholdTotalTest#test_at_threshold_total_includes_the_volume_discount
   c02 VolumeBoundaryTest#test_threshold_is_inclusive base=pass head=fail m05 assertion,report,touches:changed_method
     Expected: 1000
     Actual: 0
-    rerun: ruby -Ilib -I. {tests}/volume_boundary_test.rb -n VolumeBoundaryTest#test_threshold_is_inclusive
+    rerun: ruby -Ilib -I. candidates/regression/volume_boundary_test.rb -n VolumeBoundaryTest#test_threshold_is_inclusive
