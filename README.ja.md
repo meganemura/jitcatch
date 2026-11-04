@@ -254,6 +254,9 @@ gem の中から始まったエラーには `touches:changed_method` を付け�
 変更メソッドは `m01`、`m02` と付く。
 `Gemfile.lock` が変わったときは、`dependencies:` に gem ごとに `gem 旧 -> 新` を出す。
 変わった定数は `k01` で、その定数を読むだけで本体が変わっていないメソッドは `affected`（`via=k01`）になる。
+あるファイルから消えたメソッドを、head が別のファイル（テストファイルも含む）で同じ名前で定義していれば、それは `moved` になる。
+新しい場所で出し、`moved_from=` が元のファイルを示す。
+複数のファイルが定義しているときは、diff が触ったファイルを先に選ぶ。
 `attr_reader`、`attr_writer`、`attr_accessor`、`Struct.new` や `Data.define` のメンバーが定義する読み書きのメソッドもメソッドとして数え、ソースには名前一つの形（`attr_reader :seed`）が出る。
 そのため、その行から外した名前は `removed` になり、行に残った名前は変わらない。
 `*FIELDS` の形で渡したリストも、同じファイルがその前に `FIELDS = %i[x y].freeze` のようにシンボルのリストを入れていれば数える。

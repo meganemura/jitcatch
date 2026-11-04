@@ -288,7 +288,8 @@ module JitCatch
       line = frame["line"]
       ranges = []
       ranges << (method["start_line"]..method["end_line"]) if method["start_line"] && method["end_line"]
-      ranges << (method["old_start"]..method["old_end"]) if method["old_start"] && method["old_end"]
+      # A moved method's old lines are in another file.
+      ranges << (method["old_start"]..method["old_end"]) if method["old_start"] && method["old_end"] && method["moved_from"].nil?
       ranges.any? { |range| range.cover?(line) }
     end
 
@@ -340,7 +341,7 @@ module JitCatch
       return 2 if item["forwards_to_added"]
 
       case item["change"]
-      when "modified", "affected" then 0
+      when "modified", "affected", "moved" then 0
       when "removed" then 1
       else 2
       end

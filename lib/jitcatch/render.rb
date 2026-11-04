@@ -142,6 +142,7 @@ module JitCatch
         lines = ["methods:"]
         methods.each do |method|
           via = method["via_constant"] ? " via=#{method["via_constant"]}" : ""
+          via += " moved_from=#{method["moved_from"]}" if method["moved_from"]
           lines << "  [#{method["id"]}] #{method["change"]} #{method["name"]} #{method["file"]}:#{method["start_line"]}-#{method["end_line"]} signature=#{method["signature"]} visibility=#{method["visibility"]}#{via}"
           lines << "    callsites: #{format_callsites(method)}"
           unless method["reachable_from"].empty?

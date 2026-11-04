@@ -71,6 +71,24 @@ class TestChanges < Minitest::Test
     end
   end
 
+  def test_a_method_moved_to_another_file_is_moved_not_removed
+    with_repo do |repo|
+      repo.write("script/mismatch.rb", "class Always\n  def cents(n) = 0\nend\n\nclass Fake\n  def name = \"x\"\nend\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("script/mismatch.rb", "# moved\n")
+      repo.write("test/always.rb", "class Always\n  def cents(n) = 1\nend\n")
+      repo.write("lib/fake.rb", "class Fake\n  def name = \"x\"\nend\n")
+      repo.commit("Move the doubles.", date: "2026-02-12T00:00:00Z")
+
+      doc = JitCatch::Changes.between(repo.dir, "base", "HEAD")
+      rows = doc["methods"].map { |method| method.values_at("name", "change", "file", "moved_from", "signature") }
+
+      assert_equal [["Always#cents", "moved", "test/always.rb", "script/mismatch.rb", "same"], ["Fake#name", "moved", "lib/fake.rb", "script/mismatch.rb", "same"]], rows.sort
+      assert_includes JitCatch::Render.context_text(doc), "moved Always#cents test/always.rb:2-2 signature=same visibility=public moved_from=script/mismatch.rb\n"
+    end
+  end
+
   def test_intent_leaves_out_each_commit_trailer_block
     with_repo do |repo|
       repo.write("lib/box.rb", BOX)

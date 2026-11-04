@@ -182,6 +182,25 @@ end
           "via_constant" => nil
         }
       end
+      mark_moves(found, head_idx, hunks)
+    end
+
+    # A method that leaves one file while head defines the same name in
+    # another is moved, not removed: it still answers a call. The other side
+    # is read from every file, test files too, since a test double can move
+    # into test/, where no change of its own is listed. A file the diff
+    # touched is the likelier destination than an older copy elsewhere.
+    def mark_moves(found, head_idx, hunks)
+      by_name = head_idx["methods"].group_by(&:qualified)
+      found.select { |item| item["change"] == "removed" }.each do |item|
+        old_m = item["old"]
+        dest = Array(by_name[old_m.qualified]).reject { |node| node.file == old_m.file }
+          .min_by { |node| [hunks.key?(node.file) ? 0 : 1, node.file] }
+        next unless dest
+
+        found.reject! { |other| other["change"] == "added" && identity(other["new"]) == identity(dest) }
+        item.merge!("change" => "moved", "new" => dest, "moved_from" => old_m.file)
+      end
       found
     end
 
@@ -547,7 +566,8 @@ end
         "existing_tests" => item["existing_tests"],
         "entry_point_tests" => item["entry_point_tests"],
         "via_constant" => item["via_constant"],
-        "forwards_to_added" => item["forwards_to_added"]
+        "forwards_to_added" => item["forwards_to_added"],
+        "moved_from" => item["moved_from"]
       }
     end
 
