@@ -44,13 +44,17 @@ class TestFactories < Minitest::Test
         factory :loan do
           borrower
           amount_cents { 1 }
+          rate 3
+          memo { }
+          code { code_for(:branch) }
           approver { association :officer }
           trait(:filed) { association :branch }
 
           factory :big_loan
         end
         factory :review do
-          association :subject, factory: :loan
+          association :subject, strategy: :build, factory: :loan
+          association :reviewer, factory: [:branch, :busy]
           note
         end
         factory :remark, parent: :review
@@ -62,7 +66,7 @@ class TestFactories < Minitest::Test
     assert_equal({
       "borrower" => [], "officer" => [], "branch" => [],
       "loan" => %w[Borrower Staff::Officer], "big_loan" => %w[Borrower Staff::Officer],
-      "review" => %w[Borrower Loan Staff::Officer], "remark" => %w[Borrower Loan Staff::Officer]
+      "review" => %w[Borrower Branch Loan Staff::Officer], "remark" => %w[Borrower Branch Loan Staff::Officer]
     }, found)
   end
 

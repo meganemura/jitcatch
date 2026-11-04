@@ -67,8 +67,7 @@ module JitCatch
     # The statements of the factory's own block. A trait runs only when a
     # test names it, and a nested factory is a factory of its own.
     def associations_in(block)
-      body = block.is_a?(Prism::BlockNode) ? block.body : nil
-      statements = body.is_a?(Prism::StatementsNode) ? body.body : []
+      statements = block.is_a?(Prism::BlockNode) && block.body.is_a?(Prism::StatementsNode) ? block.body.body : []
       statements.grep(Prism::CallNode).flat_map do |call|
         next [] unless call.receiver.nil? && !DEFINITIONS.include?(call.name)
         next [association_name(call)].compact if call.name == :association

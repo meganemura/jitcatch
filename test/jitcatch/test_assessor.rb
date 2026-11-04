@@ -24,6 +24,20 @@ class TestAssessor < Minitest::Test
       out["tests"].map { |test| [test["disposition"], test["tags"].find { |tag| tag.start_with?("discard:", "report") }] }
   end
 
+  # A base that timed out might have passed with more time, so its row
+  # says nothing about the change, whatever head did.
+  def test_discards_a_row_whose_base_timed_out
+    timed_out = candidate("t01", "Loan#approve! approves", ["approve!"], { "status" => "fail", "error_class" => "Minitest::Assertion", "message" => "Expected: 1" })
+    doc = {
+      "methods" => [method("m01", "modified", "same", "approve!", [], 1)], "constants" => [], "tests_dir" => "candidates",
+      "tests" => [timed_out.merge("base" => { "status" => "timeout", "error_class" => "Timeout" })]
+    }
+
+    test = JitCatch::Assessor.apply(doc)["tests"].fetch(0)
+
+    assert_equal ["discarded", "discard:timeout"], [test["disposition"], test["tags"].find { |tag| tag.start_with?("discard:") }]
+  end
+
   def test_discards_signature_load_and_timeout_and_tags_touches
     doc = {
       "methods" => [
