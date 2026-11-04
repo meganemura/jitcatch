@@ -85,6 +85,17 @@ class TestSourceIndex < Minitest::Test
     assert_equal ["bin/x"], index.paths_named("T#test_bytes", nil)
   end
 
+  # A test reaches the paths its own body and its helpers write. A name the
+  # file does not define, such as a file-level row, reaches every path.
+  def test_paths_named_reads_the_paths_a_test_reaches
+    source = "class T\n  def test_a\n    run(\"bin/a\")\n  end\n\n  def test_b\n    helper\n  end\n\n  def helper\n    run(\"bin/b\")\n  end\nend\n"
+    index = JitCatch::SourceIndex.parse(source, file: "test/t.rb")
+
+    assert_equal ["bin/a"], index.paths_named("T#test_a", nil)
+    assert_equal ["bin/b"], index.paths_named("T#test_b", nil)
+    assert_equal ["bin/a", "bin/b"], index.paths_named("T#load", nil)
+  end
+
   def test_calls_name_the_enclosing_method_in_each_singleton_context
     source = <<~RUBY
       module Shop
@@ -526,6 +537,7 @@ class TestSourceIndexExamples < Minitest::Test
       module Geo
         FIELDS = %i[x y].freeze
         NAMES = [:label]
+        WORDS = %w[a b]
 
         Point = Struct.new(*FIELDS)
         Tag = Data.define(*NAMES, :kind)
@@ -533,6 +545,7 @@ class TestSourceIndexExamples < Minitest::Test
         class Box
           attr_reader(*FIELDS)
           attr_reader(*UNKNOWN)
+          attr_reader(*WORDS)
         end
       end
     RUBY
@@ -545,7 +558,7 @@ class TestSourceIndexExamples < Minitest::Test
       ["Geo::Point#x=", "Struct.new(:x)", 2],
       ["Geo::Point#y", "Struct.new(:y)", 2],
       ["Geo::Point#y=", "Struct.new(:y)", 2],
-      ["Geo::Tag#kind", "Data.define(:kind)", 6],
+      ["Geo::Tag#kind", "Data.define(:kind)", 7],
       ["Geo::Tag#label", "Data.define(:label)", 3]
     ], index.methods.map { |method| [method.qualified, method.source, method.start_line] }.sort
   end
