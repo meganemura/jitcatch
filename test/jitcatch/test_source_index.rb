@@ -363,6 +363,26 @@ class TestSourceIndex < Minitest::Test
     assert_includes JitCatch::SourceIndex.parse("create(:loan)\n", file: "spec/top_spec.rb").referenced_names(""), "factory(:loan)"
   end
 
+  # A path the source computes, or a call of another name, names no file
+  # the run can compare.
+  def test_relative_requires_are_the_literal_paths_with_their_lines
+    source = <<~'RUBY'
+      require "minitest/autorun"
+      require_relative "../lib/a"
+      load_fixture "../fixtures/b"
+      require_relative File.join("..", "lib", "c")
+      require_relative "d", "e"
+
+      class ATest
+        require_relative "helper"
+      end
+    RUBY
+
+    found = JitCatch::SourceIndex.parse(source, file: "a_test.rb").relative_requires.map(&:to_h)
+
+    assert_equal [{ path: "../lib/a", line: 2 }, { path: "helper", line: 8 }], found
+  end
+
   def test_names_sent_only_to_constants_follow_the_scope_of_the_mentions
     source = <<~'RUBY'
       class WriteTest
