@@ -103,7 +103,11 @@ module JitCatch
     # `validates if: :checked?`).
     Callback = Data.define(:qualifier, :macro, :method, :declared)
 
-    attr_reader :methods, :constants, :namespaces, :superclasses, :callbacks, :calls, :private_constants, :parse_error
+    # A `require_relative` with one string literal, written at the top of
+    # the file or in a class body: [path, line].
+    RelativeRequire = Data.define(:path, :line)
+
+    attr_reader :methods, :constants, :namespaces, :superclasses, :callbacks, :calls, :private_constants, :relative_requires, :parse_error
 
     def self.parse(source, file:)
       new(source, file).parse
@@ -120,6 +124,7 @@ module JitCatch
       @callbacks = []
       @module_functions = []
       @private_constants = []
+      @relative_requires = []
       @calls = []
       @references = Hash.new { |hash, key| hash[key] = [] }
       @ivar_classes = Hash.new { |hash, key| hash[key] = [] }
@@ -360,6 +365,7 @@ module JitCatch
 
         return handle_module_function(stmt, qualifier, visibility) if stmt.receiver.nil? && stmt.name == :module_function
 
+        record_relative_require(stmt) if stmt.receiver.nil? && stmt.name == :require_relative
         record_private_constants(stmt, qualifier) if stmt.name == :private_constant && (stmt.receiver.nil? || stmt.receiver.is_a?(Prism::SelfNode))
 
         if stmt.receiver.nil? && CONCERN_BLOCKS.key?(stmt.name) && stmt.block.is_a?(Prism::BlockNode)
@@ -376,6 +382,13 @@ module JitCatch
       else
         visibility
       end
+    end
+
+    def record_relative_require(stmt)
+      args = stmt.arguments&.arguments || []
+      return unless args.size == 1 && args.first.is_a?(Prism::StringNode)
+
+      @relative_requires << RelativeRequire.new(path: args.first.unescaped, line: stmt.location.start_line)
     end
 
     def visibility_modifier?(node)

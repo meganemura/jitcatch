@@ -91,7 +91,7 @@ module JitCatch
         "command" => "run",
         "base" => change["base"],
         "head" => change["head"],
-        "warnings" => change["warnings"],
+        "warnings" => change["warnings"] + require_warnings(files),
         "reruns" => @reruns,
         "timeout_s" => @timeout,
         "serial" => @serial,
@@ -499,6 +499,25 @@ module JitCatch
         script = SourceIndex.parse(read_text(full), file: full.delete_prefix(root))
         script.parse_error ? [] : script.referenced_names("")
       }
+    end
+
+# The run loads each candidate from `.jitcatch/` at a checkout's root,
+# and the rerun line from TESTS_DIR, so a require_relative that leaves
+# TESTS_DIR resolves to two files unless TESTS_DIR sits at the root.
+    def require_warnings(files)
+      root = Pathname(File.realpath(@git.dir))
+      tests = File.realpath(@tests_dir)
+      files.flat_map do |relative|
+        index = SourceIndex.parse(read_candidate(relative), file: relative)
+        index.relative_requires.filter_map do |required|
+          path = required.path.end_with?(".rb") ? required.path : "#{required.path}.rb"
+          in_run = Pathname(File.expand_path(path, File.dirname(File.join("/.jitcatch", relative)))).relative_path_from(Pathname("/")).to_s
+          in_rerun = Pathname(File.expand_path(path, File.dirname(File.join(tests, relative)))).relative_path_from(root).to_s
+          next if in_run.start_with?(".jitcatch/") || in_run == in_rerun
+
+          "#{relative}:#{required.line} require_relative #{required.path.inspect} loads #{in_run} in the run but #{in_rerun} from the rerun line, so that line may not reproduce the row. Load the repository's code with `require` and the rerun line's -I, or put TESTS_DIR directly under the repository root."
+        end
+      end
     end
 
     # A file-level row (`file#load`, `file#timeout`) reruns the whole file.

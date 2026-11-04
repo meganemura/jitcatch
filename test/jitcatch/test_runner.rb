@@ -349,6 +349,41 @@ class TestRunner < Minitest::Test
     end
   end
 
+  # The run loads a candidate from `.jitcatch/` at the checkout's root, and
+  # the rerun line loads it from TESTS_DIR, so a require_relative that
+  # leaves TESTS_DIR names one file in the run and another in the rerun
+  # unless TESTS_DIR sits at the root. The printed line then passes where
+  # the row says head failed.
+  def test_warns_of_a_require_relative_that_the_rerun_line_resolves_elsewhere
+    with_repo do |repo|
+      repo.write("lib/a.rb", "module A; def self.f = 1; end\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/a.rb", "module A; def self.f = 2; end\n")
+      repo.commit("Return 2.", date: "2026-02-12T00:00:00Z")
+      source = { "a_test.rb" => %(require "minitest/autorun"\nrequire_relative "../lib/a"\nrequire_relative "helper"\n\nclass ATest < Minitest::Test\n  def test_f = assert_equal(1, A.f)\nend\n), "helper.rb" => "" }
+      Dir.mktmpdir("jitcatch-outside-") do |outside|
+        tests = File.join(outside, "catch")
+        write_tests(tests, source)
+        FileUtils.mkdir_p(File.join(outside, "lib"))
+        File.write(File.join(outside, "lib", "a.rb"), "module A; def self.f = 1; end\n")
+        write_tests(File.join(repo.dir, "candidates"), source)
+
+        doc = execute(repo, tests)
+        inside = execute(repo, File.join(repo.dir, "candidates"))
+
+        from_root = Pathname(File.realpath(outside)).relative_path_from(Pathname(File.realpath(repo.dir))).to_s
+        warning = "a_test.rb:2 require_relative \"../lib/a\" loads lib/a.rb in the run but #{from_root}/lib/a.rb from the rerun line, so that line may not reproduce the row. Load the repository's code with `require` and the rerun line's -I, or put TESTS_DIR directly under the repository root."
+        assert_equal [warning], doc["warnings"]
+        assert_includes JitCatch::Render.run_text(doc), "warning: #{warning}\n"
+        assert_equal [], inside["warnings"]
+        assert_equal "fail", doc["tests"].fetch(0)["head"]["status"]
+        _output, status = Open3.capture2e(*Shellwords.split(doc["tests"].fetch(0)["rerun"]), chdir: repo.dir)
+        assert status.success?, "the rerun line loads the copy of lib/a.rb beside TESTS_DIR"
+      end
+    end
+  end
+
   # The rerun line runs from the repository root as printed, so a tests
   # directory is named by its path from that root, outside the repository
   # too: a machine's own directories stay out of a quoted line. The
