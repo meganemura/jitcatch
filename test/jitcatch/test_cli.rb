@@ -147,7 +147,7 @@ class TestCLI < Minitest::Test
       assert_equal [3, ""], [json_status, json_err]
       side = ->(name, sha) { { "side" => name, "commit" => sha, "command" => command, "stderr" => [missing], "not_passed" => [] } }
       assert_equal(
-        { "version" => JitCatch::VERSION, "command" => "run", "error" => "setup_failed", "base" => base, "head" => head,
+        { "version" => JitCatch::VERSION, "command" => "run", "error" => "setup_failed", "stage" => "setup", "base" => base, "head" => head,
           "setup_failed" => [side.("base", base), side.("head", head)] },
         JSON.parse(json_out)
       )

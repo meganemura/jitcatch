@@ -965,7 +965,7 @@ class TestRunner < Minitest::Test
   def test_runs_at_most_forty_files
     assert_equal 40, JitCatch::Runner::FILE_CAP
     with_repo do |repo|
-      repo.write("lib/flag.rb", "module Flag; end\n")
+      repo.write("lib/calc.rb", "class Calc; end\n")
       repo.commit("base", date: "2026-02-11T00:00:00Z")
       repo.branch("base")
       repo.write("README.md", "head\n")
@@ -1507,6 +1507,38 @@ class TestRunner < Minitest::Test
       stderr = ["rspec-core is not installed for this Ruby: gem install rspec-core", "minitest is not installed for this Ruby: gem install minitest"]
       expected = ->(side, ref) { { "side" => side, "commit" => repo.git("rev-parse", ref).strip, "command" => %(ruby -e 'require "rspec/core"; require "minitest"'), "stderr" => stderr, "not_passed" => [] } }
       assert_equal [expected.("base", "base"), expected.("head", "HEAD")], err.doc["setup_failed"]
+    end
+  end
+
+  # A Rails app that cannot reach its database fails in rails_helper, so
+  # every file is a `#load` row on both sides and reads as `fail_on_base`.
+  def test_stops_when_every_file_fails_to_load_on_both_sides
+    with_repo do |repo|
+      repo.write("lib/calc.rb", "class Calc; end\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("README.md", "head\n")
+      repo.commit("Touch readme.", date: "2026-02-12T00:00:00Z")
+      tests = File.join(repo.dir, "candidates")
+      boot = %(raise IOError, "connection to server at 127.0.0.1 port 1 failed\\nIs the server running?" unless File.exist?("lib/booted.rb")\n)
+      write_tests(tests, {
+        "support.rb" => boot,
+        "a_test.rb" => candidate_source("ATest", "test_a", "assert true").sub(%(require "calc"\n), %(require "calc"\nrequire_relative "support"\n)),
+        "b_test.rb" => candidate_source("BTest", "test_b", "assert true").sub(%(require "calc"\n), %(require "calc"\nrequire_relative "support"\n))
+      })
+
+      err = assert_raises(JitCatch::EnvironmentError) { JitCatch::Runner.run(repo.dir, "base", "HEAD", tests, reruns: 0) }
+
+      assert_equal "load", err.doc["stage"]
+      assert_equal [%w[base base], %w[head HEAD]].map { |side, ref| [side, repo.git("rev-parse", ref).strip] }, err.doc["setup_failed"].map { |failure| failure.values_at("side", "commit") }
+      assert_equal ["ruby -Ilib -I. {tests}/a_test.rb"] * 2, err.doc["setup_failed"].map { |failure| failure["command"] }
+      assert_equal [["{worktree}/.jitcatch/support.rb:1:in '<top (required)>': connection to server at 127.0.0.1 port 1 failed (IOError)"]] * 2, err.doc["setup_failed"].map { |failure| failure["stderr"] }
+      assert_includes JitCatch::Render.setup_failed_text(err.doc), "jitcatch: every candidate file failed to load on both sides, so no row can tell base from head\n"
+
+      repo.write("lib/booted.rb", "\n")
+      repo.commit("Boot.", date: "2026-02-13T00:00:00Z")
+      doc = JitCatch::Runner.run(repo.dir, "HEAD~1", "HEAD", tests, reruns: 0)
+      assert_equal %w[fail_on_base fail_on_base], doc["tests"].map { |test| test["classification"] }
     end
   end
 

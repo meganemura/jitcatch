@@ -79,16 +79,21 @@ module JitCatch
     end
 
     def setup_failed_text(doc)
-      lines = ["jitcatch: setup failed, so no test ran; a test cannot pass or fail on a side that cannot load"]
+      load = doc["stage"] == "load"
+      lines = [load ? "jitcatch: every candidate file failed to load on both sides, so no row can tell base from head" : "jitcatch: setup failed, so no test ran; a test cannot pass or fail on a side that cannot load"]
       lines << "base #{doc["base"]}"
       lines << "head #{doc["head"]}"
       doc["setup_failed"].each do |failure|
-        lines << "setup #{failure["side"]} failed: #{failure["command"]}"
+        lines << "#{load ? "load" : "setup"} #{failure["side"]} failed: #{failure["command"]}"
         failure["stderr"].each { |line| lines << "  #{line}" }
         names = failure["not_passed"]
         lines << "  not passed: #{names.join(" ")} (add #{names.map { |name| "--env #{name}" }.join(" ")})" unless names.empty?
       end
-      lines << "Run that command in a checkout of that side, fix what it says (often `bundle install` there), and run jitcatch again."
+      lines << if load
+        "Run that command in a checkout of that side, with your tests directory in place of {tests}/, fix what it says (often a database, a credential, or a service the app needs at boot), and run jitcatch again."
+      else
+        "Run that command in a checkout of that side, fix what it says (often `bundle install` there), and run jitcatch again."
+      end
       finish(lines)
     end
 

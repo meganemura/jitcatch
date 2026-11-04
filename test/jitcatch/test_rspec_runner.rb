@@ -87,6 +87,22 @@ class TestRSpecRunner < Minitest::Test
     repo.commit("Add one to the total, cap the discount, drop count.", date: "2026-02-12T00:00:00Z")
   end
 
+  def test_a_rails_helper_that_cannot_boot_on_either_side_stops_the_run
+    with_repo do |repo|
+      cart_history(repo)
+      boot = "module ActiveRecord\n  class NoDatabaseError < StandardError; end\nend\nraise ActiveRecord::NoDatabaseError, \"We could not find your database: app_test2.\"\n"
+      repo.write("config/environment.rb", boot)
+      repo.commit("Need a database.", date: "2026-02-13T00:00:00Z")
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, { "cart_spec.rb" => %(require "rails_helper"\n\nRSpec.describe(Cart) { it("sums") { expect(Cart.new([1]).total).to eq(1) } }\n) })
+
+      err = assert_raises(JitCatch::EnvironmentError) { JitCatch::Runner.run(repo.dir, "HEAD", "HEAD", tests, reruns: 0) }
+
+      assert_equal "load", err.doc["stage"]
+      assert_equal [["ActiveRecord::NoDatabaseError: We could not find your database: app_test2."]] * 2, err.doc["setup_failed"].map { |failure| failure["stderr"].first(1) }
+    end
+  end
+
   def test_classifies_each_example_of_a_spec_that_requires_rails_helper
     with_repo do |repo|
       cart_history(repo)

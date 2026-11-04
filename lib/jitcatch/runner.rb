@@ -71,6 +71,8 @@ module JitCatch
         bundled = gemfile?(first.head)
         spec_root = File.exist?(File.join(first.head, "spec"))
         rows.each { |row| row["rerun"] = rerun_command(row, bundled, !spec_root) }
+        unloaded = load_failure_doc(change, rows, bundled)
+        raise EnvironmentError, unloaded if unloaded
       ensure
         pairs.each do |pair|
           @git.worktree_remove(pair.base)
@@ -350,11 +352,36 @@ module JitCatch
       { "bundle" => bundle, "failure" => failure }
     end
 
-    def setup_failed_doc(change, failed)
+    # A side that loads its bundle can still fail to boot what every
+    # candidate requires, such as a Rails app whose database does not exist.
+    # When no file loaded on either side, no row can tell base from head.
+    def load_failure_doc(change, rows, bundled)
+      return nil if rows.empty?
+      return nil unless rows.all? { |row| row["name"].end_with?("#load") && row["base"]["status"] == "error" && row["head"]["status"] == "error" }
+
+      first = rows.min_by { |row| row["file"] }
+      failed = %w[base head].map { |side|
+        result = first[side]
+        lines = Text.message_lines(result["message"].to_s)
+        # Ruby's own report of an uncaught error already ends in its class.
+        lines[0] = "#{result["error_class"]}: #{lines[0]}" unless lines.empty? || lines[0].match?(/\([A-Z][\w:]*\)\z/)
+        {
+          "side" => side,
+          "commit" => change[side],
+          "command" => first["rerun"],
+          "stderr" => lines.first(SETUP_STDERR_LINES),
+          "not_passed" => bundled ? unpassed_bundler_settings : []
+        }
+      }
+      setup_failed_doc(change, failed, stage: "load")
+    end
+
+    def setup_failed_doc(change, failed, stage: "setup")
       {
         "version" => VERSION,
         "command" => "run",
         "error" => "setup_failed",
+        "stage" => stage,
         "base" => change["base"],
         "head" => change["head"],
         "setup_failed" => failed
