@@ -553,6 +553,42 @@ class TestChangesGraph < Minitest::Test
     end
   end
 
+  # A superclass is looked up from the namespace around its class header.
+  # Ruby reads it before it defines the class, so `Error` in
+  # `class Error < Error` inside `Shop` is the outer `Error`, not itself.
+  def test_a_superclass_is_looked_up_from_outside_the_class_it_heads
+    with_repo do |repo|
+      errors = "class Error < StandardError\n  def initialize(message = nil)\n    super(BODY)\n  end\nend\n"
+      shop = <<~SRC
+        module Shop
+          class Error < Error
+          end
+
+          class Record
+            def initialize = @at = BODY
+          end
+
+          class Order < Record
+          end
+
+          def self.refuse = Error.new
+          def self.take = Order.new
+        end
+      SRC
+      repo.write("lib/error.rb", errors.sub("BODY", "message"))
+      repo.write("lib/shop.rb", shop.sub("BODY", "1"))
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/error.rb", errors.sub("BODY", "message.to_s"))
+      repo.write("lib/shop.rb", shop.sub("BODY", "2"))
+      repo.commit("Say the message as text.", date: "2026-02-12T00:00:00Z")
+
+      doc = JitCatch::Changes.between(repo.dir, "base", "HEAD")
+
+      assert_equal [["Error#initialize", ["Shop.refuse"]], ["Shop::Record#initialize", ["Shop.take"]]], doc["methods"].map { |method| method.values_at("name", "reachable_from") }
+    end
+  end
+
   # ActiveRecord's `create`, `create!`, and `build` call `new`, so on a
   # model they reach `initialize`. On any other class they are methods the
   # index does not see, and reach nothing. A class method of that name

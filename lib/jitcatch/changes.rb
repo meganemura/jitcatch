@@ -477,7 +477,7 @@ module JitCatch
       by_bare = methods.group_by(&:bare_name)
       # A class with no method of its own still names a class to look up.
       qualifiers = idx["namespaces"].to_h { |node| [node.qualified, []] }.merge(methods.group_by(&:qualifier))
-      parents = idx["superclasses"].to_h { |sup| [sup.qualified, resolve_constant(sup.written, sup.scope, qualifiers) || sup.written] }
+      parents = idx["superclasses"].to_h { |sup| [sup.qualified, resolve_constant(sup.written, sup.scope, qualifiers, defining: sup.qualified) || sup.written] }
       edges = []
       idx["calls"].each do |call|
         next if call.enclosing.nil? || test_file?(call.file)
@@ -549,9 +549,11 @@ module JitCatch
     end
 
     # Ruby looks a constant up from the innermost enclosing namespace out.
-    def resolve_constant(const, qualifier, qualifiers)
+    # A class header reads its superclass before it defines the class, so
+    # the superclass is never the class it heads.
+    def resolve_constant(const, qualifier, qualifiers, defining: nil)
       parts = qualifier.split("::")
-      parts.size.downto(0).map { |n| [*parts.first(n), const].join("::") }.find { |name| qualifiers.key?(name) }
+      parts.size.downto(0).map { |n| [*parts.first(n), const].join("::") }.find { |name| name != defining && qualifiers.key?(name) }
     end
 
     # The cap keeps the nearest callers; the kept names print sorted. A
