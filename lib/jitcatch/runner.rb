@@ -11,7 +11,7 @@ module JitCatch
     PASSED_ENV = %w[PATH HOME USER LOGNAME TMPDIR TEMP TMP LD_LIBRARY_PATH GEM_HOME GEM_PATH].freeze
     FIXED_ENV = { "LANG" => "C.UTF-8", "LC_ALL" => "C.UTF-8", "TERM" => "dumb" }.freeze
     # Names jitcatch sets itself, so --env cannot pass them.
-    RESERVED_ENV = (FIXED_ENV.keys + ["BUNDLE_GEMFILE"]).freeze
+    RESERVED_ENV = (FIXED_ENV.keys + %w[BUNDLE_GEMFILE TEST_ENV_NUMBER]).freeze
     # Rescuing in the child keeps Bundler's own message and drops its backtrace.
     BUNDLE_SETUP = 'begin; require "bundler/setup"; rescue Exception => e; $stderr.puts e.message; exit 1; end'
     SETUP_STDERR_LINES = 10
@@ -50,6 +50,10 @@ module JitCatch
       pairs = (1..[@workers, files.size].min.clamp(1, nil)).map { |n|
         Pair.new(base: File.join(parent, n.to_s, "base"), head: File.join(parent, n.to_s, "head"))
       }
+      # The variable parallel_tests sets: a Rails database.yml that appends
+      # it to the database name gives each checkout its own database, so base
+      # and head never load their schemas into one database at the same time.
+      @test_env_numbers = pairs.each_with_index.flat_map { |pair, index| [[pair.base, (2 * index + 1).to_s], [pair.head, (2 * index + 2).to_s]] }.to_h
       begin
         # One at a time: git takes a lock on the repository for each add.
         pairs.each { |pair| check_out(pair, change) }
@@ -307,6 +311,7 @@ module JitCatch
     def child_env(worktree)
       env = (PASSED_ENV + @env_names).to_h { |key| [key, ENV[key]] }.compact
       env["BUNDLE_GEMFILE"] = File.join(worktree, "Gemfile") if gemfile?(worktree)
+      env["TEST_ENV_NUMBER"] = @test_env_numbers.fetch(worktree)
       env.merge(FIXED_ENV)
     end
 

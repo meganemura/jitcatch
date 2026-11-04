@@ -1348,6 +1348,30 @@ class TestRunner < Minitest::Test
     end
   end
 
+  # A Rails database.yml that names `app_test<%= ENV["TEST_ENV_NUMBER"] %>`
+  # (the parallel_tests convention) then gives every process that runs at
+  # the same time a database of its own.
+  def test_each_checkout_gets_a_test_env_number_of_its_own
+    with_repo do |repo|
+      repo.write("lib/calc.rb", "class Calc; end\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("README.md", "head\n")
+      repo.commit("Touch readme.", date: "2026-02-12T00:00:00Z")
+      tests = File.join(repo.dir, "candidates")
+      number = %(flunk "number=\#{ENV.fetch("TEST_ENV_NUMBER", "unset")}")
+      write_tests(tests, {
+        "a_number_test.rb" => candidate_source("ANumberTest", "test_number", number),
+        "b_number_test.rb" => candidate_source("BNumberTest", "test_number", number)
+      })
+
+      doc = with_env("TEST_ENV_NUMBER" => "9") { JitCatch::Runner.run(repo.dir, "base", "HEAD", tests, reruns: 0, workers: 2) }
+
+      sides = doc["tests"].map { |test| [test["base"]["message_first_line"], test["head"]["message_first_line"]] }
+      assert_equal [["number=1", "number=2"], ["number=3", "number=4"]], sides.sort
+    end
+  end
+
   def test_candidate_process_gets_only_the_allowlisted_environment
     with_repo do |repo|
       repo.write("lib/flag.rb", "module Flag; def self.ok; true; end; end\n")
