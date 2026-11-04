@@ -258,6 +258,8 @@ gem の中から始まったエラーには `touches:changed_method` を付け�
 テストが変更されていない呼び出し元を通してだけ届くメソッドの中では、テストが名指しする入口から最も多くの呼び出しを下ったメソッドを選ぶ。
 たとえば、リクエストスペックが 1 回下の `LoansController#officer` と 5 回下の `Borrower#approved_cents` に届くときは `Borrower#approved_cents` を選ぶ。
 `--json` の `caller_depths` がその回数を持つ。
+上位の二つを id でしか並べられないときは、どれも選ばない。
+その行は `related guess: none of m01,m02,m03` となり、id の位置に `-` が出て、`method_id` は `null` になる。
 `related:dynamic` は、関連する変更メソッドはないが、テストが `dynamic_callers:` のメソッドを呼んでいる。
 その行の次の行が `related: none, Emit.looked_up sends render to a receiver the source does not name` のようにそれを言う。
 

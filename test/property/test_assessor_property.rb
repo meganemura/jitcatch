@@ -149,7 +149,8 @@ class TestAssessorProperty < Minitest::Test
       on_receiver = methods.select { |method| method["name"].delete_suffix(".parse").split("::").last == receiver }
       expected = (on_receiver.empty? ? methods : on_receiver).map { |method| method["id"] }
       assert_equal expected, row["method_ids"]
-      assert_includes expected, row["method_id"]
+      # Methods of one name that nothing else ranks differ only by id.
+      assert_equal [expected.size == 1 ? expected.first : "none"], [row["method_id"] || "none"]
     end
   end
 end

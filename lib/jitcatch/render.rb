@@ -305,7 +305,7 @@ module JitCatch
       rows.each do |row|
         method = row["method_id"] || "-"
         lines << "  #{row["candidate_id"]} #{row["name"]} base=#{row["base_status"]} head=#{row["head_status"]} #{method} #{row["tags"].join(",")}"
-        lines << "    related guess: #{method} of #{row["method_ids"].join(",")}" if row["method_ids"].size > 1
+        lines << "    related guess: #{row["method_id"] || "none"} of #{row["method_ids"].join(",")}" if row["method_ids"].size > 1
         if (dynamic = row["dynamic_call"])
           lines << "    related: none, #{dynamic["from"]} sends #{dynamic["name"]} to a receiver the source does not name"
         end

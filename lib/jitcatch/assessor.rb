@@ -34,10 +34,10 @@ module JitCatch
       tests = Array(@doc["tests"]).map { |test| strip(test) }
       tests.each do |test|
         if test["classification"] == "candidate"
-          method, pool = related_method(test)
+          method, pool, tied = related_method(test)
           call = broken_call(test, method)
           reason = discard_reason(test, call)
-          test["method_id"] = method&.dig("id")
+          test["method_id"] = tied ? nil : method&.dig("id")
           test["method_ids"] = pool.map { |item| item["id"] }.sort
           test["disposition"] = reason ? "discarded" : "reported"
           test["tags"] = tags_for(test, method, reason, call)
@@ -245,7 +245,7 @@ module JitCatch
       # Almost every test builds its object with `.new`, so a changed
       # constructor is the related method only when nothing else points.
       constructors, named = mentioned.partition { |item| mention(item).end_with?(".new") }
-      return [best_guess(named), named] if named.any?
+      return guess(named) if named.any?
 
       via_caller = @methods.select { |item|
         upstream = reached_by(item).map { |name| bare(name) }
@@ -254,7 +254,15 @@ module JitCatch
       sent = via_caller.select { |item| reached_by(item).any? { |name| sent_to?(name, mentions) } }
       via_caller = sent unless sent.empty?
       pool = via_caller.empty? ? constructors : via_caller
-      [best_guess(pool, depth_below_entry(pool, mentions)), pool]
+      guess(pool, depth_below_entry(pool, mentions))
+    end
+
+    # The pick, the pool, and whether only the id ordered the best two.
+    # A tied pick still sets the tags, as it did when the id was shown.
+    def guess(items, depths = {})
+      ranked = items.sort_by { |item| guess_rank(item, items, depths) }
+      tied = ranked.size > 1 && guess_rank(ranked[0], items, depths)[0...-1] == guess_rank(ranked[1], items, depths)[0...-1]
+      [ranked.first, items, tied]
     end
 
     # A test that names the class it sends a method to (`Index.parse`,
@@ -360,13 +368,11 @@ module JitCatch
     # a request spec of a Rails app, the method farthest from the entry
     # point the test calls was the one the failure came from in both, and
     # the lowest id in one, so depth ranks before the count below.
-    def best_guess(items, depths = {})
-      items.min_by do |item|
-        others = items.reject { |other| other["id"] == item["id"] }
-        covered = others.count { |other| reached_by(item).include?(other["name"]) }
-        below = @methods.count { |other| reached_by(other).include?(item["name"]) }
-        [preference(item), -covered, -depths.fetch(item["id"], 0), -below, item["id"].to_s]
-      end
+    def guess_rank(item, items, depths)
+      others = items.reject { |other| other["id"] == item["id"] }
+      covered = others.count { |other| reached_by(item).include?(other["name"]) }
+      below = @methods.count { |other| reached_by(other).include?(item["name"]) }
+      [preference(item), -covered, -depths.fetch(item["id"], 0), -below, item["id"].to_s]
     end
 
     # The fewest calls between each item and an entry point the test

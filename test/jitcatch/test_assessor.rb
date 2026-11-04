@@ -294,7 +294,32 @@ class TestAssessor < Minitest::Test
     row = JitCatch::Assessor.apply(doc)["tests"].fetch(0)
     assert_equal ["m02", %w[m01 m02], true], [row["method_id"], row["method_ids"], row["tags"].include?("related:guess")]
     old = doc.merge("methods" => [near.except("caller_depths"), deep.except("caller_depths")])
-    assert_equal "m01", JitCatch::Assessor.apply(old)["tests"].fetch(0)["method_id"], "a run file without depths keeps the lowest id"
+    assert_nil JitCatch::Assessor.apply(old)["tests"].fetch(0)["method_id"], "a run file without depths cannot tell the two apart"
+  end
+
+  # Only the id would order two methods that sit at the same depth, link
+  # to the same changed code, and both existed on base, so the row names
+  # the pool and no pick: an id says when a method appears in the diff,
+  # not where a failure came from.
+  def test_a_guess_that_only_the_id_would_settle_names_no_pick
+    plumbing = method("m01", "modified", "same", "drive", ["Trace.replay"], 1).merge("caller_depths" => { "Trace.replay" => 2 })
+    decode = method("m02", "modified", "same", "decode", ["Trace.replay"], 10).merge("caller_depths" => { "Trace.replay" => 2 })
+    near = method("m03", "modified", "same", "check", ["Trace.replay"], 20).merge("caller_depths" => { "Trace.replay" => 1 })
+    doc = {
+      "methods" => [plumbing, decode, near],
+      "constants" => [],
+      "tests_dir" => "candidates",
+      "tests" => [candidate("t01", "FramesTest#test_frames", %w[replay], failure("Expected false to be truthy."))]
+    }
+
+    out = JitCatch::Assessor.apply(doc)
+    row = out["tests"].fetch(0)
+    assert_equal [nil, %w[m01 m02 m03], true], [row["method_id"], row["method_ids"], row["tags"].include?("related:guess")]
+    assert_includes JitCatch::Render.assess_text(out),
+      "  c01 FramesTest#test_frames base=pass head=fail - assertion,related:guess,report,touches:unchanged_caller\n" \
+      "    related guess: none of m01,m02,m03\n"
+    deeper = doc.merge("methods" => [plumbing, decode.merge("caller_depths" => { "Trace.replay" => 3 }), near])
+    assert_equal "m02", JitCatch::Assessor.apply(deeper)["tests"].fetch(0)["method_id"]
   end
 
   def test_candidate_ids_follow_test_ids_and_other_rows_carry_nulls
