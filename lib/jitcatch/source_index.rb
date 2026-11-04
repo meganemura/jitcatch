@@ -94,14 +94,33 @@ module JitCatch
       saving + destroying => %i[after_commit after_rollback]
     }.flat_map { |calls, macros| macros.map { |macro| [macro, calls.sort.freeze] } }.to_h.freeze
     CALLBACK_CONDITIONS = %w[if unless].freeze
+    # Rails reads `on:` only on a validation and on a commit or rollback
+    # callback. A context of its own (`on: :publish`) runs only from a
+    # call that takes one: `valid?(:publish)` or `save(context: :publish)`.
+    CONTEXT_MACROS = %i[validate validates before_validation after_validation after_commit after_rollback].freeze
+    validating = %w[#valid? #invalid? #validate #validate!]
+    CONTEXT_CALLS = { "create" => creating + validating, "update" => updating + validating, "destroy" => destroying }.freeze
+    OWN_CONTEXT_CALLS = (%w[#save #save!] + validating).freeze
+    # FactoryBot's calls that save what they build, and so run its save
+    # callbacks. The other FACTORY_CALLS only build.
+    SAVING_FACTORY_CALLS = %w[create create_list create_pair].freeze
 
     # A class header's superclass as written, and the namespace the header
     # is in, which the name is looked up from.
     Superclass = Data.define(:qualified, :written, :scope)
     # One method a callback or validation line in a class body names.
     # `declared` is the line in short (`after_save :count_save`,
-    # `validates if: :checked?`).
-    Callback = Data.define(:qualifier, :macro, :method, :declared)
+    # `validates if: :checked?`). `contexts` holds the `on:` symbols as
+    # written, or nil when the line names none.
+    Callback = Data.define(:qualifier, :macro, :method, :declared, :contexts) do
+      # The record calls, as `.create` or `#save`, that can run it.
+      def calls
+        all = RECORD_CALLBACKS.fetch(macro.to_sym)
+        return all if contexts.nil? || !CONTEXT_MACROS.include?(macro.to_sym)
+
+        all & contexts.flat_map { |context| CONTEXT_CALLS.fetch(context, OWN_CONTEXT_CALLS) }
+      end
+    end
 
     # A `require_relative` with one string literal, written at the top of
     # the file or in a class body: [path, line].
@@ -164,9 +183,34 @@ module JitCatch
       qualifier.to_s.empty? ? "#{sep}#{bare}" : "#{qualifier}#{sep}#{bare}"
     end
 
-    # How a test that builds an object from the factory `name` mentions it.
-    def self.factory_mention(name)
-      "factory(:#{name})"
+    # How a test that builds an object from the factory `name` mentions it:
+    # `create(:loan)` when the call saves the record, `build(:loan)` when it
+    # does not.
+    def self.factory_mention(name, call)
+      SAVING_FACTORY_CALLS.include?(call.to_s) ? "create(:#{name})" : "build(:#{name})"
+    end
+
+    def self.unsaved_mention?(name)
+      name.start_with?("build(:")
+    end
+
+    # The bare names of the record calls (`#save!`) among `calls`.
+    def self.record_calls(calls)
+      calls.filter_map do |call|
+        owner, sep, bare = split_qualified(call)
+        bare if sep == "#" && !owner.empty?
+      end
+    end
+
+    # Whether a test that names `names` makes one of `record_calls` on any
+    # receiver: the record `build(:loan)` returns sits in a local the source
+    # does not type, so the receiver cannot be checked. RSpec's `be_valid`
+    # calls `valid?`.
+    def self.saves_or_validates?(names, record_calls)
+      names.any? do |name|
+        bare = split_qualified(name).last
+        record_calls.include?(bare) || record_calls.include?("#{bare.delete_prefix("be_")}?")
+      end
     end
 
     # Whether a call a test writes (`Loan.create!`, `Loan#save`) is the
@@ -492,9 +536,22 @@ module JitCatch
         values = pair.value.is_a?(Prism::ArrayNode) ? pair.value.elements : [pair.value]
         values.grep(Prism::SymbolNode).map { |arg| [arg.unescaped, "#{pair.key.unescaped}: :#{arg.unescaped}"] }
       end
+      context = arguments.grep(Prism::KeywordHashNode).flat_map(&:elements).grep(Prism::AssocNode)
+        .find { |pair| pair.key.is_a?(Prism::SymbolNode) && pair.key.unescaped == "on" }&.value
+      contexts = callback_contexts(context)
+      on = contexts && CONTEXT_MACROS.include?(stmt.name) ? ", on: #{slice_of(context)}" : ""
       named.each do |method, written|
-        @callbacks << Callback.new(qualifier: qualifier.to_s, macro: stmt.name.to_s, method: method, declared: "#{stmt.name} #{written}")
+        @callbacks << Callback.new(qualifier: qualifier.to_s, macro: stmt.name.to_s, method: method, declared: "#{stmt.name} #{written}#{on}", contexts: contexts)
       end
+    end
+
+    # An `on:` the source does not spell as symbols could be any context,
+    # so it narrows nothing.
+    def callback_contexts(value)
+      values = value.is_a?(Prism::ArrayNode) ? value.elements : [value]
+      return nil if value.nil? || values.empty? || !values.all?(Prism::SymbolNode)
+
+      values.map(&:unescaped)
     end
 
     def record_attributes_as_methods(stmt, qualifier, visibility, singleton)
@@ -855,7 +912,7 @@ module JitCatch
     # helper, not FactoryBot's.
     def factory_names(enclosings)
       enclosings.flat_map { |name| @factory_calls.fetch(name, []) }
-        .filter_map { |call, factory| self.class.factory_mention(factory) unless @defined.key?(call) }
+        .filter_map { |call, factory| self.class.factory_mention(factory, call) unless @defined.key?(call) }
     end
 
     # `create(:loan)` or `FactoryBot.build("loan")` builds from the factory

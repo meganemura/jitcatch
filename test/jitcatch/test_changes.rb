@@ -693,10 +693,10 @@ class TestChanges < Minitest::Test
 
       assert_equal [
         { "file" => "spec/models/desk_spec.rb", "via" => "builder", "calls" => ["Loan.create!"] },
-        { "file" => "spec/models/loan_spec.rb", "via" => "builder", "calls" => ["factory(:loan)"] },
+        { "file" => "spec/models/loan_spec.rb", "via" => "builder", "calls" => ["create(:loan)"] },
         { "file" => "spec/models/new_spec.rb", "via" => "builder", "calls" => ["Loan.new"] }
       ], constructor["existing_tests"]
-      assert_equal %w[Loan.build Loan.create Loan.create! factory(:approved_loan) factory(:arrears) factory(:credit) factory(:debt) factory(:loan) factory(:overdue)],
+      assert_equal %w[Loan.build Loan.create Loan.create! build(:approved_loan) build(:arrears) build(:credit) build(:debt) build(:loan) build(:overdue) create(:approved_loan) create(:arrears) create(:credit) create(:debt) create(:loan) create(:overdue)],
         constructor["builders"]
       assert_equal [
         { "file" => "spec/factories/loans.rb", "line" => 10, "name" => "mystery", "reason" => "class: is not a constant, a string, or a symbol" },
@@ -705,8 +705,8 @@ class TestChanges < Minitest::Test
       ], doc["factories_skipped"]
 
       text = JitCatch::Render.context_text(doc)
-      assert_includes text, "    tests: spec/models/desk_spec.rb via Loan.create!; spec/models/loan_spec.rb via factory(:loan); spec/models/new_spec.rb via Loan.new\n"
-      assert_includes text, "    built_by: Loan.build, Loan.create, Loan.create!, factory(:approved_loan), factory(:arrears), factory(:credit), factory(:debt), factory(:loan), factory(:overdue)\n    tests: "
+      assert_includes text, "    tests: spec/models/desk_spec.rb via Loan.create!; spec/models/loan_spec.rb via create(:loan); spec/models/new_spec.rb via Loan.new\n"
+      assert_includes text, "    built_by: Loan.build, Loan.create, Loan.create!, build(:approved_loan), build(:arrears), build(:credit), build(:debt), build(:loan), build(:overdue), create(:approved_loan), create(:arrears), create(:credit), create(:debt), create(:loan), create(:overdue)\n    tests: "
       assert_includes text, "factories_skipped:\n  spec/factories/loans.rb:10 factory :mystery: class: is not a constant, a string, or a symbol\n"
     end
   end
@@ -745,7 +745,7 @@ class TestChanges < Minitest::Test
       doc = JitCatch::Changes.between(repo.dir, "base", "HEAD")
       by_name = doc["methods"].to_h { |method| [method["name"], method] }
 
-      saving = %w[Loan#save Loan#save! Loan#update Loan#update! Loan.create Loan.create! factory(:loan)]
+      saving = %w[Loan#save Loan#save! Loan#update Loan#update! Loan.create Loan.create! build(:loan) create(:loan)]
       assert_equal [["after_save :count_save"], saving], by_name["Loan#count_save"].values_at("callbacks", "run_by")
       assert_equal [["validates if: :checked?"], (saving + %w[Loan#invalid? Loan#valid? Loan#validate Loan#validate!]).sort],
         by_name["Loan#checked?"].values_at("callbacks", "run_by")
@@ -753,7 +753,7 @@ class TestChanges < Minitest::Test
       assert_equal [[], []], by_name["Notes#tidy"].values_at("callbacks", "run_by")
       assert_equal [
         { "file" => "spec/models/create_spec.rb", "via" => "callback", "calls" => ["Loan.create!"] },
-        { "file" => "spec/models/factory_spec.rb", "via" => "callback", "calls" => ["factory(:loan)"] },
+        { "file" => "spec/models/factory_spec.rb", "via" => "callback", "calls" => ["create(:loan)"] },
         { "file" => "spec/models/named_spec.rb", "via" => "grep" },
         { "file" => "spec/models/save_spec.rb", "via" => "callback", "calls" => ["Loan#save!"] }
       ], by_name["Loan#count_save"]["existing_tests"]
@@ -804,8 +804,102 @@ class TestChanges < Minitest::Test
 
       tidy = JitCatch::Changes.between(repo.dir, "base", "HEAD")["methods"].fetch(0)
 
-      assert_includes tidy["run_by"], "factory(:loan)"
-      assert_equal [{ "file" => "spec/models/loan_spec.rb", "via" => "callback", "calls" => ["factory(:loan)"] }], tidy["existing_tests"]
+      assert_includes tidy["run_by"], "create(:loan)"
+      assert_equal [{ "file" => "spec/models/loan_spec.rb", "via" => "callback", "calls" => ["create(:loan)"] }], tidy["existing_tests"]
+    end
+  end
+
+  # `on:` narrows a validation or commit callback to the saves of that
+  # context: an update never runs a create-only callback, so a method that
+  # only updates does not reach it. A custom context runs only from a call
+  # that takes one.
+  def test_a_callback_on_a_context_is_run_only_by_the_saves_of_that_context
+    with_repo do |repo|
+      repo.write("lib/application_record.rb", "class ApplicationRecord < ActiveRecord::Base\nend\n")
+      loan = lambda do |step|
+        <<~RUBY
+          class Loan < ApplicationRecord
+            before_validation :mark_pending, on: :create
+            validate :check_limit, on: :update
+            after_commit :notify, on: [:create, :destroy]
+            validates :amount, presence: true, if: :ready?, on: :publish
+            before_save :tidy, on: :create
+
+            def approve = update!(state: "approved")
+
+            def mark_pending = #{step}
+            def check_limit = #{step}
+            def notify = #{step}
+            def ready? = #{step}
+            def tidy = #{step}
+          end
+        RUBY
+      end
+      repo.write("lib/loan.rb", loan.call(1))
+      repo.write("lib/loan_desk.rb", "class LoanDesk\n  def self.open = Loan.create!(amount: 1)\nend\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/loan.rb", loan.call(2))
+      repo.commit("Step by two.", date: "2026-02-12T00:00:00Z")
+
+      doc = JitCatch::Changes.between(repo.dir, "base", "HEAD")
+      by_name = doc["methods"].to_h { |method| [method["name"], method] }
+
+      validating = %w[Loan#invalid? Loan#valid? Loan#validate Loan#validate!]
+      assert_equal [["before_validation :mark_pending, on: :create"], (%w[Loan#save Loan#save! Loan.create Loan.create!] + validating).sort, ["LoanDesk.open"]],
+        by_name["Loan#mark_pending"].values_at("callbacks", "run_by", "reachable_from")
+      assert_equal [["validate :check_limit, on: :update"], (%w[Loan#save Loan#save! Loan#update Loan#update!] + validating).sort, ["Loan#approve"]],
+        by_name["Loan#check_limit"].values_at("callbacks", "run_by", "reachable_from")
+      assert_equal [["after_commit :notify, on: [:create, :destroy]"], %w[Loan#destroy Loan#destroy! Loan#save Loan#save! Loan.create Loan.create!]],
+        by_name["Loan#notify"].values_at("callbacks", "run_by")
+      assert_equal [["validates if: :ready?, on: :publish"], (%w[Loan#save Loan#save!] + validating).sort, []],
+        by_name["Loan#ready?"].values_at("callbacks", "run_by", "reachable_from")
+      assert_equal %w[Loan#save Loan#save! Loan#update Loan#update! Loan.create Loan.create!], by_name["Loan#tidy"]["run_by"]
+      assert_includes JitCatch::Render.context_text(doc), "    run_by: Loan#invalid?, Loan#save, Loan#save!, Loan#valid?, Loan#validate, Loan#validate!, Loan.create, Loan.create! (before_validation :mark_pending, on: :create)\n"
+    end
+  end
+
+  # `build(:loan)` makes a record without saving it, so on its own it runs
+  # no callback. A test that then saves or validates the record does run the
+  # callbacks of a new record; RSpec's `be_valid` calls `valid?`.
+  def test_a_built_record_runs_a_callback_only_when_the_test_saves_or_validates_it
+    with_repo do |repo|
+      repo.write("lib/application_record.rb", "class ApplicationRecord < ActiveRecord::Base\nend\n")
+      loan = lambda do |step|
+        <<~RUBY
+          class Loan < ApplicationRecord
+            before_validation :mark_pending
+            after_save :count_save
+            after_update :log_update
+
+            def mark_pending = #{step}
+            def count_save = #{step}
+            def log_update = #{step}
+          end
+        RUBY
+      end
+      repo.write("lib/loan.rb", loan.call(1))
+      repo.write("spec/factories/loans.rb", "FactoryBot.define do\n  factory :loan\nend\n")
+      repo.write("spec/models/build_spec.rb", "loan = build(:loan)\nexpect(loan.state).to eq(nil)\n")
+      repo.write("spec/models/stub_spec.rb", "build_stubbed(:loan)\n")
+      repo.write("spec/models/create_spec.rb", "create_list(:loan, 2)\n")
+      repo.write("spec/models/valid_spec.rb", "expect(build(:loan)).to be_valid\n")
+      repo.write("spec/models/save_spec.rb", "loan = build(:loan)\nloan.save!\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/loan.rb", loan.call(2))
+      repo.commit("Step by two.", date: "2026-02-12T00:00:00Z")
+
+      by_name = JitCatch::Changes.between(repo.dir, "base", "HEAD")["methods"].to_h { |method| [method["name"], method] }
+
+      assert_includes by_name["Loan#count_save"]["run_by"], "build(:loan)"
+      refute_includes by_name["Loan#log_update"]["run_by"], "build(:loan)"
+      assert_equal %w[spec/models/create_spec.rb spec/models/save_spec.rb spec/models/valid_spec.rb], by_name["Loan#mark_pending"]["existing_tests"].map { |hit| hit["file"] }
+      assert_equal [
+        { "file" => "spec/models/create_spec.rb", "via" => "callback", "calls" => ["create(:loan)"] },
+        { "file" => "spec/models/save_spec.rb", "via" => "callback", "calls" => ["build(:loan)"] }
+      ], by_name["Loan#count_save"]["existing_tests"]
+      assert_equal [], by_name["Loan#log_update"]["existing_tests"]
     end
   end
 end

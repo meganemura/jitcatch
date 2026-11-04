@@ -438,7 +438,7 @@ class TestRSpecRunner < Minitest::Test
 
       id = doc["methods"].find { |method| method["name"] == "Loan#initialize" }["id"]
       rows = doc["tests"].to_h { |test| [test["name"], test.values_at("mentions", "method_id")] }
-      assert_equal({ "Loan creates" => [%w[Loan.create! approved_by], id], "Loan builds a factory" => [%w[approved_by factory(:loan)], id] }, rows)
+      assert_equal({ "Loan creates" => [%w[Loan.create! approved_by], id], "Loan builds a factory" => [%w[approved_by create(:loan)], id] }, rows)
       doc["tests"].each { |test| assert_includes test["tags"], "touches:changed_method", test["name"] }
     end
   end
@@ -466,7 +466,7 @@ class TestRSpecRunner < Minitest::Test
 
       ids = doc["methods"].select { |method| %w[Loan#checked? Loan#count_save].include?(method["name"]) }.map { |method| method["id"] }
       rows = doc["tests"].to_h { |test| [test["name"], test.values_at("mentions", "method_ids")] }
-      assert_equal({ "Loan creates" => [%w[Loan.create! saves], ids], "Loan builds a factory" => [%w[factory(:loan) saves], ids] }, rows)
+      assert_equal({ "Loan creates" => [%w[Loan.create! saves], ids], "Loan builds a factory" => [%w[create(:loan) saves], ids] }, rows)
       doc["tests"].each { |test| assert_includes test["tags"], "touches:changed_method", test["name"] }
     end
   end

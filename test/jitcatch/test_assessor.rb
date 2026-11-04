@@ -188,7 +188,7 @@ class TestAssessor < Minitest::Test
   # call names only the method that lists it.
   def test_a_listed_call_mentions_the_method_it_runs
     saved = method("m01", "modified", "same", "count_save", [], 1).merge("run_by" => %w[Calc#save! Calc.create!])
-    built = method("m02", "modified", "same", "initialize", [], 10).merge("builders" => %w[factory(:calc)])
+    built = method("m02", "modified", "same", "initialize", [], 10).merge("builders" => %w[create(:calc)])
     doc = {
       "methods" => [saved, built],
       "constants" => [],
@@ -196,7 +196,7 @@ class TestAssessor < Minitest::Test
       "tests" => [
         candidate("t01", "SaveTest#test_save", %w[Calc#save!], failure("Expected: 1\n  Actual: 2")),
         candidate("t02", "CreateTest#test_create", %w[Shop::Calc.create!], failure("Expected: 1\n  Actual: 2")),
-        candidate("t03", "FactoryTest#test_factory", %w[factory(:calc)], failure("Expected: 1\n  Actual: 2"))
+        candidate("t03", "FactoryTest#test_factory", %w[create(:calc)], failure("Expected: 1\n  Actual: 2"))
       ]
     }
 

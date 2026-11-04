@@ -21,7 +21,9 @@ module JitCatch
     # One worker's two checkouts. A worker runs one file at a time in them.
     Pair = Data.define(:base, :head)
     # The names a test can mention, and the constants head defines.
-    Known = Data.define(:names, :constants)
+    # `unsaved` maps a `build(:loan)` that only a callback lists to the
+    # record calls that make it run that callback.
+    Known = Data.define(:names, :constants, :unsaved)
 
     def self.run(repo, base_ref, head_ref, tests_dir, reruns: 2, timeout: 10, env: [], workers: 1, serial: false)
       new(repo, base_ref, head_ref, tests_dir, reruns: reruns, timeout: timeout, env: env, workers: workers, serial: serial).run
@@ -71,7 +73,7 @@ module JitCatch
         raise EnvironmentError, setup_failed_doc(change, failed) unless failed.empty?
 
         bundle = { "base" => setups[0]["bundle"], "head" => setups[1]["bundle"] }
-        rows = classify_files(files, pairs, normalizer, Known.new(names: mention_names(change), constants: changes.head_constants))
+        rows = classify_files(files, pairs, normalizer, Known.new(names: mention_names(change), constants: changes.head_constants, unsaved: unsaved_mentions(change)))
         bundled = gemfile?(first.head)
         spec_root = File.exist?(File.join(first.head, "spec"))
         rows.each { |row| row["rerun"] = rerun_command(row, bundled, !spec_root) }
@@ -468,7 +470,23 @@ module JitCatch
       referenced -= foreign_calls(index, test_name, line, known.constants)
       referenced += script_names(index.paths_named(test_name, line), relative, head_dir)
       names = known.names
-      referenced.select { |name| names.include?(name) || names.include?(SourceIndex.split_qualified(name).last) || names.include?(Assessor.mention_of(name)) }
+      referenced.select { |name|
+        next false if known.unsaved.key?(name) && !SourceIndex.saves_or_validates?(referenced, known.unsaved[name])
+
+        names.include?(name) || names.include?(SourceIndex.split_qualified(name).last) || names.include?(Assessor.mention_of(name))
+      }
+    end
+
+    # A `build(:loan)` that builds a changed class runs its constructor
+    # whatever the test does next, so only one that no method lists as a
+    # builder waits for a save or a validation.
+    def unsaved_mentions(change)
+      builders = change["methods"].flat_map { |method| Array(method["builders"]) }
+      change["methods"].each_with_object(Hash.new { |hash, key| hash[key] = [] }) { |method, found|
+        run_by = Array(method["run_by"])
+        run_by.select { |name| SourceIndex.unsaved_mention?(name) && !builders.include?(name) }
+          .each { |name| found[name] |= SourceIndex.record_calls(run_by) }
+      }.to_h
     end
 
     # `File.write` reaches no method of the repository, so neither it nor

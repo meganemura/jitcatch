@@ -1343,7 +1343,7 @@ class TestRunner < Minitest::Test
 
       id = doc["methods"].find { |method| method["name"] == "Loan#initialize" }["id"]
       rows = doc["tests"].to_h { |test| [test["name"], test.values_at("mentions", "method_id")] }
-      assert_equal({ "LoanTest#test_create_bang" => [%w[Loan.create! approved_by], id], "LoanTest#test_factory" => [%w[approved_by factory(:loan)], id] }, rows)
+      assert_equal({ "LoanTest#test_create_bang" => [%w[Loan.create! approved_by], id], "LoanTest#test_factory" => [%w[approved_by create(:loan)], id] }, rows)
       doc["tests"].each { |test| assert_includes test["tags"], "touches:changed_method", test["name"] }
     end
   end
@@ -1375,6 +1375,16 @@ class TestRunner < Minitest::Test
               loan.save!
               assert_equal 1, loan.saves
             end
+
+            def test_build
+              assert_nil build(:loan).saves
+            end
+
+            def test_build_save
+              loan = build(:loan)
+              loan.save!
+              assert_equal 1, loan.saves
+            end
           end
         TEST
       })
@@ -1387,10 +1397,12 @@ class TestRunner < Minitest::Test
       rows = doc["tests"].to_h { |test| [test["name"], test.values_at("mentions", "method_ids")] }
       assert_equal({
         "LoanTest#test_create_bang" => [%w[Loan.create! saves], ids],
-        "LoanTest#test_factory" => [%w[factory(:loan) saves], ids],
-        "LoanTest#test_save_bang" => [%w[Loan#save! Loan#saves saves], ids]
+        "LoanTest#test_factory" => [%w[create(:loan) saves], ids],
+        "LoanTest#test_save_bang" => [%w[Loan#save! Loan#saves saves], ids],
+        "LoanTest#test_build" => [%w[saves], []],
+        "LoanTest#test_build_save" => [%w[build(:loan) saves], ids]
       }, rows)
-      doc["tests"].each { |test| assert_includes test["tags"], "touches:changed_method", test["name"] }
+      doc["tests"].each { |test| assert_includes test["tags"], "touches:changed_method", test["name"] unless test["name"] == "LoanTest#test_build" }
     end
   end
 

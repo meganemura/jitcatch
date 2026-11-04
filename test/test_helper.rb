@@ -197,6 +197,7 @@ module JitCatch
 
       module Factories
         def create(name) = Object.const_get(name.to_s.capitalize).new.tap(&:save!)
+        def build(name) = Object.const_get(name.to_s.capitalize).new
       end
     RUBY
 

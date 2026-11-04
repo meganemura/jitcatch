@@ -464,18 +464,18 @@ module JitCatch
 
     # A factory whose association builds the class runs its constructor and
     # its save callbacks too: `create(:loan)` saves the Borrower that
-    # `borrower` builds.
+    # `borrower` builds, and `build(:loan)` builds it unsaved.
     def factory_mentions(qualifier, factories)
-      factories.filter_map { |factory|
-        SourceIndex.factory_mention(factory.name) if factory.reason.nil? && (factory.class_name == qualifier || factory.builds.include?(qualifier))
-      }
+      factories.select { |factory| factory.reason.nil? && (factory.class_name == qualifier || factory.builds.include?(qualifier)) }
+        .flat_map { |factory| %w[build create].map { |call| SourceIndex.factory_mention(factory.name, call) } }
     end
 
     # The calls that run a changed method because a model's class body
     # names it, or names a method that reaches it, in a callback or a
     # validation (`after_save :count_save`). A factory of the model counts
-    # where `.create` does: `create(:loan)` saves, though a test that only
-    # writes `build(:loan)` is read as the same mention.
+    # where `.create` does: `create(:loan)` saves a new record. `build(:loan)`
+    # counts there too, but a test hit needs the test to save or validate
+    # the record as well (`call_hits`).
     def decorate_callbacks(methods, base_idx, head_idx, factories, head_edges, base_edges)
       base_callbacks = record_callbacks(base_idx)
       head_callbacks = record_callbacks(head_idx)
@@ -528,7 +528,7 @@ module JitCatch
     end
 
     def callback_calls(callback, factories)
-      calls = SourceIndex::RECORD_CALLBACKS.fetch(callback.macro.to_sym).map { |call| "#{callback.qualifier}#{call}" }
+      calls = callback.calls.map { |call| "#{callback.qualifier}#{call}" }
       calls.include?("#{callback.qualifier}.create") ? calls + factory_mentions(callback.qualifier, factories) : calls
     end
 
@@ -541,9 +541,12 @@ module JitCatch
     def call_hits(paths, calls, via, base_idx, head_idx)
       return [] if calls.empty?
 
+      record_calls = SourceIndex.record_calls(calls) if via == "callback"
       paths.filter_map { |path|
         index = head_idx["indexes"][path] || base_idx["indexes"][path]
-        found = (@test_names[path] ||= index.referenced_names("")).select { |name| calls.any? { |call| SourceIndex.names_call?(name, call) } }
+        names = (@test_names[path] ||= index.referenced_names(""))
+        found = names.select { |name| calls.any? { |call| SourceIndex.names_call?(name, call) } }
+        found.reject! { |name| SourceIndex.unsaved_mention?(name) } if record_calls && !SourceIndex.saves_or_validates?(names, record_calls)
         { "file" => path, "via" => via, "calls" => found } unless found.empty?
       }
     end

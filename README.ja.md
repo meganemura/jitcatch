@@ -274,21 +274,26 @@ Concern の `included do`、`prepended do`、`class_methods do` ブロックの�
 片方の側にしか無いクラスやモジュールも定数として `added` か `removed` になり、ソースには宣言の行が出る。
 各メソッドには、旧ソースと新ソース、ライブラリ内の呼び出し、そこへ届く入口（`reachable_from`）、それに言及している既存テストが出る。
 変更された `initialize` には `built_by:` も出る。
-これは `new` のほかにそれを走らせる呼び出しで、Active Record のモデルの `create`、`create!`、`build` と、そのクラスを作る FactoryBot のファクトリーごとの `factory(:loan)` である。
-その `tests:` には、そのどれかか `Owner.new` を呼ぶテストファイルが、呼んでいるもの（`spec/models/loan_spec.rb via factory(:loan)`）と一緒に出る。
+これは `new` のほかにそれを走らせる呼び出しで、Active Record のモデルの `create`、`create!`、`build` と、そのクラスを作る FactoryBot のファクトリーごとの `build(:loan)` と `create(:loan)` である。
+その `tests:` には、そのどれかか `Owner.new` を呼ぶテストファイルが、呼んでいるもの（`spec/models/loan_spec.rb via create(:loan)`）と一緒に出る。
 テストが `initialize` をその名前で呼ぶことはないので、コンストラクタには grep の結果を出さない。
 ファクトリーは `spec/factories` と `test/factories` から、読み込まずにソースとして読む。
 クラスはまず `class:`（定数、文字列、シンボル）から、次に親（`parent:` か、入れ子の外側のファクトリー）から、最後に名前を camelize したものから決まり、`aliases:` の別名も同じクラスを作る。
 ファクトリーは、その関連が作るクラスにも数える。
 関連とは、ファクトリーの名前と同じ素の `borrower`、`association :borrower`（`factory: :user` も）、`association` を呼ぶ属性ブロックで、そのファクトリーか継承元に書いたもののことで、関連の関連もたどる。
-そのため `factory(:loan)` は `Borrower` も作る。
+そのため `create(:loan)` は `Borrower` も保存する。
 trait の中の関連はたどらない。
 ソースからクラスが決まらないファクトリーはたどらず、理由と一緒に `factories_skipped:` に出す。
 実行時に計算する `class:`、そこで読んだファクトリーにない親、どのファイルも定義しないクラスがこれに当たり、最後のものはアプリが設定する活用（`ApiKey` と `APIKey`）で起こりうる。
 Active Record のモデルのクラス本体がコールバックかバリデーション（`after_save :count_save`、`validate :check`、またはそのどちらかの `if:` や `unless:`。`validates :amount, presence: true, if: :checked?` もこれに当たる）で名前を挙げるメソッドには `run_by:` が出る。
 これは Rails の規則でそのメソッドを走らせる呼び出しで、後ろに名前を挙げた行が続く。
-save のコールバックには `Loan.create`、`Loan.create!`、`Loan#save`、`Loan#save!`、`Loan#update`、`Loan#update!` と、そのクラスのファクトリーが出る（create のコールバックには update が、update のコールバックには create が出ない）。
+save のコールバックには `Loan.create`、`Loan.create!`、`Loan#save`、`Loan#save!`、`Loan#update`、`Loan#update!` と、そのクラスのファクトリーごとの `create(:loan)` と `build(:loan)` が出る（create のコールバックには update が、update のコールバックには create が出ない）。
 バリデーションにはさらに `Loan#valid?`、`Loan#invalid?`、`Loan#validate`、`Loan#validate!` が出る。
+バリデーションか、commit や rollback のコールバックに `on:` があるときは、その文脈の呼び出しだけを残し、行にもその `on:` を出す。
+`before_validation :mark_pending, on: :create` には update が出ないので、`update!` を呼ぶメソッドはそこへ届かない。
+`on: :update` には create もファクトリーも出ない。
+アプリ独自の文脈（`on: :publish`）は文脈を受け取る呼び出しからしか走らないので、`Loan#save`、`Loan#save!` と四つのバリデーションの呼び出しが出る。
+シンボルで書いていない `on:` は何も絞らない。
 destroy のコールバックには `Loan#destroy` と `Loan#destroy!` が出る。
 そのようなコールバックから届くメソッド（`reachable_from`）にも同じ行が出る。
 テスト以外のメソッドがソースに書いた形でその呼び出しをするとき（`LoanDesk.open` の中の `Loan.create!` や、`Loan` のメソッドの中の `update!`）、そのメソッドとその呼び出し元が `reachable_from` に加わる。
@@ -296,7 +301,10 @@ destroy のコールバックには `Loan#destroy` と `Loan#destroy!` が出る
 その `tests:` には、grep の結果に加えて、そのどれかを呼ぶテストファイルが出る（`spec/models/loan_spec.rb via Loan.create!`）。
 `run` はその呼び出しをそのメソッドへの言及として数える。
 `Loan#save` は、テストのソースからレコードのクラスが決まるとき（`loan = Loan.new`）に数える。
-ファクトリーは保存しない `build(:loan)` でも数える。
+`build(:loan)` は保存しないので、コールバックが挙げるレコードへの呼び出しも同じテストがするとき（`build(:loan).save!` や、`valid?` を呼ぶ `expect(build(:loan)).to be_valid`）にだけ数える。
+作ったレコードはソースが型を決めないローカル変数に入るので、その呼び出しのレシーバーは確かめない。
+そのため `build(:loan)` の隣で別のレコードを保存するテストも数える。
+作るだけのテストは `tests:` にも `run` の言及にも出ない。
 Concern の中のコールバックの行、親クラスが宣言するもの、サブクラスへの呼び出しはたどらない。
 言及しているテストがないときは `entry_point_tests` が出る。
 `reachable_from` のうち public な入口について、そのクラスを書き、入口と同じ名前のメソッドを呼んでいるテストファイルである。
@@ -513,7 +521,7 @@ CLI を使わない場合は、`skills/jitcatch` をエージェントの skills
   `Owner.new` は、名前が `Owner` で終わるクラスの `initialize` への言及になり、`mentions` にはテストが書いたとおりに出る。
   `A::Owner.new` は、名前が `A::Owner` で終わるクラスだけを指すので、`B::Owner#initialize` を指さない。
   変更されたコンストラクタの `built_by:` にある呼び出しも同じく言及になる。
-  Active Record のモデルへの `Loan.create!` や、FactoryBot の呼び出し（`create(:loan)`、`build(:loan)`、`create_list(:loan, 2)`、`build_stubbed(:loan)`）がこれに当たり、後者は `mentions` に `factory(:loan)` として出る。
+  Active Record のモデルへの `Loan.create!` や、FactoryBot の呼び出し（`create(:loan)`、`build(:loan)`、`create_list(:loan, 2)`、`build_stubbed(:loan)`）がこれに当たり、後者は `mentions` に、保存する呼び出し（`create`、`create_list`、`create_pair`）なら `create(:loan)`、保存しないものなら `build(:loan)` として出る。
   その名前のメソッドを自分で定義するファイルはそのメソッドを呼ぶので FactoryBot の呼び出しにならず、`attributes_for` はオブジェクトを作らない。
   テストが名前を書いたクラスか、`.new` で作ったそのインスタンスに送る呼び出しは、`Index.parse` や `Cart#total` のようにそのクラスと一緒にも出る。
   同じ名前の変更メソッドが複数あるとき、関連 id はそのクラス(または名前がそれで終わるクラス)のものになる。
