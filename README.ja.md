@@ -251,6 +251,8 @@ gem の中から始まったエラーには `touches:changed_method` を付け�
 変わった定数は `k01` で、その定数を読むだけで本体が変わっていないメソッドは `affected`（`via=k01`）になる。
 `attr_reader`、`attr_writer`、`attr_accessor`、`Struct.new` や `Data.define` のメンバーが定義する読み書きのメソッドもメソッドとして数え、ソースには名前一つの形（`attr_reader :seed`）が出る。
 そのため、その行から外した名前は `removed` になり、行に残った名前は変わらない。
+`*FIELDS` の形で渡したリストも、同じファイルがその前に `FIELDS = %i[x y].freeze` のようにシンボルのリストを入れていれば数える。
+このとき各メンバーは、そのリストの中の自分のシンボルの行を持つ。
 クラス本体の条件分岐の中にある `def` や読み出しメソッド（`attr_reader :x if cond`）も数える。
 分岐はすべてが順に走ったものとして読むので、分岐の中の引数のない `private` は条件分岐の後にも効く。
 Concern の `included do`、`prepended do`、`class_methods do` ブロックの中にあるものも数える。

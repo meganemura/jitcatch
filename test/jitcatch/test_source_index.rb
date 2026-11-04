@@ -513,6 +513,35 @@ end
     ], index.methods.map { |method| [method.qualified, method.visibility, method.source, method.params, method.start_line] }.sort
   end
 
+  def test_a_splat_of_a_symbol_list_constant_defines_its_members
+    source = <<~RUBY
+      module Geo
+        FIELDS = %i[x y].freeze
+        NAMES = [:label]
+
+        Point = Struct.new(*FIELDS)
+        Tag = Data.define(*NAMES, :kind)
+
+        class Box
+          attr_reader(*FIELDS)
+          attr_reader(*UNKNOWN)
+        end
+      end
+    RUBY
+    index = JitCatch::SourceIndex.parse(source, file: "lib/geo.rb")
+
+    assert_equal [
+      ["Geo::Box#x", "attr_reader :x", 2],
+      ["Geo::Box#y", "attr_reader :y", 2],
+      ["Geo::Point#x", "Struct.new(:x)", 2],
+      ["Geo::Point#x=", "Struct.new(:x)", 2],
+      ["Geo::Point#y", "Struct.new(:y)", 2],
+      ["Geo::Point#y=", "Struct.new(:y)", 2],
+      ["Geo::Tag#kind", "Data.define(:kind)", 6],
+      ["Geo::Tag#label", "Data.define(:label)", 3]
+    ], index.methods.map { |method| [method.qualified, method.source, method.start_line] }.sort
+  end
+
   def test_a_bare_private_in_a_conditional_carries_past_it
     source = <<~RUBY
       class Order

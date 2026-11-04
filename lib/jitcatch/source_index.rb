@@ -96,6 +96,7 @@ module JitCatch
       @defined = Hash.new { |hash, key| hash[key] = [] }
       @described = []
       @returned = {}
+      @symbol_lists = {}
     end
 
     def parse
@@ -255,6 +256,8 @@ module JitCatch
         full = constant_target(stmt, qualifier)
         source, end_line = constant_header(stmt)
         record_constant(@constants, full, stmt.location.start_line, end_line, source)
+        list = symbol_list(stmt.value)
+        @symbol_lists[full] = list if list
         record_members(stmt.value, full) if stmt.value.is_a?(Prism::CallNode)
         block = value_block(stmt)
         scan_body(block, full, :public, false) if block
@@ -373,7 +376,7 @@ module JitCatch
 
     def record_attributes_as_methods(stmt, qualifier, visibility, singleton)
       suffixes = ATTRIBUTE_MACROS.fetch(stmt.name)
-      Array(stmt.arguments&.arguments).grep(Prism::SymbolNode).each do |arg|
+      member_symbols(stmt, qualifier).each do |arg|
         suffixes.each do |suffix|
           macro = suffix.empty? ? "attr_reader" : "attr_writer"
           record_generated(arg, qualifier, "#{arg.unescaped}#{suffix}", visibility, singleton, macro, "#{macro} :#{arg.unescaped}")
@@ -387,14 +390,42 @@ module JitCatch
       return if writers.nil?
 
       macro = "#{builder}.#{call.name}"
-      Array(call.arguments&.arguments).grep(Prism::SymbolNode).each do |arg|
+      member_symbols(call, qualifier).each do |arg|
         source = "#{macro}(:#{arg.unescaped})"
         record_generated(arg, qualifier, arg.unescaped, :public, false, macro, source)
         record_generated(arg, qualifier, "#{arg.unescaped}=", :public, false, macro, source) if writers
       end
     end
 
-    def record_generated(arg, qualifier, bare, visibility, singleton, macro, source)
+# The symbols a member list names, with `*FIELDS` read from a constant
+# this file set to a list of symbols before it, looked up from the
+# innermost namespace out. Each member keeps the line of its own symbol,
+# so a change to the list is a change to that member.
+def member_symbols(call, qualifier)
+  Array(call.arguments&.arguments).flat_map do |arg|
+    case arg
+    when Prism::SymbolNode
+      [arg]
+    when Prism::SplatNode
+      name = const_name(arg.expression)
+      parts = qualifier.to_s.split("::")
+      found = name && parts.size.downto(0).map { |n| [*parts.first(n), name].join("::") }.find { |full| @symbol_lists.key?(full) }
+      found ? @symbol_lists.fetch(found) : []
+    else
+      []
+    end
+  end
+end
+
+# `[:a, :b]`, `%i[a b]`, and either with `.freeze`.
+def symbol_list(node)
+  node = node.receiver if node.is_a?(Prism::CallNode) && node.name == :freeze && node.arguments.nil?
+  return nil unless node.is_a?(Prism::ArrayNode) && node.elements.all?(Prism::SymbolNode)
+
+  node.elements
+end
+
+def record_generated(arg, qualifier, bare, visibility, singleton, macro, source)
       @methods << self.class::Method.new(
         file: @file,
         bare_name: bare,
