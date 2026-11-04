@@ -5,6 +5,10 @@ module JitCatch
   # That judgment needs the change intent and belongs to the agent.
   class Assessor
     ARITY = /wrong number of arguments|missing keywords?: |unknown keywords?: |struct size differs/
+    # Active Record's errors for a database it cannot reach. Each checkout
+    # uses its own numbered test database, so one that was never created
+    # fails on that side alone, which says nothing about the change.
+    NO_DATABASE = %w[ActiveRecord::NoDatabaseError ActiveRecord::ConnectionNotEstablished ActiveRecord::DatabaseConnectionError].freeze
 
     def self.apply(doc)
       new(doc).apply
@@ -83,6 +87,7 @@ module JitCatch
       head = test["head"] || {}
       return "timeout" if head["status"] == "timeout" || head["error_class"] == "Timeout"
       return "load_error" if head["error_class"] == "LoadError"
+      return "no_database" if NO_DATABASE.include?(head["error_class"])
       # Only a call the test wrote is a claim the new signature voids. With
       # no frame to say who called, the test is assumed to have.
       return "signature_change" if call && (call.empty? || test_frame?(call))
