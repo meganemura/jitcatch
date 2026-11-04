@@ -188,7 +188,9 @@ jitcatch run --repo DIR BASE HEAD TESTS_DIR
 `assess` は run の警告、件数、候補の行を再出力する。
 掛けるルールは `run` と同じである。
 行には失敗の最初の行か、Minitest の差分の期待行と実際行が出る。
-そのどちらかが 100 文字を超えると、値の違う Hash のエントリか、最初に違う桁のまわりと `^ column N` の印を出す。
+そのどちらかが 100 文字を超えると、値の違う Hash のエントリか Array の要素か、最初に違う桁のまわりと `^ column N` の印を出す。
+この印は、追加行が削除行を置き換えるときだけ出る。
+差分の別々の場所にある 2 行は、それぞれ 61 文字で切る。
 失敗した `assert_raises(X)` の行には、代わりに来たエラーを示す Minitest の `Class:` 行と `Message:` 行も出る。
 別のエラーから上げられた RSpec のエラーの行には、`cause: KeyError: key not found` のように元のエラーのクラスとメッセージが出る。
 Minitest は元のエラーを出力しないので、Minitest の行には出ない。
