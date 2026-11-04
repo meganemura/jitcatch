@@ -181,7 +181,8 @@ class TestCLI < Minitest::Test
       assert_equal [3, ""], [status, err]
       assert_equal "jitcatch: no row ran to a result on both sides (1 of 1 timed out or found no database), so this run cannot tell base from head\n", out.lines.first
       assert_includes out, "    hint: base and head timed out after 1s; raise --timeout if the file needs longer, as a Rails app's first run in a new checkout can (it loads db/schema.rb)\n" \
-        "    not passed: HTTPS_PROXY JITCATCH_CANDIDATE_FLAG JITCATCH_SLOW_SERVICE (add --env HTTPS_PROXY --env JITCATCH_CANDIDATE_FLAG --env JITCATCH_SLOW_SERVICE if the file needs them)\n"
+        "not passed: HTTPS_PROXY JITCATCH_CANDIDATE_FLAG JITCATCH_SLOW_SERVICE (add --env HTTPS_PROXY --env JITCATCH_CANDIDATE_FLAG --env JITCATCH_SLOW_SERVICE if a timed-out file needs them)\n" \
+        "counts "
 
       json, _err, json_status = with_parent_env("JITCATCH_SLOW_SERVICE" => "on", "HTTPS_PROXY" => "http://proxy.invalid:3128") do
         cli("run", "--json", "--repo", repo.dir, "--timeout", "1", "--env", "JITCATCH_SLOW_SERVICE", "base", "HEAD", tests)

@@ -382,9 +382,10 @@ Run that command in a checkout of that side, fix what it says (often `bundle ins
 終了コード 3 は、`untested` が行の数と等しいことを意味する。
 
 テストのプロセスは決まった環境変数と `--env` で名指しした変数だけを受け取るので、シェルにある名前が無いために、届かないコマンドやネットワークを待ち続けることがある。
-ある行がタイムアウトすると、そのヒントの下の `not passed:` の行が、今の環境にあり、`--env` で渡しておらず、子プロセスが必要としそうな変数を名指しする。
+ある行がタイムアウトすると、行の一覧のあとの 1 行の `not passed:` が、今の環境にあり、`--env` で渡しておらず、子プロセスが必要としそうな変数を名指しする。
 それはネットワークの設定（大文字でも小文字でも `HTTPS_PROXY`、`NO_PROXY`、`ALL_PROXY`、`HTTP_PROXY`、そして `SSL_CERT_FILE`、`SSL_CERT_DIR`、`NODE_EXTRA_CA_CERTS`）か、head の Ruby ファイルか候補がリテラルで読む名前（`ENV["QUINT"]`、`ENV.fetch("QUINT")`、`ENV.key?("QUINT")`）である。
-たとえば `not passed: HTTPS_PROXY QUINT (add --env HTTPS_PROXY --env QUINT if the file needs them)` となる。
+たとえば `not passed: HTTPS_PROXY QUINT (add --env HTTPS_PROXY --env QUINT if a timed-out file needs them)` となる。
+どの子プロセスも同じ環境を受け取るので、この行はタイムアウトした行ごとではなく、実行ごとに 1 回だけ出る。
 `--json` では `env_not_passed` に並び、タイムアウトした行が無ければ空である。
 
 実行されるのは `*_test.rb`、`test_*.rb`、`*_spec.rb` である。

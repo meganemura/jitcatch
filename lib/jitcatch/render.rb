@@ -72,10 +72,11 @@ module JitCatch
         doc["tests"].each do |test|
           lines << "  #{test_line(test)}"
           lines.concat(rerun_lines(test)) if test["disposition"] == "flaky"
-          lines.concat(timeout_lines(test, doc["timeout_s"], Array(doc["env_not_passed"])))
+          lines.concat(timeout_lines(test, doc["timeout_s"]))
           lines.concat(base_failure_lines(test))
         end
       end
+      lines.concat(not_passed_lines(doc))
       lines << counts_line(doc["counts"])
       lines.concat(assess_body(doc))
       finish(lines)
@@ -268,15 +269,26 @@ module JitCatch
       "jitcatch: no row ran to a result on both sides (#{doc["untested"]} of #{doc["tests"].size} timed out or found no database), so this run cannot tell base from head"
     end
 
-    # A child that waits on the network or on a command an environment
-    # variable names often lacks a name the parent has.
-    def timeout_lines(test, seconds, not_passed)
-      sides = %w[base head].select { |side| test.dig(side, "status") == "timeout" }
+    def timeout_lines(test, seconds)
+      sides = timed_out_sides(test)
       return [] if sides.empty?
 
-      lines = ["    hint: #{sides.join(" and ")} timed out after #{seconds}s; raise --timeout if the file needs longer, as a Rails app's first run in a new checkout can (it loads db/schema.rb)"]
-      lines << "    not passed: #{not_passed.join(" ")} (add #{not_passed.map { |name| "--env #{name}" }.join(" ")} if the file needs them)" unless not_passed.empty?
-      lines
+      ["    hint: #{sides.join(" and ")} timed out after #{seconds}s; raise --timeout if the file needs longer, as a Rails app's first run in a new checkout can (it loads db/schema.rb)"]
+    end
+
+    # A child that waits on the network or on a command an environment
+    # variable names often lacks a name the parent has. Every child got the
+    # same environment, so the names are the run's and print once, after
+    # the rows whose hint they explain.
+    def not_passed_lines(doc)
+      names = Array(doc["env_not_passed"])
+      return [] if names.empty? || doc["tests"].all? { |test| timed_out_sides(test).empty? }
+
+      ["not passed: #{names.join(" ")} (add #{names.map { |name| "--env #{name}" }.join(" ")} if a timed-out file needs them)"]
+    end
+
+    def timed_out_sides(test)
+      %w[base head].select { |side| test.dig(side, "status") == "timeout" }
     end
 
     def counts_line(counts)

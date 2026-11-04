@@ -261,6 +261,23 @@ class TestRender < Minitest::Test
     TEXT
   end
 
+  # The names the children did not get are the run's, not a row's, so the
+  # line prints once however many rows timed out.
+  def test_run_text_names_what_the_children_did_not_get_once_per_run
+    timed_out = ->(id) { { "id" => id, "file" => "#{id}_test.rb", "name" => "#{id}_test.rb#timeout", "classification" => "candidate", "base" => { "status" => "timeout" }, "head" => { "status" => "timeout" } } }
+    run = { "version" => "0.1.0", "base" => "b", "head" => "h", "reruns" => 0, "timeout_s" => 10, "env_not_passed" => %w[HTTPS_PROXY QUINT] }
+    passing = { "id" => "t03", "file" => "a_test.rb", "name" => "A#test_a", "classification" => "no_signal", "base" => { "status" => "pass" }, "head" => { "status" => "pass" } }
+    text = JitCatch::Render.run_text(JitCatch::Assessor.apply(run.merge("tests" => [timed_out.("t01"), timed_out.("t02"), passing])))
+
+    assert_includes text, "  t02 discarded t02_test.rb#timeout t02_test.rb\n" \
+      "    hint: base and head timed out after 10s; raise --timeout if the file needs longer, as a Rails app's first run in a new checkout can (it loads db/schema.rb)\n" \
+      "  t03 no_signal A#test_a a_test.rb\n" \
+      "not passed: HTTPS_PROXY QUINT (add --env HTTPS_PROXY --env QUINT if a timed-out file needs them)\n" \
+      "counts generated=3"
+    assert_equal [2, 1], [text.scan("hint: ").size, text.scan("not passed: ").size]
+    refute_includes JitCatch::Render.run_text(JitCatch::Assessor.apply(run.merge("tests" => [passing]))), "not passed"
+  end
+
   def test_context_text_lists_dependencies_only_when_one_changed
     doc = {
       "version" => "0.1.0", "base" => "b", "head" => "h", "existing_tests_via" => "grep",
