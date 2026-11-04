@@ -1281,6 +1281,42 @@ class TestRunner < Minitest::Test
     end
   end
 
+  # `File.write` shares its name with the caller `Emitter.write`, but File
+  # is no constant of the repository, so the call reaches nothing here.
+  def test_a_name_sent_only_to_a_constant_outside_the_repository_is_no_mention
+    with_repo do |repo|
+      emitter = ->(text) { "class Emitter\n  def self.write(path) = File.write(path, body)\n  def self.body = \"#{text}\"\nend\n" }
+      repo.write("lib/emitter.rb", emitter.call("a"))
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/emitter.rb", emitter.call("b"))
+      repo.commit("Write b.", date: "2026-02-12T00:00:00Z")
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, {
+        "emitter_test.rb" => <<~RUBY
+          require "minitest/autorun"
+          require "emitter"
+          require "tmpdir"
+
+          class EmitterTest < Minitest::Test
+            def test_file_write
+              Dir.mktmpdir { |dir| File.write(File.join(dir, "x"), "a") && assert_equal("a", File.read(File.join(dir, "x"))) }
+            end
+
+            def test_emitter_write
+              Dir.mktmpdir { |dir| Emitter.write(File.join(dir, "x")) && assert_equal("a", File.read(File.join(dir, "x"))) }
+            end
+          end
+        RUBY
+      })
+
+      rows = execute(repo, tests)["tests"].to_h { |test| [test["name"], test.values_at("mentions", "method_id")] }
+
+      assert_equal [[], nil], rows["EmitterTest#test_file_write"]
+      assert_equal [%w[Emitter.write write], "m01"], rows["EmitterTest#test_emitter_write"]
+    end
+  end
+
   def test_the_receiver_class_picks_the_related_method_among_same_named_ones
     with_repo do |repo|
       same_named_history(repo)

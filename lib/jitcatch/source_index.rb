@@ -163,6 +163,21 @@ module JitCatch
       names_reached_from([start.qualified])
     end
 
+    # The method names that the test, the example on that line, or the
+    # whole file sends only to constants it names (`File.write`), each with
+    # those constants, in the same scope as the names it refers to.
+    def names_sent_only_to_constants(qualified, line)
+      keys = line ? example_keys(line) : []
+      keys = [qualified] if keys.empty? && @methods.any? { |method| method.qualified == qualified }
+      reached = keys.empty? ? nil : reached_from(keys)
+      calls = reached ? @calls.select { |call| reached.include?(call.enclosing) } : @calls
+      calls.group_by(&:bare_name).filter_map { |bare, list|
+        next unless list.all? { |call| call.receiver.kind == "singleton" && call.receiver.const }
+
+        [bare, list.map { |call| call.receiver.const }.uniq.sort]
+      }.to_h
+    end
+
     # The names an RSpec example starting on that line refers to: its own
     # block, the `let`, `subject`, and hook blocks of the groups around it,
     # the arguments of those groups, and the same-file helpers all of them

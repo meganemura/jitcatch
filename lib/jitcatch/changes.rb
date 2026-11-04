@@ -11,6 +11,9 @@ module JitCatch
     UPSTREAM_DEPTH = 4
     RECORD_BUILDERS = %w[create create! build].freeze
 
+    # The classes and modules head defines, after `build`.
+    attr_reader :head_constants
+
     def self.between(repo, base_ref, head_ref, coverage: nil)
       new(repo, base_ref, head_ref, coverage: coverage).build
     end
@@ -32,6 +35,7 @@ module JitCatch
       hunks = index_hunks(DiffParser.parse(@git.diff(base, head)))
       base_idx = index_ref(base, "base")
       head_idx = index_ref(head, "head")
+      @head_constants = lookups(head_idx)[2].keys.reject(&:empty?).sort
       methods = changed_methods(base_idx, head_idx, hunks)
       constants = changed_constants(base_idx, head_idx, hunks, methods)
       attach_affected(methods, constants, base_idx, head_idx)

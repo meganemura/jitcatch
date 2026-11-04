@@ -19,6 +19,8 @@ module JitCatch
     Result = Data.define(:tests, :lines, :file_error, :timed_out, :exit_code)
     # One worker's two checkouts. A worker runs one file at a time in them.
     Pair = Data.define(:base, :head)
+    # The names a test can mention, and the constants head defines.
+    Known = Data.define(:names, :constants)
 
     def self.run(repo, base_ref, head_ref, tests_dir, reruns: 2, timeout: 10, env: [], workers: 1, serial: false)
       new(repo, base_ref, head_ref, tests_dir, reruns: reruns, timeout: timeout, env: env, workers: workers, serial: serial).run
@@ -43,7 +45,8 @@ module JitCatch
     end
 
     def run
-      change = Changes.between(@git, @base_ref, @head_ref)
+      changes = Changes.new(@git, @base_ref, @head_ref)
+      change = changes.build
       files, omitted = candidate_files
       @frameworks = files.to_h { |relative| [relative, Framework.for(relative, read_candidate(relative))] }
       parent = Dir.mktmpdir("jitcatch-")
@@ -67,7 +70,7 @@ module JitCatch
         raise EnvironmentError, setup_failed_doc(change, failed) unless failed.empty?
 
         bundle = { "base" => setups[0]["bundle"], "head" => setups[1]["bundle"] }
-        rows = classify_files(files, pairs, normalizer, mention_names(change))
+        rows = classify_files(files, pairs, normalizer, Known.new(names: mention_names(change), constants: changes.head_constants))
         bundled = gemfile?(first.head)
         spec_root = File.exist?(File.join(first.head, "spec"))
         rows.each { |row| row["rerun"] = rerun_command(row, bundled, !spec_root) }
@@ -457,8 +460,21 @@ module JitCatch
     # calls, so a neighbor test in the same file does not change its tags.
     def mentions_for(index, test_name, line, known, relative, head_dir)
       referenced = (line && index.example_references(line)) || index.referenced_names(test_name)
+      referenced -= foreign_calls(index, test_name, line, known.constants)
       referenced += script_names(index.paths_named(test_name, line), relative, head_dir)
-      referenced.select { |name| known.include?(name) || known.include?(SourceIndex.split_qualified(name).last) || known.include?(Assessor.mention_of(name)) }
+      names = known.names
+      referenced.select { |name| names.include?(name) || names.include?(SourceIndex.split_qualified(name).last) || names.include?(Assessor.mention_of(name)) }
+    end
+
+    # `File.write` reaches no method of the repository, so neither it nor
+    # the bare `write` it refers to is a mention of `Emitter.write`. A
+    # constant counts as the repository's when one it defines ends in it.
+    def foreign_calls(index, test_name, line, constants)
+      index.names_sent_only_to_constants(test_name, line).flat_map { |bare, receivers|
+        next [] if receivers.any? { |const| constants.any? { |name| name == const || name.end_with?("::#{const}") } }
+
+        [bare, *receivers.map { |const| "#{const}.#{bare}" }]
+      }
     end
 
     # A test that starts a script in another process (`IO.popen(["ruby",
