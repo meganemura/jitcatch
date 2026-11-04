@@ -73,11 +73,13 @@ class TestChangesGraph < Minitest::Test
       by_name = doc["methods"].to_h { |method| [method["name"], method] }
 
       assert_equal %w[Chain#a2 Chain#a3 Chain#a4 Chain#a5], by_name.fetch("Chain#a6")["reachable_from"]
+      assert_equal %w[Chain#a1 Chain#a2 Chain#a3 Chain#a4 Chain#a5], by_name.fetch("Chain#a6")["reached_by"], "the assessor's reach has no depth limit"
       assert_equal ["lib/chain.rb"], by_name.fetch("Chain#a6")["callsites"].map { |site| site["file"] }
       assert_equal ["removed", ["Chain#user"]], [by_name.fetch("Chain#gone")["change"], by_name["Chain#gone"]["callsites"].map { |site| site["enclosing"] }]
       assert_equal [["Kind#run"], []], [by_name.fetch("Kind#go")["callsites"].map { |site| site["enclosing"] }, by_name.fetch("Kind.go")["callsites"]]
       target = by_name.fetch("Hub#target")
       assert_equal [8, 1], [target["callsites"].size, target["callsites_omitted"]]
+      assert_equal [8, 9], [target["reachable_from"].size, target["reached_by"].size], "the assessor's reach has no cap"
       assert_includes JitCatch::Render.context_text(doc), "(+1 more)"
     end
   end

@@ -259,6 +259,25 @@ class TestAssessor < Minitest::Test
     assert_equal 1, text.scan("related guess:").size, "a row with one related method prints no guess line"
   end
 
+  # `reachable_from` stops four calls up; a test of an entry point above
+  # that reaches the method through `reached_by`, and a run file written
+  # before `reached_by` existed still reads `reachable_from`.
+  def test_a_caller_past_the_kept_ones_puts_the_method_in_the_pool
+    deep = method("m01", "modified", "same", "fee", ["Calc#total"], 1).merge("reached_by" => ["Calc#total", "Calc.start"])
+    near = method("m02", "modified", "same", "help", ["Calc.start"], 10)
+    doc = {
+      "methods" => [deep, near],
+      "constants" => [],
+      "tests_dir" => "candidates",
+      "tests" => [candidate("t01", "StartTest#test_start", %w[start], failure("Expected: 4\n  Actual: 5"))]
+    }
+
+    row = JitCatch::Assessor.apply(doc)["tests"].fetch(0)
+    assert_equal [%w[m01 m02], true], [row["method_ids"], row["tags"].include?("related:guess")]
+    old = doc.merge("methods" => [deep.except("reached_by"), near])
+    assert_equal %w[m02], JitCatch::Assessor.apply(old)["tests"].fetch(0)["method_ids"]
+  end
+
   def test_candidate_ids_follow_test_ids_and_other_rows_carry_nulls
     stale = { "method_id" => "m09", "tags" => ["report"], "disposition" => "reported", "candidate_id" => "c09" }
     doc = {

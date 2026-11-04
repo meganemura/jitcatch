@@ -527,6 +527,11 @@ CLI を使わない場合は、`skills/jitcatch` をエージェントの skills
   スーパークラスは Ruby と同じく、そのクラスの外から探す。
   そのため `module Shop` の中の `class Error < Error` は外側の `Error` を指す。
   `reachable_from` は 4 回の呼び出しまで呼び出し元をたどり、`new` から `initialize` へ入る一歩はその 4 回に数えない。
+  残すのは近い順に 8 個までである。
+  `--json` の `reached_by` は、深さも個数も限らず、すべての呼び出し元を持つ。
+  `run` は言及と関連 id にこちらを読むので、上から入るテストも、5 回以上の呼び出しの先にある変更メソッドを名指しできる。
+  たとえばコントローラとサービスを通るリクエストスペックや、`CLI.start` を呼ぶ CLI のテストである。
+  そうしたテストはたいていの変更メソッドに届くので、その行はふつう `related:guess` になり、そのメソッドが一覧に入る。
   `create`、`create!`、`build` も、リポジトリ内のスーパークラスの連なりが `ActiveRecord::Base` に届くクラス（`class Post < ApplicationRecord`）では同じく `initialize` へ向かう。
   Active Record はこれらを `new` を呼ぶメソッドとして定義しているからである。
   ほかのクラスでは、定義しているコードが索引にないので辺にならない。

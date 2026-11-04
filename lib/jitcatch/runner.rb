@@ -471,7 +471,7 @@ module JitCatch
     # so is a record builder or a save that runs a changed callback.
     def mention_names(change)
       names = change["methods"].flat_map { |method|
-        [method["name"], *method["reachable_from"], *method["dynamic_callers"].map { |caller| caller["from"] }].map { |name| Assessor.mention_of(name) } +
+        [method["name"], *method["reached_by"], *method["dynamic_callers"].map { |caller| caller["from"] }].map { |name| Assessor.mention_of(name) } +
           (Array(method["builders"]) + Array(method["run_by"])).flat_map { |name| [name, name.sub(/\A(?:\w+::)+/, "")] }
       }
       names += change["entrypoints"].flat_map { |entry| entry["methods"].map { |method| Assessor.mention_of(method["name"]) } }

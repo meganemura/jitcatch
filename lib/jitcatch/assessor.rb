@@ -26,7 +26,7 @@ module JitCatch
       @doc = doc
       @methods = Array(doc["methods"])
       @constants = Array(doc["constants"])
-      @callers = @methods.flat_map { |item| Array(item["reachable_from"]) }.uniq
+      @callers = @methods.flat_map { |item| reached_by(item) }.uniq
       @tests_dir = doc["tests_dir"]
     end
 
@@ -248,10 +248,10 @@ module JitCatch
       return [best_guess(named), named] if named.any?
 
       via_caller = @methods.select { |item|
-        upstream = Array(item["reachable_from"]).map { |name| bare(name) }
+        upstream = reached_by(item).map { |name| bare(name) }
         (mentions & upstream).any?
       }
-      sent = via_caller.select { |item| Array(item["reachable_from"]).any? { |name| sent_to?(name, mentions) } }
+      sent = via_caller.select { |item| reached_by(item).any? { |name| sent_to?(name, mentions) } }
       via_caller = sent unless sent.empty?
       pool = via_caller.empty? ? constructors : via_caller
       [best_guess(pool), pool]
@@ -356,8 +356,8 @@ module JitCatch
     def best_guess(items)
       items.min_by do |item|
         others = items.reject { |other| other["id"] == item["id"] }
-        covered = others.count { |other| Array(item["reachable_from"]).include?(other["name"]) }
-        below = @methods.count { |other| Array(other["reachable_from"]).include?(item["name"]) }
+        covered = others.count { |other| reached_by(item).include?(other["name"]) }
+        below = @methods.count { |other| reached_by(other).include?(item["name"]) }
         [preference(item), -covered, -below, item["id"].to_s]
       end
     end
@@ -391,6 +391,12 @@ module JitCatch
         return true
       end
       mentions.any? { |text| calls.any? { |call| SourceIndex.names_call?(text, call) } }
+    end
+
+    # Every method that reaches the item. A run file from before
+    # `reached_by` existed holds only the capped `reachable_from`.
+    def reached_by(item)
+      Array(item["reached_by"] || item["reachable_from"])
     end
 
     def lowest(items)

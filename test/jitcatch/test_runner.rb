@@ -95,7 +95,7 @@ class TestRunner < Minitest::Test
       assert_includes by_name["TotalTest#test_total"]["tags"], "caller:unchanged:lib/calc.rb:11"
       assert_includes by_name["TotalTest#test_total"]["tags"], "touches:unchanged_caller"
       assert_equal %w[bare_name builders callbacks callsites_omitted change dynamic_callers end_line file forwards_to_added id kind moved_from name new_end new_start
-        old_end old_start reachable_from run_by signature start_line via_constant visibility],
+        old_end old_start reachable_from reached_by run_by signature start_line via_constant visibility],
         doc["methods"].flat_map(&:keys).uniq.sort
 
       json =JitCatch::Render.dump(JitCatch::Render.run_json(doc))
@@ -1312,6 +1312,71 @@ class TestRunner < Minitest::Test
       assert_equal [%w[Price#cents Price.new cents], ids["Price#initialize"]], rows["PriceTest#test_new_keeps_the_cents"]
       assert_equal [%w[Box#size size], ids["Box#size"]], rows["PriceTest#test_box_new_is_not_price_new"]
       doc["tests"].each { |test| assert_includes test["tags"], "touches:changed_method", test["name"] }
+    end
+  end
+
+  # A test that enters at the command line reaches a changed method five
+  # calls down, past the callers `reachable_from` keeps, so the row's pool
+  # holds that method next to the one the entry calls first.
+  def test_a_test_that_enters_above_the_kept_callers_keeps_the_deep_method_in_its_pool
+    with_repo do |repo|
+      desk = <<~SOURCE
+        class Desk
+          def self.start(argv)
+            new.route(argv)
+          end
+
+          def route(argv)
+            argv.empty? ? help : serve(argv)
+          end
+
+          def help
+            "usage: desk ITEM"
+          end
+
+          def serve(argv)
+            price(argv.first)
+          end
+
+          def price(item)
+            total(item)
+          end
+
+          def total(item)
+            item.length + fee
+          end
+
+          def fee
+            FEE
+          end
+        end
+      SOURCE
+      repo.write("lib/desk.rb", desk.sub("FEE", "1"))
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/desk.rb", desk.sub("FEE", "2").sub("usage: desk ITEM", "usage: desk ITEM..."))
+      repo.commit("Raise the fee and widen the usage line.", date: "2026-02-12T00:00:00Z")
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, {
+        "desk_test.rb" => <<~RUBY
+          require "minitest/autorun"
+          require "desk"
+
+          class DeskTest < Minitest::Test
+            def test_start_prices_an_item
+              assert_equal 4, Desk.start(["tea"])
+            end
+          end
+        RUBY
+      })
+
+      doc = execute(repo, tests)
+
+      ids = doc["methods"].to_h { |method| [method["name"], method["id"]] }
+      refute_includes doc["methods"].find { |method| method["name"] == "Desk#fee" }["reachable_from"], "Desk.start"
+      row = doc["tests"].fetch(0)
+      assert_equal [%w[Desk.start start], ids.values_at("Desk#fee", "Desk#help").sort], row.values_at("mentions", "method_ids")
+      assert_includes row["tags"], "related:guess"
     end
   end
 

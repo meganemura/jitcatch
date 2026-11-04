@@ -327,6 +327,7 @@ module JitCatch
         }
         method["callsites_omitted"] = [direct.size - CALLSITE_CAP, 0].max
         method["reachable_from"] = upstream(node.qualified, edges)
+        method["reached_by"] = reached_by(node.qualified, edges)
       end
     end
 
@@ -497,6 +498,7 @@ module JitCatch
         savers = calls.filter_map { |written, from| from if method["run_by"].any? { |run_by| SourceIndex.names_call?(written, run_by) } }.uniq.sort
         reached = savers + savers.flat_map { |name| upstream(name, edges) }
         method["reachable_from"] = (method["reachable_from"] | reached).reject { |name| name == node.qualified }.first(REACHABLE_CAP).sort
+        method["reached_by"] = (method["reached_by"] | savers | savers.flat_map { |name| reached_by(name, edges) }).reject { |name| name == node.qualified }.sort
       end
     end
 
@@ -714,24 +716,39 @@ module JitCatch
     # caller of `new` reaches `initialize` in the call it writes, so that
     # hop adds no depth, and its callers go first in the queue.
     def upstream(qualified, edges)
-      reverse = Hash.new { |hash, key| hash[key] = [] }
-      edges.each { |edge| reverse[edge["to"]] << edge["from"] }
+      callers_by_depth(qualified, edges, UPSTREAM_DEPTH).sort_by { |name, depth| [depth, name] }.first(REACHABLE_CAP).map(&:first).sort
+    end
+
+    # Every method that reaches this one, at any depth and with no cap. A
+    # test that enters high, as a request spec or a CLI test does, calls a
+    # method above the callers `upstream` keeps, so the assessor and the
+    # names a test can mention read this set instead.
+    def reached_by(qualified, edges)
+      callers_by_depth(qualified, edges, nil).keys.sort
+    end
+
+    def callers_by_depth(qualified, edges, limit)
+      reverse = callers_index(edges)
       depths = {}
-      queue = reverse[qualified].uniq.map { |name| [name, 1] }
+      queue = reverse.fetch(qualified, []).uniq.map { |name| [name, 1] }
       until queue.empty?
         name, depth = queue.shift
         next if name == qualified || depths.key?(name)
 
         depths[name] = depth
         if name.end_with?("#initialize")
-          reverse[name].each { |parent| queue.unshift([parent, depth]) unless depths.key?(parent) }
+          reverse.fetch(name, []).each { |parent| queue.unshift([parent, depth]) unless depths.key?(parent) }
           next
         end
-        next if depth >= UPSTREAM_DEPTH
+        next if limit && depth >= limit
 
-        reverse[name].each { |parent| queue << [parent, depth + 1] unless depths.key?(parent) }
+        reverse.fetch(name, []).each { |parent| queue << [parent, depth + 1] unless depths.key?(parent) }
       end
-      depths.sort_by { |name, depth| [depth, name] }.first(REACHABLE_CAP).map(&:first).sort
+      depths
+    end
+
+    def callers_index(edges)
+      (@callers_index ||= {}.compare_by_identity)[edges] ||= edges.group_by { |edge| edge["to"] }.transform_values { |list| list.map { |edge| edge["from"] } }
     end
 
     def intent_lines(base, head)
@@ -767,6 +784,7 @@ module JitCatch
         "callsites" => item["callsites"],
         "callsites_omitted" => item["callsites_omitted"],
         "reachable_from" => item["reachable_from"],
+        "reached_by" => item["reached_by"],
         "dynamic_callers" => item["dynamic_callers"],
         "builders" => item["builders"],
         "callbacks" => item["callbacks"],
