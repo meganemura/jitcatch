@@ -479,30 +479,32 @@ module JitCatch
     def decorate_callbacks(methods, base_idx, head_idx, factories, head_edges, base_edges)
       base_callbacks = record_callbacks(base_idx)
       head_callbacks = record_callbacks(head_idx)
+      base_calls = app_calls(base_idx)
+      head_calls = app_calls(head_idx)
       methods.each do |method|
         node = method["new"] || method["old"]
         callbacks = method["change"] == "removed" ? base_callbacks : head_callbacks
         found = [node.qualified, *method["reachable_from"]].flat_map { |name| callbacks.fetch(name, []) }
         method["callbacks"] = found.map(&:declared).uniq.sort
         method["run_by"] = found.flat_map { |callback| callback_calls(callback, factories) }.uniq.sort
-        idx, edges = method["change"] == "removed" ? [base_idx, base_edges] : [head_idx, head_edges]
-        savers = savers_of(method["run_by"], idx)
+        calls, edges = method["change"] == "removed" ? [base_calls, base_edges] : [head_calls, head_edges]
+        savers = calls.filter_map { |written, from| from if method["run_by"].any? { |run_by| SourceIndex.names_call?(written, run_by) } }.uniq.sort
         reached = savers + savers.flat_map { |name| upstream(name, edges) }
         method["reachable_from"] = (method["reachable_from"] | reached).reject { |name| name == node.qualified }.first(REACHABLE_CAP).sort
       end
     end
 
-    # The methods outside the tests that make one of the calls, as the
-    # repository's code writes it: `Loan.create!` in `LoanDesk.open`, or
-    # `update!` inside a method of `Loan`. A written `Loan` names
-    # `Shop::Loan` as it does in a test.
-    def savers_of(calls, idx)
+    # Each call outside the tests as the repository's code writes it, with
+    # the method that makes it: `Loan.create!` in `LoanDesk.open`, or
+    # `Loan#update!` for `update!` inside a method of `Loan`. A written
+    # `Loan` names `Shop::Loan` as it does in a test.
+    def app_calls(idx)
       idx["calls"].filter_map { |call|
         next if call.enclosing.nil? || test_file?(call.file)
 
         written = written_call(call)
-        call.enclosing if written && calls.any? { |run_by| SourceIndex.names_call?(written, run_by) }
-      }.uniq.sort
+        [written, call.enclosing] if written
+      }
     end
 
     def written_call(call)
