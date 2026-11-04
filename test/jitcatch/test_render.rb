@@ -150,6 +150,10 @@ class TestRender < Minitest::Test
     assert_match(/\Aexpected #<Loan id: 1, state: "draft"> to have attributes .*\.\.\. \(\+\d+ more; the whole message is in --json\) \.\.\..*state: "draft"\}\z/, lines.fetch(0))
     assert_equal ["expected 1 to eq 2"], JitCatch::Render.message_lines({ "message" => "expected 1 to eq 2\nDiff:\n@@ -1 +1 @@\n-2\n+1\n" }),
       "a first line in full needs no diff"
+    full = "x" * 300
+    assert_equal [full], JitCatch::Render.message_lines({ "message" => "#{full}\nDiff:\n@@ -1 +1 @@\n-2\n+1\n" }), "300 characters is not cut"
+    assert_equal [JitCatch::Render.cut_line("x" * 301)], JitCatch::Render.message_lines({ "message" => "#{"x" * 301}\n-not a diff line\n" }),
+      "a line that starts with - outside a Diff is not a changed line"
   end
 
   # Minitest's first removed and first added lines are a pair only when the

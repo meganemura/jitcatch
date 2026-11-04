@@ -39,9 +39,14 @@ class TestAssessor < Minitest::Test
     }
 
     assert_equal 3, JitCatch::Assessor.apply(doc)["untested"]
-    doc["tests"] << candidate("t04", "Loan#approve! refuses", ["approve!"], error("ActiveRecord::RecordInvalid", "Validation failed"))
-    assert_equal 3, JitCatch::Assessor.apply(doc)["untested"]
+    assert JitCatch::Assessor.untested_run?(JitCatch::Assessor.apply(doc)), "every row untested"
+    doc["tests"] << candidate("t04", "Loan#approve! times out", ["approve!"], { "status" => "timeout" })
+    assert_equal 4, JitCatch::Assessor.apply(doc)["untested"], "a timeout row that names no error class"
+    doc["tests"] << candidate("t05", "Loan#approve! refuses", ["approve!"], error("ActiveRecord::RecordInvalid", "Validation failed"))
+    assert_equal 4, JitCatch::Assessor.apply(doc)["untested"]
+    refute JitCatch::Assessor.untested_run?(JitCatch::Assessor.apply(doc)), "one row ran to a result"
     assert_equal 0, JitCatch::Assessor.apply(doc.merge("tests" => []))["untested"]
+    refute JitCatch::Assessor.untested_run?(JitCatch::Assessor.apply(doc.merge("tests" => []))), "a run with no rows"
   end
 
   # A base that timed out might have passed with more time, so its row
