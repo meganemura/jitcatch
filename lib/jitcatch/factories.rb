@@ -9,9 +9,16 @@ module JitCatch
   # computes: a factory whose class the source does not settle comes back
   # with a reason and no class.
   module Factories
-    Factory = Data.define(:name, :class_name, :file, :line, :reason)
+    # `builds` holds the classes its associations build, through their own
+    # associations too.
+    Factory = Data.define(:name, :class_name, :file, :line, :reason, :builds)
     # One `factory` call as written. `outer` is the factory it nests in.
-    Written = Data.define(:names, :file, :line, :own_class, :parent, :outer, :reason)
+    # `associations` names the factories it may build with: a bare name
+    # counts only when a factory of that name exists.
+    Written = Data.define(:names, :file, :line, :own_class, :parent, :outer, :reason, :associations)
+
+    # Calls in a factory block that define something other than an attribute.
+    DEFINITIONS = %i[factory trait transient sequence after before callback traits_for_enum initialize_with to_create skip_create].freeze
 
     module_function
 
@@ -26,8 +33,9 @@ module JitCatch
       by_name = written.flat_map { |item| item.names.map { |name| [name, item] } }.to_h
       written.flat_map do |item|
         class_name, reason = settle(item, by_name, [])
+        builds = built_with(item, by_name, [item]).filter_map { |other| settle(other, by_name, [])[0] }.uniq.sort
         names = item.names.empty? ? [nil] : item.names
-        names.map { |name| Factory.new(name: name, class_name: class_name, file: item.file, line: item.line, reason: reason) }
+        names.map { |name| Factory.new(name: name, class_name: class_name, file: item.file, line: item.line, reason: reason, builds: builds) }
       end
     end
 
@@ -52,7 +60,44 @@ module JitCatch
       parent = options.key?("parent") ? literal(options["parent"]) : nil
       reason ||= "parent: is not a symbol or a string" if options.key?("parent") && parent.nil?
       aliases = options["aliases"].is_a?(Prism::ArrayNode) ? options["aliases"].elements.filter_map { |element| literal(element) } : []
-      Written.new(names: [name, *aliases].compact, file: file, line: node.location.start_line, own_class: own_class, parent: parent, outer: outer, reason: reason)
+      Written.new(names: [name, *aliases].compact, file: file, line: node.location.start_line, own_class: own_class, parent: parent, outer: outer, reason: reason,
+        associations: associations_in(node.block))
+    end
+
+    # The statements of the factory's own block. A trait runs only when a
+    # test names it, and a nested factory is a factory of its own.
+    def associations_in(block)
+      body = block.is_a?(Prism::BlockNode) ? block.body : nil
+      statements = body.is_a?(Prism::StatementsNode) ? body.body : []
+      statements.grep(Prism::CallNode).flat_map do |call|
+        next [] unless call.receiver.nil? && !DEFINITIONS.include?(call.name)
+        next [association_name(call)].compact if call.name == :association
+        next [call.name.to_s] if call.arguments.nil? && call.block.nil?
+        next [] unless call.block.is_a?(Prism::BlockNode) && call.block.body.is_a?(Prism::StatementsNode)
+
+        call.block.body.body.grep(Prism::CallNode).select { |inner| inner.receiver.nil? && inner.name == :association }.filter_map { |inner| association_name(inner) }
+      end
+    end
+
+    # `association :author, factory: :user` builds from :user, and
+    # `factory: [:user, :admin]` from :user with a trait.
+    def association_name(call)
+      first, *rest = Array(call.arguments&.arguments)
+      factory = rest.grep(Prism::KeywordHashNode).flat_map(&:elements).grep(Prism::AssocNode)
+        .find { |pair| pair.key.is_a?(Prism::SymbolNode) && pair.key.unescaped == "factory" }&.value
+      factory = factory.elements.first if factory.is_a?(Prism::ArrayNode)
+      literal(factory) || literal(first)
+    end
+
+    # The factories an item builds with, its parent's and the one it nests
+    # in included, since a child factory inherits their attributes.
+    def built_with(item, by_name, seen)
+      inherited = [item.parent && by_name[item.parent], item.outer].compact
+      direct = item.associations.filter_map { |name| by_name[name] }
+      (direct + inherited).reject { |other| seen.include?(other) }.uniq.flat_map do |other|
+        reached = built_with(other, by_name, [*seen, other])
+        inherited.include?(other) ? reached : [other, *reached]
+      end
     end
 
     # FactoryBot takes a factory's class from its own `class:`, then from

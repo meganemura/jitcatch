@@ -462,8 +462,13 @@ module JitCatch
       end
     end
 
+    # A factory whose association builds the class runs its constructor and
+    # its save callbacks too: `create(:loan)` saves the Borrower that
+    # `borrower` builds.
     def factory_mentions(qualifier, factories)
-      factories.filter_map { |factory| SourceIndex.factory_mention(factory.name) if factory.reason.nil? && factory.class_name == qualifier }
+      factories.filter_map { |factory|
+        SourceIndex.factory_mention(factory.name) if factory.reason.nil? && (factory.class_name == qualifier || factory.builds.include?(qualifier))
+      }
     end
 
     # The calls that run a changed method because a model's class body

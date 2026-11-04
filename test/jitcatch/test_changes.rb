@@ -786,4 +786,26 @@ class TestChanges < Minitest::Test
       assert_equal %w[Loan#archive Teller#close], by_name["Loan#archived_mark"]["reachable_from"]
     end
   end
+
+  # `create(:loan)` saves the Borrower its `borrower` association builds,
+  # so it runs Borrower's save callbacks.
+  def test_a_factory_runs_the_callbacks_of_the_records_its_associations_build
+    with_repo do |repo|
+      repo.write("lib/application_record.rb", "class ApplicationRecord < ActiveRecord::Base\nend\n")
+      borrower = ->(name) { "class Borrower < ApplicationRecord\n  before_save :tidy\n\n  def tidy\n    #{name}\n  end\nend\n" }
+      repo.write("lib/borrower.rb", borrower.call(":strip"))
+      repo.write("lib/loan.rb", "class Loan < ApplicationRecord\n  belongs_to :borrower\nend\n")
+      repo.write("spec/factories/lending.rb", "FactoryBot.define do\n  factory :borrower\n  factory :loan do\n    borrower\n  end\nend\n")
+      repo.write("spec/models/loan_spec.rb", "create(:loan)\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/borrower.rb", borrower.call(":squish"))
+      repo.commit("Squish the name.", date: "2026-02-12T00:00:00Z")
+
+      tidy = JitCatch::Changes.between(repo.dir, "base", "HEAD")["methods"].fetch(0)
+
+      assert_includes tidy["run_by"], "factory(:loan)"
+      assert_equal [{ "file" => "spec/models/loan_spec.rb", "via" => "callback", "calls" => ["factory(:loan)"] }], tidy["existing_tests"]
+    end
+  end
 end

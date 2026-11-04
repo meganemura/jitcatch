@@ -279,6 +279,10 @@ Concern の `included do`、`prepended do`、`class_methods do` ブロックの�
 テストが `initialize` をその名前で呼ぶことはないので、コンストラクタには grep の結果を出さない。
 ファクトリーは `spec/factories` と `test/factories` から、読み込まずにソースとして読む。
 クラスはまず `class:`（定数、文字列、シンボル）から、次に親（`parent:` か、入れ子の外側のファクトリー）から、最後に名前を camelize したものから決まり、`aliases:` の別名も同じクラスを作る。
+ファクトリーは、その関連が作るクラスにも数える。
+関連とは、ファクトリーの名前と同じ素の `borrower`、`association :borrower`（`factory: :user` も）、`association` を呼ぶ属性ブロックで、そのファクトリーか継承元に書いたもののことで、関連の関連もたどる。
+そのため `factory(:loan)` は `Borrower` も作る。
+trait の中の関連はたどらない。
 ソースからクラスが決まらないファクトリーはたどらず、理由と一緒に `factories_skipped:` に出す。
 実行時に計算する `class:`、そこで読んだファクトリーにない親、どのファイルも定義しないクラスがこれに当たり、最後のものはアプリが設定する活用（`ApiKey` と `APIKey`）で起こりうる。
 Active Record のモデルのクラス本体がコールバックかバリデーション（`after_save :count_save`、`validate :check`、またはそのどちらかの `if:` や `unless:`。`validates :amount, presence: true, if: :checked?` もこれに当たる）で名前を挙げるメソッドには `run_by:` が出る。

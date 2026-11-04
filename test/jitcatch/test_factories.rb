@@ -30,6 +30,42 @@ class TestFactories < Minitest::Test
     ], found
   end
 
+  # FactoryBot builds an association with the factory itself, so
+  # `create(:loan)` saves a Borrower too: through a bare `borrower` that
+  # names a factory, `association`, or an attribute block that calls it,
+  # in the factory or in one it inherits from. A trait's association runs
+  # only when a test names the trait, so it is not followed.
+  def test_a_factory_builds_the_classes_of_its_associations
+    source = <<~RUBY
+      FactoryBot.define do
+        factory :borrower
+        factory :officer, class: "Staff::Officer"
+        factory :branch
+        factory :loan do
+          borrower
+          amount_cents { 1 }
+          approver { association :officer }
+          trait(:filed) { association :branch }
+
+          factory :big_loan
+        end
+        factory :review do
+          association :subject, factory: :loan
+          note
+        end
+        factory :remark, parent: :review
+      end
+    RUBY
+
+    found = JitCatch::Factories.read("spec/factories.rb" => source).to_h { |factory| [factory.name, factory.builds] }
+
+    assert_equal({
+      "borrower" => [], "officer" => [], "branch" => [],
+      "loan" => %w[Borrower Staff::Officer], "big_loan" => %w[Borrower Staff::Officer],
+      "review" => %w[Borrower Loan Staff::Officer], "remark" => %w[Borrower Loan Staff::Officer]
+    }, found)
+  end
+
   def test_factory_files_are_under_spec_or_test_factories
     assert_equal [true, true, true, false, false],
       %w[spec/factories.rb test/factories/loans.rb engines/a/spec/factories/x.rb spec/models/loan_spec.rb lib/factories.rb].map { |path| JitCatch::Factories.file?(path) }
