@@ -80,6 +80,7 @@ module JitCatch
         "dependencies" => change["dependencies"],
         "methods" => change["methods"].map { |method| slim_method(method) },
         "constants" => change["constants"].map { |const| slim_constant(const) },
+        "changed_lines" => change["changed_lines"],
         "tests" => rows
       }
     end

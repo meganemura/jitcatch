@@ -153,7 +153,8 @@ module JitCatch
         %w[modified added].include?(item["change"]) && item["file"] == call["file"] &&
           item["start_line"] && item["end_line"] && (item["start_line"]..item["end_line"]).cover?(call["line"])
       }
-      "caller:#{changed ? "changed" : "unchanged"}:#{call["file"]}:#{call["line"]}"
+      edited = Array(@doc.dig("changed_lines", call["file"])).any? { |first, last| (first..last).cover?(call["line"]) }
+      "caller:#{changed || edited ? "changed" : "unchanged"}:#{call["file"]}:#{call["line"]}"
     end
 
     def tags_for(test, method, reason, call)

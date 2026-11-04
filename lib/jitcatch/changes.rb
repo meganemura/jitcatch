@@ -56,6 +56,7 @@ module JitCatch
         "parse_errors" => (base_idx["errors"] + head_idx["errors"]).sort_by { |err| [err["ref"], err["file"], err["message"]] },
         "constants" => constants.map { |item| constant_hash(item) },
         "methods" => methods.map { |item| method_hash(item) },
+        "changed_lines" => changed_lines(hunks),
         "entrypoints" => entrypoints
       }
     end
@@ -95,6 +96,15 @@ module JitCatch
         .group_by(&:first)
         .transform_values { |pairs| pairs.map(&:last).uniq.sort.join(" ") }
     end
+
+# The head lines each Ruby file's hunks wrote, as inclusive ranges, so a
+# call on an edited line counts as changed code even outside any method.
+def changed_lines(hunks)
+  hunks.filter_map { |path, file|
+    ranges = file["hunks"].reject { |hunk| hunk["new_count"].zero? }.map { |hunk| [hunk["new_start"], hunk["new_start"] + hunk["new_count"] - 1] }
+    [path, ranges] if file["new_path"] && ranges.any?
+  }.sort.to_h
+end
 
     def index_hunks(files)
       map = {}

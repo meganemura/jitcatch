@@ -648,6 +648,25 @@ class TestRunner < Minitest::Test
     end
   end
 
+  def test_a_broken_call_on_a_changed_line_outside_a_method_is_a_changed_caller
+    with_repo do |repo|
+      repo.write("lib/rule.rb", "class Rule\n  def helper(x) = x\n\n  CHECK = ->(x) { new.helper(x) }\n\n  def run(x) = CHECK.call(x)\nend\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/rule.rb", "class Rule\n  CHECK = ->(x) { new.helper(x) + 0 }\n\n  def run(x) = CHECK.call(x)\nend\n")
+      repo.commit("Drop the helper.", date: "2026-02-12T00:00:00Z")
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, { "rule_test.rb" => candidate_source("RuleTest", "test_run", "assert_equal 1, Rule.new.run(1)").sub('require "calc"', 'require "rule"') })
+
+      doc = execute(repo, tests)
+      row = doc["tests"].fetch(0)
+
+      assert_equal({ "lib/rule.rb" => [[2, 2]] }, doc["changed_lines"])
+      assert_equal "reported", row["disposition"]
+      assert_includes row["tags"], "caller:changed:lib/rule.rb:2"
+    end
+  end
+
   def test_reruns_judge_only_candidates_and_run_every_rerun
     with_repo do |repo|
       repo.write("lib/calc.rb", BASE_CALC)

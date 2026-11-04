@@ -234,7 +234,7 @@ gem の中から始まったエラーには `touches:changed_method` を付け�
 `discard:signature_change` は、削除したメソッドや新しいシグネチャが壊した呼び出しを、テスト自身がしているときだけ使う。
 変更されていないコードがその呼び出しをしているときは、行を報告する。
 たとえば `class B < A` が、head で削除した `A#helper` をまだ呼んでいるときである。
-その行には、呼び出しの位置を示す `caller:unchanged:lib/b.rb:5` を付ける（変更メソッドの中の行なら `caller:changed:`）。
+その行には、呼び出しの位置を示す `caller:unchanged:lib/b.rb:5` を付ける（diff が書いた行か、変更メソッドの中の行なら `caller:changed:`。`--json` の `changed_lines` は、各ファイルの hunk が書いた head の行を並べる）。
 関連 id（`m05`、無ければ `-`）は、経路上に変更メソッドが複数あるときの、最も下流の変更メソッドである。
 失敗のバックトレースが変更メソッドを通るときは、そのうち最も内側のものである。
 `related:guess` は、id を選んだ根拠が複数の変更メソッドを指している。
