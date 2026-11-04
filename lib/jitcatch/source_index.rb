@@ -13,6 +13,7 @@ module JitCatch
     HASH_KEY_CALLS = %i[[] []= fetch dig key? has_key? values_at fetch_values].freeze
     # These name a method by their first argument, as a symbol or a string.
     REFLECTIVE_CALLS = %i[send __send__ public_send method public_method respond_to?].freeze
+    SEND_CALLS = %i[send __send__ public_send].freeze
     # Exception#message and the messages built on it call to_s, the method an
     # error class overrides to say what went wrong.
     MESSAGE_CALLS = %i[message full_message detailed_message].freeze
@@ -806,6 +807,11 @@ module JitCatch
             @calls << self.class::Call.new(file: @file, bare_name: node.block.expression.unescaped, line: node.location.start_line,
               enclosing: enclosing, receiver: UNKNOWN_RECEIVER)
           end
+          sent = sent_name(node)
+          if sent
+            @calls << self.class::Call.new(file: @file, bare_name: sent, line: node.location.start_line,
+              enclosing: enclosing, receiver: receiver_of(node.receiver))
+          end
           refer(enclosing, node.name) unless spec_helper_call?(node)
           owner = constructor_owner(node) || described_owner(node)
           refer(enclosing, "#{owner}.new") if owner
@@ -929,6 +935,14 @@ module JitCatch
       @references[enclosing] << name.to_s
     end
 
+
+    # `emitter.send(:write)` calls `write` on the receiver of `send`.
+    def sent_name(node)
+      return nil unless SEND_CALLS.include?(node.name)
+
+      first = node.arguments&.arguments&.first
+      first.unescaped if first.is_a?(Prism::SymbolNode) || first.is_a?(Prism::StringNode)
+    end
 
     def reflective_name(node)
       return nil unless REFLECTIVE_CALLS.include?(node.name)

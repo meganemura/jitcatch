@@ -653,4 +653,21 @@ class TestChangesGraph < Minitest::Test
       ], doc["methods"].map { |method| method.values_at("name", "reachable_from") }
     end
   end
+
+  # `send(:helper)` with a literal name calls `helper` on the receiver of
+  # `send`, so it is an edge like a plain call.
+  def test_a_send_with_a_literal_name_is_an_edge
+    with_repo do |repo|
+      sender = ->(value) { "class Sender\n  def go = send(:helper)\n\n  def other = public_send(\"helper\")\n\n  def unread = send(name)\n\n  private\n\n  def helper = #{value}\nend\n" }
+      repo.write("lib/sender.rb", sender.call(1))
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/sender.rb", sender.call(2))
+      repo.commit("Help by two.", date: "2026-02-12T00:00:00Z")
+
+      helper = JitCatch::Changes.between(repo.dir, "base", "HEAD")["methods"].fetch(0)
+
+      assert_equal %w[Sender#go Sender#other], helper["reachable_from"]
+    end
+  end
 end

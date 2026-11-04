@@ -1586,7 +1586,7 @@ class TestRunner < Minitest::Test
       ids = doc["methods"].to_h { |method| [method["name"], method["id"]] }
       rows = doc["tests"].to_h { |test| [test["name"], test.values_at("mentions", "method_id")] }
       assert_equal [%w[Z.run_text run_text], ids["Z.run_text"]], rows["JobTest#test_text"]
-      assert_equal [%w[run], ids["B#run"]], rows["JobTest#test_symbol_and_constant"]
+      assert_equal [%w[B#run run], ids["B#run"]], rows["JobTest#test_symbol_and_constant"]
     end
   end
 

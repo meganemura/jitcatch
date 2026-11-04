@@ -403,6 +403,21 @@ class TestSourceIndex < Minitest::Test
     assert_equal({ "mktmpdir" => ["Dir"], "new" => ["Cart"] }, index.names_sent_only_to_constants("WriteTest#test_missing", nil))
   end
 
+  # `send(:write)` sends `write` to a receiver that is not the constant, so
+  # `File.write` in the same test does not make `write` foreign.
+  def test_a_name_sent_by_send_is_not_sent_only_to_constants
+    source = <<~'RUBY'
+      class WriteTest
+        def test_send = File.write(path, 1) && emitter.send(:write) && Cart.public_send("total")
+        def test_self = send(:write) && File.write(path, 1)
+      end
+    RUBY
+    index = JitCatch::SourceIndex.parse(source, file: "test/write_test.rb")
+
+    assert_equal({ "total" => ["Cart"] }, index.names_sent_only_to_constants("WriteTest#test_send", nil).except("send", "public_send"))
+    assert_equal({}, index.names_sent_only_to_constants("WriteTest#test_self", nil))
+  end
+
   def test_a_hash_key_symbol_is_not_a_mention_and_a_reflective_call_is
     source = <<~'RUBY'
       class SnapTest

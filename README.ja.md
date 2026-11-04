@@ -528,6 +528,8 @@ CLI を使わない場合は、`skills/jitcatch` をエージェントの skills
   スーパークラスが定義するメソッドのように、そのクラスに該当するものがなければ、全部を残す。
   テストがリポジトリの定義しない定数にだけ送るメソッド名は、`File.write(path, text)` や `Dir.mktmpdir` のように、言及にならない。
   そのため `File.write` は、`Emitter.write` から届く変更メソッドを指さない。
+  `emitter.send(:write)` は `emitter` に `write` を送るので、両方を書くテストは `write` に言及する。
+  名前をリテラルで渡す `send`、`__send__`、`public_send` はコードの中でもその名前の呼び出しとして読むので、メソッドの中の `send(:helper)` は `helper` に届く。
   文字列とコメントの中の語は言及にならない。
   ただし、`send`、`public_send`、`method`、`respond_to?` に普通の文字列で渡したメソッド名は、`send("total")` のように言及になる。
   `snap[:total]`、`snap.fetch(:total)`、`{ total: 1 }` のようにハッシュのキーとして使ったシンボルは言及にならない。
