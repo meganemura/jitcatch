@@ -366,6 +366,23 @@ class TestRSpecRunner < Minitest::Test
     end
   end
 
+  def test_a_message_and_its_cause_name_the_tests_directory_where_they_named_the_copy
+    with_repo do |repo|
+      repo.write("lib/a.rb", "module A; def self.g = 1; end\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/a.rb", "module A; def self.g = 2; end\n")
+      repo.commit("Give two.", date: "2026-02-12T00:00:00Z")
+      tests = File.join(repo.dir, "candidates")
+      read = %(begin; File.read(File.join(__dir__, "none.json")); rescue SystemCallError; raise ArgumentError, "no \#{__dir__}"; end)
+      write_tests(tests, { "a_spec.rb" => %(require "a"\n\nRSpec.describe A do\n  it("reads") { #{read} unless A.g == 1 }\nend\n) })
+
+      head = execute(repo, tests)["tests"].fetch(0)["head"]
+
+      assert_equal ["no {worktree}/candidates", "{worktree}/candidates/none.json"], [head["message"], head.dig("cause", "message")[/\S+\z/]]
+    end
+  end
+
   # The example's group or its receiver names the class whose `parse` it calls.
   def test_the_described_class_picks_the_related_method_among_same_named_ones
     with_repo do |repo|

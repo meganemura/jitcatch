@@ -277,9 +277,9 @@ module JitCatch
 
       parsed = framework.parse(File.file?(report_path) ? read_text(report_path) : nil, stdout, stderr, normalizer)
       Result.new(
-        tests: parsed["tests"],
+        tests: parsed["tests"].transform_values { |result| Failure.naming_tests(result, tests_in_messages) },
         lines: parsed["lines"],
-        file_error: parsed["file_error"],
+        file_error: Failure.naming_tests(parsed["file_error"], tests_in_messages),
         timed_out: false,
         exit_code: status&.exitstatus
       )
@@ -492,6 +492,15 @@ module JitCatch
       root = File.realpath(@git.dir)
       tests = File.realpath(@tests_dir)
       tests.start_with?(File.join(root, "")) ? tests.delete_prefix(File.join(root, "")) : tests
+    end
+
+    # A message writes the repository root as {worktree}, so a tests
+    # directory inside it is named from there.
+    def tests_in_messages
+      @tests_in_messages ||= begin
+        from_root = tests_from_root
+        from_root == File.realpath(@tests_dir) ? from_root : "#{Failure::WORKTREE}#{from_root}"
+      end
     end
 
     def assign_test_ids(rows)

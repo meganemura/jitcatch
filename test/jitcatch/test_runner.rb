@@ -876,6 +876,31 @@ class TestRunner < Minitest::Test
     end
   end
 
+  # The run reads a copy of the tests directory at `.jitcatch/`, and the
+  # rerun line names the directory itself, so a message names that too.
+  # A relative `.jitcatch/` (`__FILE__`) is left as it is: it cannot be
+  # told apart from text a test compares.
+  def test_a_message_names_the_tests_directory_where_it_named_the_copy
+    with_repo do |repo|
+      repo.write("lib/calc.rb", BASE_CALC)
+      repo.commit("Initial calc", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/calc.rb", HEAD_CALC)
+      repo.commit("Tweak calc helpers.", date: "2026-02-12T00:00:00Z")
+      body = candidate_source("FixtureTest", "test_fixture", %(File.read(File.join(__dir__, "fixtures", "none.json")) unless __FILE__ == "x"))
+      inside = File.join(repo.dir, "candidates")
+      outside = Dir.mktmpdir("jitcatch-outside")
+      write_tests(inside, { "fixture_test.rb" => body })
+      write_tests(outside, { "fixture_test.rb" => body })
+
+      messages = [inside, outside].map { |tests| execute(repo, tests)["tests"].fetch(0)["head"]["message"] }
+
+      assert_equal ["{worktree}/candidates/fixtures/none.json", "#{File.realpath(outside)}/fixtures/none.json"], messages.map { |message| message[/\S+none\.json/] }
+    ensure
+      FileUtils.rm_rf(outside) if outside
+    end
+  end
+
   def test_messages_keep_utf8_and_lose_worktree_and_ruby_paths
     with_repo do |repo|
       repo.write("lib/calc.rb", BASE_CALC)
@@ -1567,7 +1592,7 @@ class TestRunner < Minitest::Test
       assert_equal ["ruby -Ilib -I. candidates/a_test.rb"] * 2, err.doc["setup_failed"].map { |failure| failure["command"] }
       # Ruby 3.3 quotes the frame label with a backtick, Ruby 3.4 and later with '.
       quote = RUBY_VERSION < "3.4" ? "`" : "'"
-      assert_equal [["{worktree}/.jitcatch/support.rb:1:in #{quote}<top (required)>': connection to server at 127.0.0.1 port 1 failed (IOError)"]] * 2, err.doc["setup_failed"].map { |failure| failure["stderr"] }
+      assert_equal [["{worktree}/candidates/support.rb:1:in #{quote}<top (required)>': connection to server at 127.0.0.1 port 1 failed (IOError)"]] * 2, err.doc["setup_failed"].map { |failure| failure["stderr"] }
       assert_includes JitCatch::Render.setup_failed_text(err.doc), "jitcatch: every candidate file failed to load on both sides, so no row can tell base from head\n"
       assert_includes JitCatch::Render.setup_failed_text(err.doc), "is not in the checkouts jitcatch makes; pass its value with --env, such as RAILS_MASTER_KEY.\n"
 

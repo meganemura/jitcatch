@@ -10,6 +10,8 @@ module JitCatch
     # The runner writes this where a worktree root was, so a message still
     # shows that a path stood there. Frames drop it to match the diff's paths.
     WORKTREE = "{worktree}/"
+    # Where the runner copies the tests directory in each worktree.
+    TESTS_COPY = /#{Regexp.escape(WORKTREE)}\.jitcatch(?![\w.-])/.freeze
     MESSAGE_LINES = 20
     FRAMES = 15
 
@@ -25,6 +27,17 @@ module JitCatch
         "backtrace" => frames.first(FRAMES),
         "cause" => cause
       }
+    end
+
+    # A test reads its own files from the copy, and the rerun line names
+    # +tests+, so a message names +tests+ where it named the copy.
+    def naming_tests(result, tests)
+      return nil if result.nil?
+
+      named = ->(text) { text.to_s.gsub(TESTS_COPY) { tests } }
+      message = named.call(result["message"])
+      cause = result["cause"] && result["cause"].merge("message" => named.call(result["cause"]["message"]))
+      result.merge("message" => message, "message_first_line" => first_line(message), "cause" => cause)
     end
 
     def passed(status)
