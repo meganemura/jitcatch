@@ -1132,7 +1132,7 @@ class TestRunner < Minitest::Test
             def test_slow
               if Dir.pwd.end_with?("/head")
                 File.write(#{head_runs.inspect}, "x", mode: "a")
-                sleep 60
+                #{block_until_killed(repo.dir)}
               end
               assert Flag.ok
             end
@@ -1140,8 +1140,8 @@ class TestRunner < Minitest::Test
         RUBY
       })
       started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-      doc = execute(repo, tests, timeout: 1, reruns: 2)
-      assert_operator Process.clock_gettime(Process::CLOCK_MONOTONIC) - started, :<, 30, "the timed-out process was not killed"
+      doc = execute(repo, tests, timeout: 1, reruns: 2, finished_in_time: blocked_children_time_out(repo.dir))
+      assert_operator Process.clock_gettime(Process::CLOCK_MONOTONIC) - started, :<, 50, "the timed-out process was not killed"
       assert_equal "x", File.read(head_runs), "a timeout is not rerun"
       assert_equal 1, doc["counts"]["generated"]
       assert_equal 1, doc["counts"]["discarded"]
@@ -1166,9 +1166,9 @@ class TestRunner < Minitest::Test
       repo.write("README.md", "head\n")
       repo.commit("Touch readme.", date: "2026-02-12T00:00:00Z")
       tests = File.join(repo.dir, "candidates")
-      write_tests(tests, { "slow_test.rb" => "require \"minitest/autorun\"\nrequire \"flag\"\n\nclass SlowTest < Minitest::Test\n  def test_slow\n    sleep 60\n    assert Flag.ok\n  end\nend\n" })
+      write_tests(tests, { "slow_test.rb" => "require \"minitest/autorun\"\nrequire \"flag\"\n\nclass SlowTest < Minitest::Test\n  def test_slow\n    #{block_until_killed(repo.dir)}\n    assert Flag.ok\n  end\nend\n" })
 
-      doc = execute(repo, tests, timeout: 1, reruns: 2)
+      doc = execute(repo, tests, timeout: 1, reruns: 2, finished_in_time: blocked_children_time_out(repo.dir))
 
       assert_equal [0, 1, 0], doc["counts"].values_at("fail_on_base", "discarded", "reported")
       row = doc["tests"].fetch(0)
@@ -2027,8 +2027,8 @@ class TestRunner < Minitest::Test
     JitCatch::Runner.const_set(:FILE_CAP, saved)
   end
 
-  def execute(repo, tests, reruns: 0, timeout: 10, env: [])
-    raw = JitCatch::Runner.run(repo.dir, "base", "HEAD", tests, reruns: reruns, timeout: timeout, env: env)
+  def execute(repo, tests, reruns: 0, timeout: 10, env: [], finished_in_time: nil)
+    raw = JitCatch::Runner.run(repo.dir, "base", "HEAD", tests, reruns: reruns, timeout: timeout, env: env, finished_in_time: finished_in_time)
     JitCatch::Assessor.apply(raw)
   end
 

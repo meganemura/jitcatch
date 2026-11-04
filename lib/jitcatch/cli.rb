@@ -2,8 +2,8 @@
 
 module JitCatch
   class CLI
-    def self.start(argv)
-      new(argv).run
+    def self.start(argv, finished_in_time: nil)
+      new(argv, finished_in_time: finished_in_time).run
     rescue UsageError => err
       warn "jitcatch: #{err.message}"
       1
@@ -12,8 +12,9 @@ module JitCatch
       2
     end
 
-    def initialize(argv)
+    def initialize(argv, finished_in_time: nil)
       @argv = argv
+      @finished_in_time = finished_in_time
     end
 
     def run
@@ -61,7 +62,8 @@ module JitCatch
         timeout: opts.fetch(:timeout, 10),
         env: opts.fetch(:env, []),
         workers: opts.fetch(:workers, 1),
-        serial: opts.fetch(:serial, false)
+        serial: opts.fetch(:serial, false),
+        finished_in_time: @finished_in_time
       )
       doc = Assessor.apply(raw)
       $stdout.write(opts[:json] ? Render.dump(Render.run_json(doc)) : Render.run_text(doc))

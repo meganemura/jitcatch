@@ -30,17 +30,21 @@ module JitCatch
     # record calls that make it run that callback.
     Known = Data.define(:names, :constants, :unsaved)
 
-    def self.run(repo, base_ref, head_ref, tests_dir, reruns: 2, timeout: 10, env: [], workers: 1, serial: false)
-      new(repo, base_ref, head_ref, tests_dir, reruns: reruns, timeout: timeout, env: env, workers: workers, serial: serial).run
+    def self.run(repo, base_ref, head_ref, tests_dir, reruns: 2, timeout: 10, env: [], workers: 1, serial: false, finished_in_time: nil)
+      new(repo, base_ref, head_ref, tests_dir, reruns: reruns, timeout: timeout, env: env, workers: workers, serial: serial, finished_in_time: finished_in_time).run
     end
 
-    def initialize(repo, base_ref, head_ref, tests_dir, reruns:, timeout:, env:, workers: 1, serial: false)
+    # `finished_in_time` takes the thread that waits on a child and says
+    # whether the child ended before the timeout. A test passes its own so
+    # that which child times out does not depend on the machine's load.
+    def initialize(repo, base_ref, head_ref, tests_dir, reruns:, timeout:, env:, workers: 1, serial: false, finished_in_time: nil)
       @git = repo.is_a?(GitRepo) ? repo : GitRepo.new(repo)
       @base_ref = base_ref
       @head_ref = head_ref
       @tests_dir = File.expand_path(tests_dir)
       @reruns = reruns
       @timeout = timeout
+      @finished_in_time = finished_in_time || ->(waiter) { !waiter.join(timeout).nil? }
       @env_names = env.uniq.sort
       @workers = workers
       raise UsageError, "--workers must be at least 1" unless workers.is_a?(Integer) && workers >= 1
@@ -304,7 +308,7 @@ module JitCatch
     def run_process(cmd, chdir:, stdout_path:, stderr_path:, env:)
       pid = Process.spawn(env, *cmd, chdir: chdir, out: stdout_path, err: stderr_path, pgroup: true, unsetenv_others: true)
       waiter = Process.detach(pid)
-      timed_out = waiter.join(@timeout).nil?
+      timed_out = !@finished_in_time.call(waiter)
       kill_group(pid) if timed_out
       status = waiter.value
       [status, read_text(stdout_path), read_text(stderr_path), timed_out]

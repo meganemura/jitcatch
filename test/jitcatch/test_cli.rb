@@ -171,11 +171,11 @@ class TestCLI < Minitest::Test
       repo.write("README.md", "head\n")
       repo.commit("Touch readme.", date: "2026-02-12T00:00:00Z")
       tests = File.join(repo.dir, "candidates")
-      write_tests(tests, { "slow_test.rb" => %(require "minitest/autorun"\nrequire "flag"\n\nclass SlowTest < Minitest::Test\n  def test_slow\n    sleep 60\n    assert Flag.ok && ENV["JITCATCH_CANDIDATE_FLAG"] && ENV["TERM"]\n  end\nend\n) })
+      write_tests(tests, { "slow_test.rb" => %(require "minitest/autorun"\nrequire "flag"\n\nclass SlowTest < Minitest::Test\n  def test_slow\n    #{block_until_killed(repo.dir)}\n    assert Flag.ok && ENV["JITCATCH_CANDIDATE_FLAG"] && ENV["TERM"]\n  end\nend\n) })
 
       # TERM is a name jitcatch sets itself, so --env cannot pass it.
       out, err, status = with_parent_env("JITCATCH_SLOW_SERVICE" => "on", "JITCATCH_CANDIDATE_FLAG" => "1", "TERM" => "xterm", "HTTPS_PROXY" => "http://proxy.invalid:3128") do
-        cli("run", "--repo", repo.dir, "--timeout", "1", "base", "HEAD", tests)
+        cli("run", "--repo", repo.dir, "--timeout", "1", "base", "HEAD", tests, finished_in_time: blocked_children_time_out(repo.dir))
       end
 
       assert_equal [3, ""], [status, err]
@@ -185,7 +185,7 @@ class TestCLI < Minitest::Test
         "counts "
 
       json, _err, json_status = with_parent_env("JITCATCH_SLOW_SERVICE" => "on", "HTTPS_PROXY" => "http://proxy.invalid:3128") do
-        cli("run", "--json", "--repo", repo.dir, "--timeout", "1", "--env", "JITCATCH_SLOW_SERVICE", "base", "HEAD", tests)
+        cli("run", "--json", "--repo", repo.dir, "--timeout", "1", "--env", "JITCATCH_SLOW_SERVICE", "base", "HEAD", tests, finished_in_time: blocked_children_time_out(repo.dir))
       end
       doc = JSON.parse(json)
       assert_equal [3, 1, ["HTTPS_PROXY"]], [json_status, doc["untested"], doc["env_not_passed"]]
@@ -252,9 +252,9 @@ class TestCLI < Minitest::Test
     ENV.replace(saved)
   end
 
-  def cli(*args)
+  def cli(*args, finished_in_time: nil)
     status = nil
-    stdout, stderr = capture_io { status = JitCatch::CLI.start(args) }
+    stdout, stderr = capture_io { status = JitCatch::CLI.start(args, finished_in_time: finished_in_time) }
     [stdout, stderr, status]
   end
 end

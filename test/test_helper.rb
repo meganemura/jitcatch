@@ -29,6 +29,21 @@ module JitCatch
       repo&.destroy
     end
 
+    # A child times out when it runs `block_until_killed(dir)`, and no other
+    # child does, however long a loaded machine takes to start Ruby.
+    def blocked_children_time_out(dir)
+      lambda do |waiter|
+        until waiter.join(0.05)
+          return false if File.exist?(File.join(dir, waiter.pid.to_s))
+        end
+        true
+      end
+    end
+
+    def block_until_killed(dir)
+      %(File.write(File.join(#{dir.inspect}, Process.pid.to_s), ""); sleep 60)
+    end
+
     # Head removes the private A#helper and adds an argument to A#scale,
     # and the unchanged B still calls both: lib/b.rb:5 and lib/b.rb:9.
     def inherited_history(repo)
