@@ -12,6 +12,7 @@ module JitCatch
     WORKTREE = "{worktree}/"
     # Where the runner copies the tests directory in each worktree.
     TESTS_COPY = /#{Regexp.escape(WORKTREE)}\.jitcatch(?![\w.-])/.freeze
+    COPY_FRAME = %r{\A\.jitcatch/}.freeze
     MESSAGE_LINES = 20
     FRAMES = 15
 
@@ -30,14 +31,17 @@ module JitCatch
     end
 
     # A test reads its own files from the copy, and the rerun line names
-    # +tests+, so a message names +tests+ where it named the copy.
+    # +tests+, the tests directory from the repository root, so a message
+    # names it after the root, and a frame names it, where either named the
+    # copy.
     def naming_tests(result, tests)
       return nil if result.nil?
 
-      named = ->(text) { text.to_s.gsub(TESTS_COPY) { tests } }
+      named = ->(text) { text.to_s.gsub(TESTS_COPY) { "#{WORKTREE}#{tests}" } }
       message = named.call(result["message"])
       cause = result["cause"] && result["cause"].merge("message" => named.call(result["cause"]["message"]))
-      result.merge("message" => message, "message_first_line" => first_line(message), "cause" => cause)
+      backtrace = Array(result["backtrace"]).map { |frame| frame.merge("file" => frame["file"].sub(COPY_FRAME) { "#{tests}/" }) }
+      result.merge("message" => message, "message_first_line" => first_line(message), "cause" => cause, "backtrace" => backtrace)
     end
 
     def passed(status)

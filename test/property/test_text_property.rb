@@ -17,19 +17,26 @@ class TestTextProperty < Minitest::Test
   end
 
   # A name that only starts like the copy, such as `.jitcatch-report.json`,
-  # is another file of the worktree and stays.
+  # is another file of the worktree and stays. `tests` is the tests
+  # directory from the repository root, which a message writes after
+  # `{worktree}/` and a frame writes as it is.
   def test_naming_tests_names_the_tests_directory_for_each_copy_and_nothing_else
     Hegel.test do |tc|
-      tests = tc.draw(sampled_from(["{worktree}/candidates", "/tmp/c d/specs"]))
+      tests = tc.draw(sampled_from(["candidates", "../c d/specs"]))
       pieces = tc.draw(arrays(one_of(
-        from_regex('\A\{worktree\}/\.jitcatch(/[a-z_.]{1,6})?\z').map { |text| [text, text.sub("{worktree}/.jitcatch", tests)] },
+        from_regex('\A\{worktree\}/\.jitcatch(/[a-z_.]{1,6})?\z').map { |text| [text, text.sub(".jitcatch", tests)] },
         from_regex('\A\{worktree\}/\.jitcatch[-_.a-z][a-z.]{0,5}\z').map { |text| [text, text] },
         from_regex('\A[a-z .:/\n]{0,8}\z').map { |text| [text, text] }
       ), max_size: 5))
+      frames = tc.draw(arrays(one_of(
+        from_regex('\A\.jitcatch/[a-z_]{1,6}\.rb\z').map { |file| [file, file.sub(".jitcatch", tests)] },
+        from_regex('\A(lib/|\.jitcatch-|x\.jitcatch/)[a-z_]{1,6}\.rb\z').map { |file| [file, file] }
+      ), max_size: 4))
       message = pieces.map(&:first).join(" ")
-      named = JitCatch::Failure.naming_tests(JitCatch::Failure.result("fail", "E", message, [], cause: { "error_class" => "C", "message" => message }), tests)
-      expected = JitCatch::Failure.result("fail", "E", pieces.map(&:last).join(" "), [])
-      assert_equal expected.values_at("message", "message_first_line"), named.values_at("message", "message_first_line")
+      written = frames.map { |file, _named| { "file" => file, "line" => 3 } }
+      named = JitCatch::Failure.naming_tests(JitCatch::Failure.result("fail", "E", message, written, cause: { "error_class" => "C", "message" => message }), tests)
+      expected = JitCatch::Failure.result("fail", "E", pieces.map(&:last).join(" "), frames.map { |_file, file| { "file" => file, "line" => 3 } })
+      assert_equal expected.values_at("message", "message_first_line", "backtrace"), named.values_at("message", "message_first_line", "backtrace")
       assert_equal pieces.map(&:last).join(" "), named.dig("cause", "message")
       assert_nil JitCatch::Failure.naming_tests(expected, tests)["cause"], "an error raised from no other has no cause"
       assert_nil JitCatch::Failure.naming_tests(nil, tests), "a file that loaded has no file error"

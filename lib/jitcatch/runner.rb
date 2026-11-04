@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "fileutils"
+require "pathname"
 require "rbconfig"
 require "tmpdir"
 
@@ -97,6 +98,7 @@ module JitCatch
         "env" => @env_names,
         "env_unset" => @env_names.reject { |name| ENV.key?(name) },
         "bundle" => bundle,
+        "tests_dir" => tests_from_root,
         "test_files_omitted" => omitted,
         "dependencies" => change["dependencies"],
         "methods" => change["methods"].map { |method| slim_method(method) },
@@ -280,9 +282,9 @@ module JitCatch
 
       parsed = framework.parse(File.file?(report_path) ? read_text(report_path) : nil, stdout, stderr, normalizer)
       Result.new(
-        tests: parsed["tests"].transform_values { |result| Failure.naming_tests(result, tests_in_messages) },
+        tests: parsed["tests"].transform_values { |result| Failure.naming_tests(result, tests_from_root) },
         lines: parsed["lines"],
-        file_error: Failure.naming_tests(parsed["file_error"], tests_in_messages),
+        file_error: Failure.naming_tests(parsed["file_error"], tests_from_root),
         timed_out: false,
         exit_code: status&.exitstatus
       )
@@ -504,21 +506,11 @@ module JitCatch
       bundled ? "bundle exec #{command}" : command
     end
 
-    # The rerun line runs from the repository root, so a tests directory
-    # inside it is named from there, and any other by its whole path.
+    # The rerun line runs from the repository root, so the tests directory
+    # is named by its path from there, outside the repository too: a quoted
+    # line then names no directory of one machine.
     def tests_from_root
-      root = File.realpath(@git.dir)
-      tests = File.realpath(@tests_dir)
-      tests.start_with?(File.join(root, "")) ? tests.delete_prefix(File.join(root, "")) : tests
-    end
-
-    # A message writes the repository root as {worktree}, so a tests
-    # directory inside it is named from there.
-    def tests_in_messages
-      @tests_in_messages ||= begin
-        from_root = tests_from_root
-        from_root == File.realpath(@tests_dir) ? from_root : "#{Failure::WORKTREE}#{from_root}"
-      end
+      @tests_from_root ||= Pathname(File.realpath(@tests_dir)).relative_path_from(Pathname(File.realpath(@git.dir))).to_s
     end
 
     def assign_test_ids(rows)

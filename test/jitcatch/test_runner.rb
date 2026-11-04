@@ -317,9 +317,11 @@ class TestRunner < Minitest::Test
     end
   end
 
-  # The rerun line runs from the repository root as printed: a tests
-  # directory inside the repository is named from its root, and any other
-  # by its whole path.
+  # The rerun line runs from the repository root as printed, so a tests
+  # directory is named by its path from that root, outside the repository
+  # too: a machine's own directories stay out of a quoted line. The
+  # frames name the same path, and the assessor still reads them as the
+  # test's own.
   def test_a_rerun_line_names_the_tests_directory_it_runs_from_the_root
     with_repo do |repo|
       repo.write("lib/a.rb", "module A; def self.f = 1; end\n")
@@ -333,9 +335,13 @@ class TestRunner < Minitest::Test
       Dir.mktmpdir("jitcatch-outside-") do |outside|
         write_tests(outside, source)
 
-        lines = [inside, outside].map { |tests| execute(repo, tests)["tests"].fetch(0)["rerun"] }
+        rows = [inside, outside].map { |tests| execute(repo, tests)["tests"].fetch(0) }
+        lines = rows.map { |row| row["rerun"] }
+        from_root = Pathname(File.realpath(outside)).relative_path_from(Pathname(File.realpath(repo.dir))).to_s
 
-        assert_equal ["ruby -Ilib -I. 'cand dir/a_test.rb' -n ATest#test_f", "ruby -Ilib -I. #{File.realpath(outside)}/a_test.rb -n ATest#test_f"], lines
+        assert_match %r{\A(\.\./)+}, from_root
+        assert_equal ["ruby -Ilib -I. 'cand dir/a_test.rb' -n ATest#test_f", "ruby -Ilib -I. #{from_root}/a_test.rb -n ATest#test_f"], lines
+        assert_equal [["cand dir/a_test.rb", 6], ["#{from_root}/a_test.rb", 6]], rows.map { |row| row["head"]["backtrace"].last.values_at("file", "line") }
         lines.each do |line|
           output, status = Open3.capture2e(*Shellwords.split(line), chdir: repo.dir)
           refute status.success?, output
@@ -709,7 +715,7 @@ class TestRunner < Minitest::Test
       head = doc["tests"].fetch(0)["head"]
 
       assert_equal ["ArgumentError", "outer", { "error_class" => "KeyError", "message" => "inner k" }], head.values_at("error_class", "message", "cause")
-      assert_equal({ "file" => ".jitcatch/a_test.rb", "line" => 6 }, head["backtrace"].last)
+      assert_equal({ "file" => "candidates/a_test.rb", "line" => 6 }, head["backtrace"].last)
       assert_includes JitCatch::Render.run_text(doc), "    outer\n    cause: KeyError: inner k\n    rerun: "
     end
   end
@@ -877,7 +883,8 @@ class TestRunner < Minitest::Test
   end
 
   # The run reads a copy of the tests directory at `.jitcatch/`, and the
-  # rerun line names the directory itself, so a message names that too.
+  # rerun line names the directory by its path from the repository root,
+  # so a message names that too, after `{worktree}/`.
   # A relative `.jitcatch/` (`__FILE__`) is left as it is: it cannot be
   # told apart from text a test compares.
   def test_a_message_names_the_tests_directory_where_it_named_the_copy
@@ -895,7 +902,8 @@ class TestRunner < Minitest::Test
 
       messages = [inside, outside].map { |tests| execute(repo, tests)["tests"].fetch(0)["head"]["message"] }
 
-      assert_equal ["{worktree}/candidates/fixtures/none.json", "#{File.realpath(outside)}/fixtures/none.json"], messages.map { |message| message[/\S+none\.json/] }
+      from_root = Pathname(File.realpath(outside)).relative_path_from(Pathname(File.realpath(repo.dir))).to_s
+      assert_equal ["{worktree}/candidates/fixtures/none.json", "{worktree}/#{from_root}/fixtures/none.json"], messages.map { |message| message[/\S+none\.json/] }
     ensure
       FileUtils.rm_rf(outside) if outside
     end
@@ -954,7 +962,7 @@ class TestRunner < Minitest::Test
       assert_includes by_name["WordsTest#test_root"]["head"]["message"], "in {worktree}, the root, not /", "a root with no path after it"
       assert_includes by_name["WordsTest#test_word"]["head"]["message"], "café"
       frames = doc["tests"].flat_map { |test| [test["base"], test["head"]] }.flat_map { |side| side["backtrace"] }.map { |frame| frame["file"] }
-      assert_includes frames, ".jitcatch/words_test.rb"
+      assert_includes frames, "candidates/words_test.rb"
       assert_empty frames.select { |file| file.start_with?("/") }
     end
   end

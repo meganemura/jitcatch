@@ -9,6 +9,7 @@ class TestAssessor < Minitest::Test
     doc = {
       "methods" => [method("m01", "modified", "same", "approve!", [], 1)],
       "constants" => [],
+      "tests_dir" => "candidates",
       "tests" => [
         candidate("t01", "Loan#approve! approves", ["approve!"], error("ActiveRecord::NoDatabaseError", "Database not found: loans_test2.")),
         candidate("t02", "Loan#approve! connects", ["approve!"], error("ActiveRecord::ConnectionNotEstablished", "connection to server failed")),
@@ -33,9 +34,10 @@ class TestAssessor < Minitest::Test
       "constants" => [
         { "id" => "k01", "change" => "removed", "name" => "Calc::OLD", "bare_name" => "OLD" }
       ],
+      "tests_dir" => "candidates",
       "tests" => [
         candidate("t01", "LabelTest#test_label", ["label"], error("NoMethodError", "undefined method `label' for Calc")),
-        candidate("t02", "AddTest#test_arity", ["add"], error("ArgumentError", "wrong number of arguments (given 2, expected 3)"), frames("lib/calc.rb", 11) + frames(".jitcatch/addtest.rb", 5)),
+        candidate("t02", "AddTest#test_arity", ["add"], error("ArgumentError", "wrong number of arguments (given 2, expected 3)"), frames("lib/calc.rb", 11) + frames("candidates/addtest.rb", 5)),
         candidate("t03", "GuardTest#test_qty", ["add"], error("ArgumentError", "qty must be > 0")),
         candidate("t04", "LoadTest#test_load", [], error("LoadError", "cannot load such file -- shop")),
         candidate("t05", "SlowTest#test_slow", [], timeout_result),
@@ -102,6 +104,7 @@ class TestAssessor < Minitest::Test
         }
       ],
       "constants" => [],
+      "tests_dir" => "candidates",
       "tests" => [
         candidate("t01", "TotalTest#test_at_threshold", ["total_cents"], failure("Expected: 9720\n  Actual: 10800"))
       ]
@@ -131,6 +134,7 @@ class TestAssessor < Minitest::Test
         method("m02", "modified", "same", "rate", ["Calc#total"], 10)
       ],
       "constants" => [],
+      "tests_dir" => "candidates",
       "tests" => [
         candidate("t01", "RateTest#test_rate", %w[Calc.new rate], failure("Expected: 1\n  Actual: 2")),
         candidate("t02", "TotalTest#test_total", %w[Calc.new total], failure("Expected: 1\n  Actual: 2")),
@@ -152,6 +156,7 @@ class TestAssessor < Minitest::Test
     doc = {
       "methods" => [removed, modified],
       "constants" => [],
+      "tests_dir" => "candidates",
       "tests" => [
         candidate("t01", "MismatchTest#test_seed", %w[Mismatch.new], failure("Expected: 1\n  Actual: 2")),
         candidate("t02", "SpecTest#test_path", %w[Spec.new], failure("Expected: 1\n  Actual: 2"))
@@ -173,6 +178,7 @@ class TestAssessor < Minitest::Test
         method("m04", "modified", "same", "render", ["Calc#show"], 30)
       ],
       "constants" => [],
+      "tests_dir" => "candidates",
       "tests" => [
         candidate("t01", "ChangesTest#test_visibility", %w[between build], failure("Expected: 1\n  Actual: 2")),
         candidate("t02", "ShowTest#test_show", %w[show], failure("Expected: 1\n  Actual: 2")),
@@ -196,6 +202,7 @@ class TestAssessor < Minitest::Test
     stale = { "method_id" => "m09", "tags" => ["report"], "disposition" => "reported", "candidate_id" => "c09" }
     doc = {
       "methods" => [],
+      "tests_dir" => "candidates",
       "tests" => [
         candidate("t02", "BTest#test_b", [], failure("b")),
         { "id" => "t03", "name" => "CTest#test_c", "classification" => "no_signal", "base" => pass_result, "head" => pass_result }.merge(stale),
@@ -218,6 +225,7 @@ class TestAssessor < Minitest::Test
         method("m05", "modified", "changed", "scale", [], 40)
       ],
       "constants" => [],
+      "tests_dir" => "candidates",
       "tests" => [
         candidate("t01", "ShrinkTest#test_a", [], error("NoMethodError", "undefined method 'shrink' for an instance of Calc")),
         candidate("t02", "ResizeTest#test_a", [], error("NoMethodError", "undefined method 'resize' for an instance of Calc")),
@@ -254,15 +262,16 @@ class TestAssessor < Minitest::Test
     doc = {
       "methods" => [method("m01", "removed", "removed", "initialize", [], 1)],
       "constants" => [],
+      "tests_dir" => "candidates",
       "tests" => [
         candidate("t01", "NewTest#test_a", %w[Calc.new], error("ArgumentError", "wrong number of arguments (given 2, expected 0..1)"),
-                  frames(".jitcatch/newtest.rb", 4)),
+                  frames("candidates/newtest.rb", 4)),
         candidate("t02", "NewTest#test_b", %w[Calc.new], error("ArgumentError", "wrong number of arguments (given 2, expected 0..1)"),
                   frames("lib/build.rb", 7)),
         candidate("t03", "NewTest#test_c", %w[Calc.new], error("ArgumentError", "wrong number of arguments (given 2, expected 0..1)"),
-                  frames(".jitcatch/newtest.rb", 4) * 2),
+                  frames("candidates/newtest.rb", 4) * 2),
         candidate("t04", "NewTest#test_d", %w[Calc.new], error("ArgumentError", "wrong number of arguments (given 2, expected 0..1)"),
-                  (frames("lib/build.rb", 7) * 2) + frames(".jitcatch/newtest.rb", 9))
+                  (frames("lib/build.rb", 7) * 2) + frames("candidates/newtest.rb", 9))
       ]
     }
     out = JitCatch::Assessor.apply(doc)["tests"].to_h { |test| [test["id"], test["tags"]] }
@@ -276,13 +285,14 @@ class TestAssessor < Minitest::Test
 
   def test_a_keyword_or_arity_error_inside_assert_raises_is_a_signature_change
     raised = ->(message) { failure("[Unsupported] exception expected, not\nClass: <ArgumentError>\nMessage: <#{message.inspect}>") }
-    at_scale = frames(".jitcatch/scale_test.rb", 4) + frames("lib/calc.rb", 40) + frames(".jitcatch/scale_test.rb", 4)
+    at_scale = frames("candidates/scale_test.rb", 4) + frames("lib/calc.rb", 40) + frames("candidates/scale_test.rb", 4)
     doc = {
       "methods" => [
         method("m01", "modified", "changed", "scale", [], 40),
         method("m02", "modified", "same", "show", [], 30)
       ],
       "constants" => [],
+      "tests_dir" => "candidates",
       "tests" => [
         candidate("t01", "ScaleTest#test_a", [], raised.call("missing keyword: :steps"), at_scale),
         candidate("t02", "ScaleTest#test_b", [], raised.call("unknown keywords: :a, :b"), at_scale),
@@ -291,7 +301,7 @@ class TestAssessor < Minitest::Test
         candidate("t05", "ShowTest#test_a", [], raised.call("missing keyword: :steps"), frames("lib/calc.rb", 31)),
         candidate("t06", "ScaleTest#test_e", [], error("ArgumentError", "missing keyword: :steps"), at_scale),
         candidate("t07", "ScaleTest#test_f", [], failure("Expected: \"missing keyword: :steps\"\n  Actual: nil"), at_scale),
-        candidate("t08", "PlanTest#test_a", [], raised.call("missing keyword: :steps"), frames(".jitcatch/plan_test.rb", 4) + frames("lib/calc.rb", 40) + frames("lib/plan.rb", 7) + frames(".jitcatch/plan_test.rb", 4))
+        candidate("t08", "PlanTest#test_a", [], raised.call("missing keyword: :steps"), frames("candidates/plan_test.rb", 4) + frames("lib/calc.rb", 40) + frames("lib/plan.rb", 7) + frames("candidates/plan_test.rb", 4))
       ]
     }
     rows = JitCatch::Assessor.apply(doc)["tests"].to_h { |test| [test["id"], test] }
@@ -303,11 +313,12 @@ class TestAssessor < Minitest::Test
 
   def test_an_error_raised_inside_a_gem_does_not_touch_the_changed_method
     in_gem = frames("{ruby}/lib/ruby/gems/4.0.0/gems/rack-3.1.0/lib/rack/utils.rb", 12) + frames("lib/calc.rb", 41)
-    vendored = frames(".jitcatch/scale_test.rb", 5) + frames("vendor/bundle/ruby/4.0.0/gems/json-2.9.0/lib/json.rb", 3)
+    vendored = frames("candidates/scale_test.rb", 5) + frames("vendor/bundle/ruby/4.0.0/gems/json-2.9.0/lib/json.rb", 3)
     doc = {
       "methods" => [method("m01", "modified", "same", "scale", [], 40)],
       "constants" => [],
       "dependencies" => [{ "gem" => "rack", "old" => "3.0.0", "new" => "3.1.0" }],
+      "tests_dir" => "candidates",
       "tests" => [
         candidate("t01", "ScaleTest#test_a", ["scale"], error("TypeError", "no implicit conversion"), in_gem),
         candidate("t02", "ScaleTest#test_b", ["scale"], error("JSON::ParserError", "unexpected token"), vendored),
@@ -328,6 +339,7 @@ class TestAssessor < Minitest::Test
     doc = {
       "methods" => [],
       "constants" => [{ "id" => "k01", "change" => "modified", "name" => "Geo::SCALE", "bare_name" => "SCALE" }],
+      "tests_dir" => "candidates",
       "tests" => [
         candidate("t01", "GeoTest#test_a", ["SCALE"], failure("Expected: 2\n  Actual: 3")),
         candidate("t02", "GeoTest#test_b", ["scale"], failure("Expected: 2\n  Actual: 3"))
@@ -344,6 +356,7 @@ class TestAssessor < Minitest::Test
         { "id" => "k01", "change" => "removed", "name" => "Calc::OLD", "bare_name" => "OLD" },
         { "id" => "k02", "change" => "modified", "name" => "Calc::KEPT", "bare_name" => "KEPT" }
       ],
+      "tests_dir" => "candidates",
       "tests" => [
         "OLD", "Calc::OLD", "Shop::Calc::OLD", "KEPT", "Calc::KEPT", "NEW"
       ].each_with_index.map { |name, index|
@@ -364,6 +377,7 @@ class TestAssessor < Minitest::Test
         method("m03", "modified", "same", "render", [], 20).merge("name" => "Index.render")
       ],
       "constants" => [],
+      "tests_dir" => "candidates",
       "tests" => [
         candidate("t01", "EmitTest#test_render", %w[Emit.render render], failure("x")),
         candidate("t02", "IndexTest#test_render", %w[Index.render render], failure("x")),
@@ -458,6 +472,7 @@ class TestAssessor < Minitest::Test
         method("m02", "removed", "removed", "total", [], 10)
       ],
       "constants" => [],
+      "tests_dir" => "candidates",
       "tests" => [
         candidate("t01", "LabelTest#test_text", ["label"], failure("Expected: \"ok\"\n  Actual: \"undefined method 'total' for nil\""))
       ]

@@ -361,7 +361,7 @@ class TestRSpecRunner < Minitest::Test
       doc = execute(repo, tests)
 
       # Ruby 3.3 adds a `rescue in` frame on the same line as the error's own.
-      assert_equal({ "file" => ".jitcatch/a_spec.rb", "line" => 4 }, doc["tests"].fetch(0)["head"]["backtrace"].last)
+      assert_equal({ "file" => "candidates/a_spec.rb", "line" => 4 }, doc["tests"].fetch(0)["head"]["backtrace"].last)
       assert_includes JitCatch::Render.run_text(doc), "    outer\n    cause: KeyError: inner k\n    rerun: "
     end
   end

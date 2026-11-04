@@ -27,6 +27,7 @@ module JitCatch
       @methods = Array(doc["methods"])
       @constants = Array(doc["constants"])
       @callers = @methods.flat_map { |item| Array(item["reachable_from"]) }.uniq
+      @tests_dir = doc["tests_dir"]
     end
 
     def apply
@@ -148,7 +149,7 @@ module JitCatch
     end
 
     def test_frame?(frame)
-      frame["file"].to_s.start_with?(".jitcatch/")
+      !@tests_dir.nil? && frame["file"].to_s.start_with?("#{@tests_dir}/")
     end
 
     def caller_tag(call)
@@ -200,7 +201,7 @@ module JitCatch
     def origin_gem(test)
       return nil unless test.dig("head", "status") == "error"
 
-      frame = frames(test).find { |item| !item["file"].to_s.start_with?(".jitcatch/") }
+      frame = frames(test).find { |item| !test_frame?(item) }
       frame && frame["file"].to_s[%r{(?:\A|/)gems/([^/]+?)-\d[^/]*/}, 1]
     end
 

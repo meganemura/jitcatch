@@ -373,7 +373,9 @@ head での `LoadError`、タイムアウト、データベースが無いか届
 順序は固定で、テキストに時刻は無い。
 メッセージの中の worktree の絶対パスの根は、`{worktree}/lib/cart.rb` の中でも `Dir.pwd` だけでも `{worktree}` と書き、バックトレースのフレームからは除く。
 メッセージが `{worktree}/.jitcatch` のコピーを指すところは、`rerun:` の行と同じくテストのディレクトリを指すように書き換える。
-リポジトリの中の `TESTS_DIR` `candidates/` なら `{worktree}/candidates/fixtures/a.json` と書き、リポジトリの外ならパス全体を書く。
+リポジトリの中の `TESTS_DIR` `candidates/` なら `{worktree}/candidates/fixtures/a.json` と書き、リポジトリの外の `../catch/tests` なら `{worktree}/../catch/tests/fixtures/a.json` と書く。
+テストの中のバックトレースのフレームも、`{worktree}/` を付けずに同じように `TESTS_DIR` を書く（`candidates/cart_test.rb` や `../catch/tests/cart_test.rb`）。
+`run` の `--json` はそのパスを `tests_dir` に書き、`assess` はその下のフレームをテスト自身のものとして読む。
 `__FILE__` のような相対の `.jitcatch/` はそのまま残す。
 テストが比べる文字列と見分けられないからである。
 Ruby 自身の prefix は `{ruby}/` と書く。
@@ -382,7 +384,8 @@ Ruby 自身の prefix は `{ruby}/` と書く。
 `--json` のすべての行にも `rerun` がある。
 これは、手元のチェックアウトでリポジトリの根からそのテスト 1 つだけを再実行するコマンドである。
 候補のパスは、リポジトリのルートから届く形で書く。
-`TESTS_DIR` がリポジトリの中にあればルートからのパス、外にあれば絶対パスになるので、出たとおりに実行できる。
+`TESTS_DIR` がリポジトリの外にあっても、ルートからのパス（`../catch/tests/cart_test.rb`）になる。
+そのため、出たとおりに実行でき、この行はどの手元のディレクトリも含まない。
 この行はシェルで実行し、`--env` で渡した変数はそのシェルから来ているので、この行にも届く。
 行には値を書かない。
 たとえば `ruby -Ilib -I. -e 'require "rspec/core"; require "rspec/support/object_formatter"; RSpec::Core::RubyProject.instance_variable_set(:@project_root, Dir.pwd); RSpec::Support::ObjectFormatter.default_instance.max_formatted_output_length = nil; exit(RSpec::Core::Runner.run(ARGV))' candidates/cart_spec.rb:11` や `ruby -Ilib -I. candidates/cart_test.rb -n CartTest#test_total` で、head に `Gemfile` があれば `bundle exec` が前に付く。
