@@ -78,14 +78,97 @@ class TestChanges < Minitest::Test
       repo.branch("base")
       repo.write("script/mismatch.rb", "# moved\n")
       repo.write("test/always.rb", "class Always\n  def cents(n) = 1\nend\n")
-      repo.write("lib/fake.rb", "class Fake\n  def name = \"x\"\nend\n")
+      repo.write("lib/fake.rb", "class Fake\n  def name = \"x\"\n  def size = 1\nend\n")
       repo.commit("Move the doubles.", date: "2026-02-12T00:00:00Z")
 
       doc = JitCatch::Changes.between(repo.dir, "base", "HEAD")
       rows = doc["methods"].map { |method| method.values_at("name", "change", "file", "moved_from", "signature") }
 
-      assert_equal [["Always#cents", "moved", "test/always.rb", "script/mismatch.rb", "same"], ["Fake#name", "moved", "lib/fake.rb", "script/mismatch.rb", "same"]], rows.sort
+      assert_equal [["Always#cents", "moved", "test/always.rb", "script/mismatch.rb", "same"], ["Fake#name", "moved", "lib/fake.rb", "script/mismatch.rb", "same"], ["Fake#size", "added", "lib/fake.rb", nil, "added"]], rows.sort
       assert_includes JitCatch::Render.context_text(doc), "moved Always#cents test/always.rb:2-2 signature=same visibility=public moved_from=script/mismatch.rb\n"
+    end
+  end
+
+  CALC_BASE = <<~RUBY
+    class Calc
+      def total(net, volume)
+        net - volume
+      end
+      # note
+
+      def label
+        "x"
+      end
+
+      def wide(n)
+        n + 1
+      end
+
+      def shrink(n)
+        a = n
+        b = a
+        b
+      end
+
+      def deleting(n)
+        n += 1
+        b = n
+        b
+      end
+
+      def helper = 1
+    end
+  RUBY
+
+  CALC_HEAD = <<~RUBY
+    class Calc
+      def total(net, volume)
+        net - volume - coupon
+      end
+
+      def label
+        "y"
+      end
+
+      def wide(n)
+        x = n + coupon
+        x + helper
+      end
+
+      def shrink(n)
+        n - coupon
+      end
+
+      def deleting(n)
+        b = n
+        b + coupon
+      end
+
+      def helper = 1
+      def coupon = 2
+    end
+  RUBY
+
+  # Only an edit whose every new line calls the added method, and that
+  # removes no more lines than it writes, forwards to it.
+  def test_an_edit_forwards_to_an_added_method_only_when_it_only_adds_that_call
+    with_repo do |repo|
+      repo.write("lib/calc.rb", CALC_BASE)
+      repo.write("lib/old.rb", "class Old\n  def x = 1\nend\n")
+      repo.write("lib/trim.rb", "class Trim\n  def x = 1\n  def y = 2\nend\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/calc.rb", CALC_HEAD)
+      repo.write("lib/side.rb", "class Calc\n  def side\n    1\n  end\n\n  def side2\n    coupon\n  end\nend\n")
+      repo.git("rm", "-q", "lib/old.rb")
+      repo.write("lib/trim.rb", "class Trim\n  def x = 1\nend\n")
+      repo.commit("Add a coupon.", date: "2026-02-12T00:00:00Z")
+
+      doc = JitCatch::Changes.between(repo.dir, "base", "HEAD")
+      forwards = doc["methods"].select { |method| method["change"] == "modified" }.to_h { |method| [method["bare_name"], method["forwards_to_added"]] }
+
+      assert_equal({ "deleting" => false, "label" => false, "shrink" => false, "total" => true, "wide" => false }, forwards.sort.to_h)
+      assert_equal({ "lib/calc.rb" => [[3, 3], [7, 7], [11, 12], [16, 16], [21, 21], [25, 25]], "lib/side.rb" => [[1, 9]] }, doc["changed_lines"])
     end
   end
 
