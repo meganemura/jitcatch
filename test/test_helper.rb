@@ -102,6 +102,45 @@ module JitCatch
       repo.commit("Mark every parse.", date: "2026-02-12T00:00:00Z")
     end
 
+    # Head changes the constructor of Loan, an ActiveRecord model that a
+    # factory builds. ActiveRecord and FactoryBot are stand-ins a candidate
+    # loads from RECORD_STANDINS, outside the history, so the index sees
+    # neither one's `create`.
+    def record_history(repo, factories: "FactoryBot.define do\n  factory :loan do\n  end\nend\n")
+      repo.write("lib/application_record.rb", "class ApplicationRecord < ActiveRecord::Base\nend\n")
+      loan = lambda do |mark|
+        <<~RUBY
+          require "application_record"
+
+          class Loan < ApplicationRecord
+            attr_reader :approved_by
+
+            def initialize(attributes = nil)
+              @approved_by = "#{mark}"
+            end
+          end
+        RUBY
+      end
+      repo.write("lib/loan.rb", loan.call("nobody"))
+      repo.write("spec/factories/loans.rb", factories)
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/loan.rb", loan.call("pending"))
+      repo.commit("Mark a new loan as pending.", date: "2026-02-12T00:00:00Z")
+    end
+
+    RECORD_STANDINS = <<~RUBY
+      module ActiveRecord
+        class Base
+          def self.create!(attributes = nil) = new(attributes)
+        end
+      end
+
+      module Factories
+        def create(name) = Object.const_get(name.to_s.capitalize).new
+      end
+    RUBY
+
     def with_env(values)
       saved = values.keys.to_h { |key| [key, ENV[key]] }
       values.each { |key, value| ENV[key] = value }

@@ -5,6 +5,7 @@ require "rbconfig"
 
 require_relative "jitcatch/git_repo"
 require_relative "jitcatch/source_index"
+require_relative "jitcatch/factories"
 require_relative "jitcatch/diff_parser"
 require_relative "jitcatch/changes"
 require_relative "jitcatch/failure"

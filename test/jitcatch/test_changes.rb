@@ -658,4 +658,55 @@ class TestChanges < Minitest::Test
       assert_equal [["modified", "Line = Struct.new(:cents)", "Line = Struct.new(:cents) do"]], doc["constants"].map { |const| const.values_at("change", "old_source", "new_source") }
     end
   end
+
+  # A factory's class is read from its name, `class:`, `parent:`, or the
+  # factory it nests in. One whose class the source does not settle is
+  # left out and listed, so a reader knows which tests no line can name.
+  def test_a_constructor_lists_the_tests_that_build_its_class
+    with_repo do |repo|
+      repo.write("lib/ledger.rb", "class Ledger\nend\n")
+      factories = <<~RUBY
+        FactoryBot.define do
+          factory :loan do
+            factory :approved_loan do
+            end
+          end
+          factory :credit, class: "Loan"
+          factory :debt, class: Loan, aliases: [:arrears]
+          factory :overdue, parent: :loan
+          factory :ledger
+          factory :mystery, class: kind
+          factory :api_key
+          factory :orphan, parent: :nothing
+        end
+      RUBY
+      repo.write("spec/models/loan_spec.rb", "loan = create(:loan)\nexpect(loan.approved_by).to eq(\"nobody\")\n")
+      repo.write("spec/models/desk_spec.rb", "Loan.create!(amount: 5)\n")
+      repo.write("spec/models/new_spec.rb", "Loan.new\n")
+      repo.write("spec/models/ledger_spec.rb", "create(:ledger)\n")
+      repo.write("spec/models/own_spec.rb", "def create(name) = name\ncreate(:loan)\n")
+      record_history(repo, factories: factories)
+
+      doc = JitCatch::Changes.between(repo.dir, "base", "HEAD")
+      constructor = doc["methods"].find { |method| method["name"] == "Loan#initialize" }
+
+      assert_equal [
+        { "file" => "spec/models/desk_spec.rb", "via" => "builder", "calls" => ["Loan.create!"] },
+        { "file" => "spec/models/loan_spec.rb", "via" => "builder", "calls" => ["factory(:loan)"] },
+        { "file" => "spec/models/new_spec.rb", "via" => "builder", "calls" => ["Loan.new"] }
+      ], constructor["existing_tests"]
+      assert_equal %w[Loan.build Loan.create Loan.create! factory(:approved_loan) factory(:arrears) factory(:credit) factory(:debt) factory(:loan) factory(:overdue)],
+        constructor["builders"]
+      assert_equal [
+        { "file" => "spec/factories/loans.rb", "line" => 10, "name" => "mystery", "reason" => "class: is not a constant, a string, or a symbol" },
+        { "file" => "spec/factories/loans.rb", "line" => 11, "name" => "api_key", "reason" => "it builds ApiKey, which no file here defines" },
+        { "file" => "spec/factories/loans.rb", "line" => 12, "name" => "orphan", "reason" => "its parent :nothing is not a factory read here" }
+      ], doc["factories_skipped"]
+
+      text = JitCatch::Render.context_text(doc)
+      assert_includes text, "    tests: spec/models/desk_spec.rb via Loan.create!; spec/models/loan_spec.rb via factory(:loan); spec/models/new_spec.rb via Loan.new\n"
+      assert_includes text, "    built_by: Loan.build, Loan.create, Loan.create!, factory(:approved_loan), factory(:arrears), factory(:credit), factory(:debt), factory(:loan), factory(:overdue)\n    tests: "
+      assert_includes text, "factories_skipped:\n  spec/factories/loans.rb:10 factory :mystery: class: is not a constant, a string, or a symbol\n"
+    end
+  end
 end

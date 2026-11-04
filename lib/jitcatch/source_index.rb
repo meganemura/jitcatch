@@ -72,6 +72,9 @@ module JitCatch
     ].freeze
     SPEC_HELPERS = %i[let let! subject subject!].freeze
     DESCRIBED_METHOD = /\A[#.]([a-z_][\w]*[?!=]?)\z/
+    # FactoryBot's calls that build an object, so run its class's
+    # `initialize`. `attributes_for` builds a Hash.
+    FACTORY_CALLS = %i[build build_list build_pair build_stubbed build_stubbed_list build_stubbed_pair create create_list create_pair].freeze
 
     # A class header's superclass as written, and the namespace the header
     # is in, which the name is looked up from.
@@ -105,6 +108,7 @@ module JitCatch
       @returned = {}
       @symbol_lists = {}
       @paths = Hash.new { |hash, key| hash[key] = [] }
+      @factory_calls = Hash.new { |hash, key| hash[key] = [] }
     end
 
     def parse
@@ -131,6 +135,11 @@ module JitCatch
       qualifier.to_s.empty? ? "#{sep}#{bare}" : "#{qualifier}#{sep}#{bare}"
     end
 
+    # How a test that builds an object from the factory `name` mentions it.
+    def self.factory_mention(name)
+      "factory(:#{name})"
+    end
+
     def self.split_qualified(qname)
       if (idx = qname.rindex("#"))
         [qname[0...idx], "#", qname[(idx + 1)..]]
@@ -149,7 +158,7 @@ module JitCatch
     # name, the whole file is read.
     def referenced_names(qualified)
       start = @methods.find { |method| method.qualified == qualified }
-      return (@references.values.flatten + receiver_names(@calls.map(&:enclosing))).uniq.sort unless start
+      return (@references.values.flatten + receiver_names(@calls.map(&:enclosing)) + factory_names(@factory_calls.keys)).uniq.sort unless start
 
       names_reached_from([start.qualified])
     end
@@ -204,7 +213,7 @@ module JitCatch
     def names_reached_from(keys)
       reached = reached_from(keys)
       names = reached.flat_map { |name| @references.fetch(name, []) }
-      (names + receiver_names(reached)).uniq.sort
+      (names + receiver_names(reached) + factory_names(reached)).uniq.sort
     end
 
     def reached_from(keys)
@@ -663,6 +672,8 @@ module JitCatch
           named = reflective_name(node)
           refer(enclosing, named) if named
           refer(enclosing, "to_s") if MESSAGE_CALLS.include?(node.name)
+          factory = factory_built(node)
+          @factory_calls[enclosing] << [node.name.to_s, factory] if factory
         end
         node.compact_child_nodes.each do |child|
           children = child.is_a?(Prism::ArgumentsNode) && HASH_KEY_CALLS.include?(node.name) ? child.arguments.grep_v(Prism::SymbolNode) : [child]
@@ -755,6 +766,23 @@ module JitCatch
       return nil unless node.receiver.name == :described_class && node.receiver.receiver.nil?
 
       @described.last
+    end
+
+    # A file that defines a method of the call's name calls its own
+    # helper, not FactoryBot's.
+    def factory_names(enclosings)
+      enclosings.flat_map { |name| @factory_calls.fetch(name, []) }
+        .filter_map { |call, factory| self.class.factory_mention(factory) unless @defined.key?(call) }
+    end
+
+    # `create(:loan)` or `FactoryBot.build("loan")` builds from the factory
+    # `loan`. A name a run computes cannot be read.
+    def factory_built(node)
+      return nil unless FACTORY_CALLS.include?(node.name)
+      return nil unless node.receiver.nil? || (node.receiver.is_a?(Prism::ConstantReadNode) && node.receiver.name == :FactoryBot)
+
+      first = node.arguments&.arguments&.first
+      first.unescaped if first.is_a?(Prism::SymbolNode) || first.is_a?(Prism::StringNode)
     end
 
     def refer(enclosing, name)

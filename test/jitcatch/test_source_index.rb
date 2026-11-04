@@ -337,6 +337,31 @@ class TestSourceIndex < Minitest::Test
     assert_equal %w[- Cart CartTest Shop Shop::Cart.new Util Util.build assert_equal build items= label module_function new other_only public_send size total total= zero?],
       index.referenced_names("CartTest#test_missing")
   end
+  # A FactoryBot call names its factory as `factory(:loan)`. One the file
+  # defines itself, an argument that is not a symbol, and `attributes_for`,
+  # which builds no object, name none.
+  def test_a_factory_call_names_its_factory
+    source = <<~'RUBY'
+      RSpec.describe Loan do
+        let(:loan) { create(:loan, :approved) }
+
+        it("lists") { FactoryBot.build_list("ledger", 2) && build_stubbed(:debt) }
+        it("names") { create(kind) && attributes_for(:credit) && Other.create(:loan) }
+      end
+    RUBY
+    own = <<~'RUBY'
+      class OwnTest
+        def test_own = create(:loan)
+        def create(name) = name
+      end
+    RUBY
+    index = JitCatch::SourceIndex.parse(source, file: "spec/loan_spec.rb")
+
+    assert_equal %w[factory(:debt) factory(:ledger) factory(:loan)], index.example_references(4).grep(/\Afactory\(/)
+    assert_equal ["factory(:loan)"], index.example_references(5).grep(/\Afactory\(/)
+    assert_equal [], JitCatch::SourceIndex.parse(own, file: "test/own_test.rb").referenced_names("OwnTest#test_own").grep(/\Afactory\(/)
+  end
+
   def test_a_hash_key_symbol_is_not_a_mention_and_a_reflective_call_is
     source = <<~'RUBY'
       class SnapTest

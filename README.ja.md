@@ -273,6 +273,13 @@ gem の中から始まったエラーには `touches:changed_method` を付け�
 Concern の `included do`、`prepended do`、`class_methods do` ブロックの中にあるものも数える。
 片方の側にしか無いクラスやモジュールも定数として `added` か `removed` になり、ソースには宣言の行が出る。
 各メソッドには、旧ソースと新ソース、ライブラリ内の呼び出し、そこへ届く入口（`reachable_from`）、それに言及している既存テストが出る。
+変更された `initialize` には `built_by:` も出る。
+これは `new` のほかにそれを走らせる呼び出しで、Active Record のモデルの `create`、`create!`、`build` と、そのクラスを作る FactoryBot のファクトリーごとの `factory(:loan)` である。
+その `tests:` には、grep の結果に加えて、そのどれかか `Owner.new` を呼ぶテストファイルが、呼んでいるもの（`spec/models/loan_spec.rb via factory(:loan)`）と一緒に出る。
+ファクトリーは `spec/factories` と `test/factories` から、読み込まずにソースとして読む。
+クラスはまず `class:`（定数、文字列、シンボル）から、次に親（`parent:` か、入れ子の外側のファクトリー）から、最後に名前を camelize したものから決まり、`aliases:` の別名も同じクラスを作る。
+ソースからクラスが決まらないファクトリーはたどらず、理由と一緒に `factories_skipped:` に出す。
+実行時に計算する `class:`、そこで読んだファクトリーにない親、どのファイルも定義しないクラスがこれに当たり、最後のものはアプリが設定する活用（`ApiKey` と `APIKey`）で起こりうる。
 言及しているテストがないときは `entry_point_tests` が出る。
 `reachable_from` のうち public な入口について、そのクラスを書き、入口と同じ名前のメソッドを呼んでいるテストファイルである。
 `--coverage` を渡すと、grep の代わりに JSON の行リストを使う。
@@ -379,6 +386,7 @@ Rails アプリのように head の根に `spec` があれば、RSpec はもと
 
 Rails アプリの候補は、アプリ自身の spec と同じく `require "rails_helper"` で始まる RSpec のファイルか、`require "test/test_helper"` で始まる Minitest のファイルである。
 候補はアプリのファクトリーとテスト用データベースを使える。
+`context` はファクトリーをそれが作るクラスまでたどるので、`create(:loan)` は `Loan#initialize` を指す。
 
 base と head はアプリを同時に起動する。
 相対パスの SQLite（Rails の既定の `storage/test.sqlite3`）はワークツリーごとのファイルなので、2 つの側は出会わない。
@@ -476,6 +484,9 @@ CLI を使わない場合は、`skills/jitcatch` をエージェントの skills
 - 言及は、そのテストメソッドと、それが直接または間接に呼ぶ同じファイルのメソッドの中にある、メソッド呼び出し、定数、シンボルである。
   `Owner.new` は、名前が `Owner` で終わるクラスの `initialize` への言及になり、`mentions` にはテストが書いたとおりに出る。
   `A::Owner.new` は、名前が `A::Owner` で終わるクラスだけを指すので、`B::Owner#initialize` を指さない。
+  変更されたコンストラクタの `built_by:` にある呼び出しも同じく言及になる。
+  Active Record のモデルへの `Loan.create!` や、FactoryBot の呼び出し（`create(:loan)`、`build(:loan)`、`create_list(:loan, 2)`、`build_stubbed(:loan)`）がこれに当たり、後者は `mentions` に `factory(:loan)` として出る。
+  その名前のメソッドを自分で定義するファイルはそのメソッドを呼ぶので FactoryBot の呼び出しにならず、`attributes_for` はオブジェクトを作らない。
   テストが名前を書いたクラスか、`.new` で作ったそのインスタンスに送る呼び出しは、`Index.parse` や `Cart#total` のようにそのクラスと一緒にも出る。
   同じ名前の変更メソッドが複数あるとき、関連 id はそのクラス(または名前がそれで終わるクラス)のものになる。
   スーパークラスが定義するメソッドのように、そのクラスに該当するものがなければ、全部を残す。

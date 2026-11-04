@@ -360,15 +360,21 @@ module JitCatch
 
     # A test writes a constructor as `Box.new` or `A::Box.new`. The written
     # path names this class when its segments end the class's name, so
-    # `A::Box.new` is not a mention of `B::Box#initialize`.
+    # `A::Box.new` is not a mention of `B::Box#initialize`. A record builder
+    # (`Box.create!`) or a factory the change document lists for the
+    # constructor runs it too.
     def mentioned?(item, mentions)
       name = mention(item)
       return mentions.include?(name) unless name.end_with?(".new")
 
       owner = SourceIndex.split_qualified(item["name"].to_s).first
+      builders = Array(item["builders"])
+      return true if (mentions & builders.grep(/\Afactory\(/)).any?
+
+      calls = ["new", *builders.filter_map { |builder| builder.delete_prefix("#{owner}.") if builder.start_with?("#{owner}.") }]
       mentions.any? { |text|
-        written = text.delete_suffix(".new")
-        text.end_with?(".new") && (owner == written || owner.end_with?("::#{written}") || written.end_with?("::#{owner}"))
+        written, sep, called = text.rpartition(".")
+        !sep.empty? && calls.include?(called) && (owner == written || owner.end_with?("::#{written}") || written.end_with?("::#{owner}"))
       }
     end
 

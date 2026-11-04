@@ -34,6 +34,11 @@ module JitCatch
       lines.concat(constant_lines(doc["constants"]))
       lines.concat(method_lines(doc["methods"]))
       lines.concat(entrypoint_lines(doc["entrypoints"]))
+      skipped = Array(doc["factories_skipped"])
+      unless skipped.empty?
+        lines << "factories_skipped:"
+        skipped.each { |factory| lines << "  #{factory["file"]}:#{factory["line"]} factory#{factory["name"] && " :#{factory["name"]}"}: #{factory["reason"]}" }
+      end
       unless doc["parse_errors"].empty?
         lines << "parse_errors:"
         doc["parse_errors"].each { |err| lines << "  #{err["ref"]} #{err["file"]} #{err["message"]}" }
@@ -169,6 +174,7 @@ module JitCatch
           unless method["dynamic_callers"].to_a.empty?
             lines << "    dynamic_callers: #{method["dynamic_callers"].map { |caller| "#{caller["from"]} (#{caller["name"]})" }.join(", ")}"
           end
+          lines << "    built_by: #{method["builders"].join(", ")}" unless method["builders"].to_a.empty?
           lines << "    tests: #{format_tests(method["existing_tests"])}"
           unless method["entry_point_tests"].empty?
             hits = method["entry_point_tests"].map { |hit| "#{hit["file"]} via #{hit["entry_points"].join(", ")}" }
@@ -206,6 +212,8 @@ module JitCatch
       tests.map { |test|
         if test["via"] == "coverage"
           "#{test["file"]} coverage #{test["test"]}"
+        elsif test["via"] == "builder"
+          "#{test["file"]} via #{test["calls"].join(", ")}"
         else
           "#{test["file"]} grep"
         end

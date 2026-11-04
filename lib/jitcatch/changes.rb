@@ -22,6 +22,7 @@ module JitCatch
       @coverage = coverage.nil? ? nil : CoverageFile.load(coverage)
       @texts = {}
       @parsed = {}
+      @test_names = {}
     end
 
     def build
@@ -42,7 +43,9 @@ module JitCatch
       decorate_calls(methods, head_edges, base_edges)
       mark_forwarders(methods, head_edges, hunks)
       decorate_dynamic_callers(methods, head_idx, base_idx)
-      decorate_tests(methods, base_idx, head_idx)
+      factories = factories_of(head_idx)
+      builders = builders_for(methods, head_idx, factories)
+      decorate_tests(methods, base_idx, head_idx, builders)
       entrypoints = entrypoints_for(methods, head_idx, base_idx)
 
       {
@@ -58,7 +61,8 @@ module JitCatch
         "constants" => constants.map { |item| constant_hash(item) },
         "methods" => methods.map { |item| method_hash(item) },
         "changed_lines" => changed_lines(hunks),
-        "entrypoints" => entrypoints
+        "entrypoints" => entrypoints,
+        "factories_skipped" => factories.select(&:reason).map { |factory| { "file" => factory.file, "line" => factory.line, "name" => factory.name, "reason" => factory.reason } }
       }
     end
 
@@ -127,6 +131,7 @@ module JitCatch
       private_constants = []
       errors = []
       sources = {}
+      indexes = {}
       listed = @git.ruby_blobs(sha).select { |blob| blob.size <= MAX_BLOB }
       @texts.merge!(@git.read_blobs(listed.map(&:oid).uniq - @texts.keys))
       listed.each do |blob|
@@ -134,6 +139,7 @@ module JitCatch
         sources[file] = @texts.fetch(blob.oid)
         # A file both sides share is parsed once.
         index = (@parsed[[file, blob.oid]] ||= SourceIndex.parse(sources[file], file: file))
+        indexes[file] = index
         if index.parse_error
           errors << { "ref" => label, "file" => file, "message" => index.parse_error }
           next
@@ -146,7 +152,7 @@ module JitCatch
         private_constants.concat(index.private_constants)
       end
       methods = SourceIndex.hide_private_constants(methods, private_constants.uniq)
-      { "methods" => methods, "constants" => constants, "namespaces" => namespaces, "superclasses" => superclasses, "calls" => calls, "errors" => errors, "sources" => sources }
+      { "methods" => methods, "constants" => constants, "namespaces" => namespaces, "superclasses" => superclasses, "calls" => calls, "errors" => errors, "sources" => sources, "indexes" => indexes }
     end
 
     def changed_methods(base_idx, head_idx, hunks)
@@ -362,15 +368,17 @@ module JitCatch
       end
     end
 
-    def decorate_tests(methods, base_idx, head_idx)
+    def decorate_tests(methods, base_idx, head_idx, builders)
       test_sources = test_sources_for(base_idx, head_idx)
       public_names = (base_idx["methods"] + head_idx["methods"]).filter_map { |node| [node.qualified, true] if node.visibility == "public" }.to_h
       methods.each do |method|
         node = method["new"] || method["old"]
+        method["builders"] = constructor?(node) ? builders.fetch(node.qualifier) : []
         method["existing_tests"] = if @coverage
           coverage_hits(method)
         else
-          grep_hits(test_sources, node.bare_name)
+          builds = constructor?(node) ? builder_hits(test_sources.keys, node.qualifier, method["builders"], base_idx, head_idx) : []
+          merge_hits(builds, grep_hits(test_sources, node.bare_name))
         end
         method["entry_point_tests"] = if @coverage || !method["existing_tests"].empty?
           []
@@ -420,6 +428,57 @@ module JitCatch
 
         { "file" => file, "via" => "grep" }
       }.sort_by { |hit| hit["file"] }.first(TEST_CAP)
+    end
+
+    # A factory that builds a class no file defines may need an inflection
+    # the app configures (`ApiKey` against `APIKey`), so it is not followed.
+    def factories_of(idx)
+      defined = lookups(idx)[2]
+      Factories.read(idx["sources"].select { |path, _source| Factories.file?(path) }).map do |factory|
+        next factory if factory.reason || defined.key?(factory.class_name)
+
+        factory.with(reason: "it builds #{factory.class_name}, which no file here defines")
+      end
+    end
+
+    # The calls other than `new` that run a changed class's `initialize`:
+    # `create`, `create!`, and `build` on an ActiveRecord model, and each
+    # factory that builds the class.
+    def builders_for(methods, idx, factories)
+      by_class, _by_bare, _qualifiers, parents = lookups(idx)
+      methods.map { |method| (method["new"] || method["old"]).qualifier }.uniq.to_h do |qualifier|
+        records = RECORD_BUILDERS.filter_map { |bare| "#{qualifier}.#{bare}" if constructor_of(qualifier, bare, by_class, parents) }
+        built = factories.filter_map { |factory| SourceIndex.factory_mention(factory.name) if factory.reason.nil? && factory.class_name == qualifier }
+        [qualifier, (records + built).sort]
+      end
+    end
+
+    def constructor?(node)
+      node.bare_name == "initialize" && node.kind == "instance" && !node.qualifier.empty?
+    end
+
+    # A test file that calls `Loan.new`, a record builder, or a factory of
+    # the class, as its parsed source writes it. `Loan.new` also names
+    # `Shop::Loan` from inside `Shop`.
+    def builder_hits(paths, qualifier, builders, base_idx, head_idx)
+      calls = ["#{qualifier}.new", *builders]
+      paths.filter_map { |path|
+        index = head_idx["indexes"][path] || base_idx["indexes"][path]
+        found = (@test_names[path] ||= index.referenced_names("")).select { |name| builds?(name, qualifier, calls) }
+        { "file" => path, "via" => "builder", "calls" => found } unless found.empty?
+      }
+    end
+
+    def builds?(name, qualifier, calls)
+      return calls.include?(name) if name.start_with?("factory(")
+
+      written, sep, bare = name.rpartition(".")
+      !sep.empty? && calls.include?("#{qualifier}.#{bare}") && (written == qualifier || qualifier.end_with?("::#{written}"))
+    end
+
+    def merge_hits(builds, greps)
+      built = builds.map { |hit| hit["file"] }
+      (builds + greps.reject { |hit| built.include?(hit["file"]) }).sort_by { |hit| hit["file"] }.first(TEST_CAP)
     end
 
     # A method name can end in `!` or `?`, where `\b` cannot follow, and
@@ -472,12 +531,7 @@ module JitCatch
     end
 
     def edges_for(idx)
-      methods = idx["methods"]
-      by_class = methods.group_by { |method| [method.qualifier, method.bare_name] }
-      by_bare = methods.group_by(&:bare_name)
-      # A class with no method of its own still names a class to look up.
-      qualifiers = idx["namespaces"].to_h { |node| [node.qualified, []] }.merge(methods.group_by(&:qualifier))
-      parents = idx["superclasses"].to_h { |sup| [sup.qualified, resolve_constant(sup.written, sup.scope, qualifiers, defining: sup.qualified) || sup.written] }
+      by_class, by_bare, qualifiers, parents = lookups(idx)
       edges = []
       idx["calls"].each do |call|
         next if call.enclosing.nil? || test_file?(call.file)
@@ -490,6 +544,16 @@ module JitCatch
       end
       edges.uniq { |edge| [edge["from"], edge["to"], edge["file"], edge["line"]] }
         .sort_by { |edge| [edge["file"], edge["line"], edge["from"], edge["to"]] }
+    end
+
+    def lookups(idx)
+      methods = idx["methods"]
+      by_class = methods.group_by { |method| [method.qualifier, method.bare_name] }
+      by_bare = methods.group_by(&:bare_name)
+      # A class with no method of its own still names a class to look up.
+      qualifiers = idx["namespaces"].to_h { |node| [node.qualified, []] }.merge(methods.group_by(&:qualifier))
+      parents = idx["superclasses"].to_h { |sup| [sup.qualified, resolve_constant(sup.written, sup.scope, qualifiers, defining: sup.qualified) || sup.written] }
+      [by_class, by_bare, qualifiers, parents]
     end
 
     # A call on a receiver the source does not name gets no edge: a bare
@@ -614,6 +678,7 @@ module JitCatch
         "callsites_omitted" => item["callsites_omitted"],
         "reachable_from" => item["reachable_from"],
         "dynamic_callers" => item["dynamic_callers"],
+        "builders" => item["builders"],
         "existing_tests" => item["existing_tests"],
         "entry_point_tests" => item["entry_point_tests"],
         "via_constant" => item["via_constant"],

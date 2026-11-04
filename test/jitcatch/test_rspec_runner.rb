@@ -415,6 +415,34 @@ class TestRSpecRunner < Minitest::Test
     end
   end
 
+  def test_a_record_builder_and_a_factory_mention_the_constructor
+    with_repo do |repo|
+      record_history(repo)
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, {
+        "record_standins.rb" => RECORD_STANDINS,
+        "loan_spec.rb" => <<~RUBY
+          require_relative "record_standins"
+          require "loan"
+
+          RSpec.describe Loan do
+            include Factories
+
+            it("creates") { expect(Loan.create!.approved_by).to eq("nobody") }
+            it("builds a factory") { expect(create(:loan).approved_by).to eq("nobody") }
+          end
+        RUBY
+      })
+
+      doc = execute(repo, tests)
+
+      id = doc["methods"].find { |method| method["name"] == "Loan#initialize" }["id"]
+      rows = doc["tests"].to_h { |test| [test["name"], test.values_at("mentions", "method_id")] }
+      assert_equal({ "Loan creates" => [%w[Loan.create! approved_by], id], "Loan builds a factory" => [%w[approved_by factory(:loan)], id] }, rows)
+      doc["tests"].each { |test| assert_includes test["tags"], "touches:changed_method", test["name"] }
+    end
+  end
+
   def test_an_example_named_like_a_load_row_is_rerun
     with_repo do |repo|
       cart_history(repo)

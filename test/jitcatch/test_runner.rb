@@ -94,7 +94,7 @@ class TestRunner < Minitest::Test
       assert_equal "reported", by_name["TotalTest#test_total"]["disposition"]
       assert_includes by_name["TotalTest#test_total"]["tags"], "caller:unchanged:lib/calc.rb:11"
       assert_includes by_name["TotalTest#test_total"]["tags"], "touches:unchanged_caller"
-      assert_equal %w[bare_name callsites_omitted change dynamic_callers end_line file forwards_to_added id kind moved_from name new_end new_start
+      assert_equal %w[bare_name builders callsites_omitted change dynamic_callers end_line file forwards_to_added id kind moved_from name new_end new_start
         old_end old_start reachable_from signature start_line via_constant visibility],
         doc["methods"].flat_map(&:keys).uniq.sort
 
@@ -1213,6 +1213,71 @@ class TestRunner < Minitest::Test
       assert_equal [%w[Price#cents Price.new cents], ids["Price#initialize"]], rows["PriceTest#test_new_keeps_the_cents"]
       assert_equal [%w[Box#size size], ids["Box#size"]], rows["PriceTest#test_box_new_is_not_price_new"]
       doc["tests"].each { |test| assert_includes test["tags"], "touches:changed_method", test["name"] }
+    end
+  end
+
+  def test_a_record_builder_and_a_factory_mention_the_constructor
+    with_repo do |repo|
+      record_history(repo)
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, {
+        "record_standins.rb" => RECORD_STANDINS,
+        "loan_test.rb" => <<~RUBY
+          require "minitest/autorun"
+          require_relative "record_standins"
+          require "loan"
+
+          class LoanTest < Minitest::Test
+            include Factories
+
+            def test_create_bang
+              assert_equal "nobody", Loan.create!.approved_by
+            end
+
+            def test_factory
+              assert_equal "nobody", create(:loan).approved_by
+            end
+          end
+        RUBY
+      })
+
+      doc = execute(repo, tests)
+
+      id = doc["methods"].find { |method| method["name"] == "Loan#initialize" }["id"]
+      rows = doc["tests"].to_h { |test| [test["name"], test.values_at("mentions", "method_id")] }
+      assert_equal({ "LoanTest#test_create_bang" => [%w[Loan.create! approved_by], id], "LoanTest#test_factory" => [%w[approved_by factory(:loan)], id] }, rows)
+      doc["tests"].each { |test| assert_includes test["tags"], "touches:changed_method", test["name"] }
+    end
+  end
+
+  def test_a_record_builder_written_inside_its_namespace_mentions_the_constructor
+    with_repo do |repo|
+      repo.write("lib/shop/loan.rb", "module Shop\n  class Loan < ActiveRecord::Base\n    attr_reader :mark\n\n    def initialize(attributes = nil)\n      @mark = 1\n    end\n  end\nend\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/shop/loan.rb", "module Shop\n  class Loan < ActiveRecord::Base\n    attr_reader :mark\n\n    def initialize(attributes = nil)\n      @mark = 2\n    end\n  end\nend\n")
+      repo.commit("Mark two.", date: "2026-02-12T00:00:00Z")
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, {
+        "record_standins.rb" => RECORD_STANDINS,
+        "loan_test.rb" => <<~RUBY
+          require "minitest/autorun"
+          require_relative "record_standins"
+          require "shop/loan"
+
+          module Shop
+            class LoanTest < Minitest::Test
+              def test_create_bang
+                assert_equal 1, Loan.create!.mark
+              end
+            end
+          end
+        RUBY
+      })
+
+      row = execute(repo, tests)["tests"].fetch(0)
+
+      assert_equal [%w[Loan.create! mark], "m01"], row.values_at("mentions", "method_id")
     end
   end
 

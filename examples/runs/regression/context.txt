@@ -46,7 +46,7 @@ methods:
       end
   [m03] modified Shop::Cart#initialize lib/shop/cart.rb:15-18 signature=same visibility=public
     callsites: (none)
-    tests: (none)
+    tests: test/test_cart.rb via Shop::Cart.new
     old:
       def initialize
         @lines = []
