@@ -192,8 +192,10 @@ jitcatch run --repo DIR BASE HEAD TESTS_DIR
 この印は、追加行が削除行を置き換えるときだけ出る。
 差分の別々の場所にある 2 行は、それぞれ 61 文字で切る。
 失敗した `assert_raises(X)` の行には、代わりに来たエラーを示す Minitest の `Class:` 行と `Message:` 行も出る。
-別のエラーから上げられた RSpec のエラーの行には、`cause: KeyError: key not found` のように元のエラーのクラスとメッセージが出る。
-Minitest は元のエラーを出力しないので、Minitest の行には出ない。
+別のエラーから上げられたエラーの行には、`cause: KeyError: key not found` のように元のエラーのクラスとメッセージが出る。
+RSpec は元のエラーを自分で出力する。
+Minitest は出力しないので、jitcatch は Minitest の候補の各プロセスに `-r` で `lib/jitcatch/minitest_cause.rb` を読み込み、Minitest のエラーの文に元のエラーを足す。
+`rerun:` の行はこれを読み込まない。
 `--json` はメッセージ全体を残す。
 
 ```sh
@@ -274,7 +276,7 @@ Concern の `included do`、`prepended do`、`class_methods do` ブロックの�
 `run` はリビジョンごとに git worktree を作り、スクラッチディレクトリをその worktree の `.jitcatch/` へコピーし、ファイルごとに 1 プロセスで実行する。
 
 ```sh
-ruby -Ilib -I. .jitcatch/<file> -v --seed 1
+ruby -Ilib -I. -r<jitcatch>/lib/jitcatch/minitest_cause.rb .jitcatch/<file> -v --seed 1
 ruby -Ilib -I. -e 'require "rspec/core"; exit(RSpec::Core::Runner.run(ARGV))' -- \
   --format json --out .jitcatch-report.json --seed 1 --backtrace --no-color .jitcatch/<file>_spec.rb
 ```

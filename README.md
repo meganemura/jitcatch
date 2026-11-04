@@ -136,7 +136,7 @@ To review the first commit, pass `ROOT^` as `BASE`. The parent of a root commit 
 
 When `BASE` is not an ancestor of `HEAD`, the diff also undoes the commits only `BASE` has. `context` and `run` then print a `warning:` line under `head` that counts those commits and names the merge base to pass as `BASE` instead. When the two resolve to the same commit, the `warning:` line says so.
 
-`assess` reprints the run's warnings, the counts, and the candidate rows. It applies the same rules as `run`. A row shows the first line of the failure, or the expected and actual lines of a Minitest diff. When one of those is longer than 100 characters, the row shows the Hash entries or the Array elements that differ, or a window around the first column that differs with a `^ column N` marker. The marker shows only when the added line replaces the removed one: two lines from different places of the diff are each cut to 61 characters. A failed `assert_raises(X)` also shows Minitest's `Class:` and `Message:` lines, which name the error that came instead. An RSpec error row that was raised from another error adds that error's class and message, as `cause: KeyError: key not found`. Minitest does not print the cause, so a Minitest row does not show one. `--json` keeps the whole message.
+`assess` reprints the run's warnings, the counts, and the candidate rows. It applies the same rules as `run`. A row shows the first line of the failure, or the expected and actual lines of a Minitest diff. When one of those is longer than 100 characters, the row shows the Hash entries or the Array elements that differ, or a window around the first column that differs with a `^ column N` marker. The marker shows only when the added line replaces the removed one: two lines from different places of the diff are each cut to 61 characters. A failed `assert_raises(X)` also shows Minitest's `Class:` and `Message:` lines, which name the error that came instead. An error row that was raised from another error adds that error's class and message, as `cause: KeyError: key not found`. RSpec prints the cause itself. Minitest does not, so jitcatch loads `lib/jitcatch/minitest_cause.rb` into each Minitest candidate's process with `-r`, which adds the cause to Minitest's error text; the `rerun:` line does not load it. `--json` keeps the whole message.
 
 ```sh
 bin/jitcatch run --json --repo examples/shop --reruns 2 --timeout 10 base regression examples/runs/regression/tests > run.json
@@ -171,7 +171,7 @@ A tag is a hint, not the judgment. `touches:changed_method` means the test names
 `run` adds a git worktree for each revision, copies the scratch directory to `.jitcatch/` in that worktree, and runs each file in its own process:
 
 ```sh
-ruby -Ilib -I. .jitcatch/<file> -v --seed 1
+ruby -Ilib -I. -r<jitcatch>/lib/jitcatch/minitest_cause.rb .jitcatch/<file> -v --seed 1
 ruby -Ilib -I. -e 'require "rspec/core"; exit(RSpec::Core::Runner.run(ARGV))' -- \
   --format json --out .jitcatch-report.json --seed 1 --backtrace --no-color .jitcatch/<file>_spec.rb
 ```

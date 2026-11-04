@@ -667,6 +667,25 @@ class TestRunner < Minitest::Test
     end
   end
 
+  def test_an_error_row_names_the_error_it_was_raised_from
+    with_repo do |repo|
+      repo.write("lib/a.rb", "module A; def self.g = 1; end\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/a.rb", %(module A; def self.g = (raise KeyError, "inner k" rescue raise ArgumentError, "outer"); end\n))
+      repo.commit("Wrap a key error.", date: "2026-02-12T00:00:00Z")
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, { "a_test.rb" => candidate_source("ATest", "test_g", "assert_equal 1, A.g").sub('require "calc"', 'require "a"') })
+
+      doc = execute(repo, tests)
+      head = doc["tests"].fetch(0)["head"]
+
+      assert_equal ["ArgumentError", "outer", { "error_class" => "KeyError", "message" => "inner k" }], head.values_at("error_class", "message", "cause")
+      assert_equal({ "file" => ".jitcatch/a_test.rb", "line" => 6 }, head["backtrace"].last)
+      assert_includes JitCatch::Render.run_text(doc), "    outer\n    cause: KeyError: inner k\n    rerun: "
+    end
+  end
+
   def test_reruns_judge_only_candidates_and_run_every_rerun
     with_repo do |repo|
       repo.write("lib/calc.rb", BASE_CALC)

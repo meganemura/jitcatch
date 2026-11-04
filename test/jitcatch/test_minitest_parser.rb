@@ -109,6 +109,27 @@ class TestMinitestParser < Minitest::Test
     assert_equal [{ "file" => ".jitcatch/ar_test.rb", "line" => 4 }, { "file" => "lib/a.rb", "line" => 2 }, { "file" => ".jitcatch/ar_test.rb", "line" => 4 }], result["backtrace"]
   end
 
+  def test_an_error_keeps_the_error_it_was_raised_from_apart_from_its_message
+    stdout = <<~OUT
+      GTest#test_g = 0.00 s = E
+
+        1) Error:
+      GTest#test_g:
+      ArgumentError: outer
+      two
+      --- Caused by: ---
+      KeyError: inner
+      k
+          lib/a.rb:1:in 'A.g'
+
+      1 runs, 0 assertions, 0 failures, 1 errors, 0 skips
+    OUT
+
+    result = JitCatch::MinitestParser.parse(stdout, "")["tests"].fetch("GTest#test_g")
+
+    assert_equal ["outer\ntwo", { "error_class" => "KeyError", "message" => "inner\nk" }, [{ "file" => "lib/a.rb", "line" => 1 }]], result.values_at("message", "cause", "backtrace")
+  end
+
   def test_a_message_line_shaped_like_a_frame_stays_in_the_message
     stdout = <<~OUT
       GTest#test_boom = 0.00 s = E
