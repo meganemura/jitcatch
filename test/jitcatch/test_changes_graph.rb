@@ -534,6 +534,25 @@ class TestChangesGraph < Minitest::Test
     end
   end
 
+  # `new` and the `initialize` it runs are one call written once, so the
+  # hop into `initialize` does not use up the depth `reachable_from` keeps.
+  def test_the_hop_from_new_into_initialize_costs_no_depth
+    with_repo do |repo|
+      runner = "class Runner\n  def initialize = boot\n\n  private def boot = BODY\nend\n"
+      users = "module Cli\n  def self.a1 = a2\n  def self.a2 = a3\n  def self.a3 = a4\n  def self.a4 = Runner.new\n  def self.a5 = a1\nend\n"
+      repo.write("lib/runner.rb", runner.sub("BODY", "1"))
+      repo.write("lib/cli.rb", users)
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/runner.rb", runner.sub("BODY", "2"))
+      repo.commit("Boot to 2.", date: "2026-02-12T00:00:00Z")
+
+      doc = JitCatch::Changes.between(repo.dir, "base", "HEAD")
+
+      assert_equal [["Runner#boot", ["Cli.a1", "Cli.a2", "Cli.a3", "Cli.a4", "Runner#initialize"]]], doc["methods"].map { |method| method.values_at("name", "reachable_from") }
+    end
+  end
+
   # ActiveRecord's `create`, `create!`, and `build` call `new`, so on a
   # model they reach `initialize`. On any other class they are methods the
   # index does not see, and reach nothing.

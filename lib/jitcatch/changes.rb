@@ -554,7 +554,9 @@ module JitCatch
       parts.size.downto(0).map { |n| [*parts.first(n), const].join("::") }.find { |name| qualifiers.key?(name) }
     end
 
-    # The cap keeps the nearest callers; the kept names print sorted.
+    # The cap keeps the nearest callers; the kept names print sorted. A
+    # caller of `new` reaches `initialize` in the call it writes, so that
+    # hop adds no depth, and its callers go first in the queue.
     def upstream(qualified, edges)
       reverse = Hash.new { |hash, key| hash[key] = [] }
       edges.each { |edge| reverse[edge["to"]] << edge["from"] }
@@ -565,6 +567,10 @@ module JitCatch
         next if name == qualified || depths.key?(name)
 
         depths[name] = depth
+        if name.end_with?("#initialize")
+          reverse[name].each { |parent| queue.unshift([parent, depth]) unless depths.key?(parent) }
+          next
+        end
         next if depth >= UPSTREAM_DEPTH
 
         reverse[name].each { |parent| queue << [parent, depth + 1] unless depths.key?(parent) }

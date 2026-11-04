@@ -449,6 +449,7 @@ CLI を使わない場合は、`skills/jitcatch` をエージェントの skills
   `Const.new` と、クラスメソッドの中でレシーバなしに呼ぶ `new` は、そのクラスの `initialize` へも向かう。
   クラスが定義していなければ、スーパークラスをたどって最も近い `initialize` へ向かう。
   そのため `Runner.new` の呼び出し元は `Runner#initialize` とそこから呼ぶメソッドに届く。
+  `reachable_from` は 4 回の呼び出しまで呼び出し元をたどり、`new` から `initialize` へ入る一歩はその 4 回に数えない。
   `create`、`create!`、`build` も、リポジトリ内のスーパークラスの連なりが `ActiveRecord::Base` に届くクラス（`class Post < ApplicationRecord`）では同じく `initialize` へ向かう。
   Active Record はこれらを `new` を呼ぶメソッドとして定義しているからである。
   ほかのクラスでは、定義しているコードが索引にないので辺にならない。
