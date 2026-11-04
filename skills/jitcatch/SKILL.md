@@ -87,34 +87,35 @@ ruby -Ilib -I. -e 'require "rspec/core"; require "rspec/support/object_formatter
 - An example's mentions come from its own block, the `let`, `subject`, and `before`/`after`/`around` blocks of the groups around it, those groups' arguments, and the same-file helpers they call. `describe "#total"` and `describe ".build"` name that method. `described_class.new` names `Owner.new`, and `described_class.parse` or `Index.parse` picks that class's `parse` among changed methods of the name. A `let` or `subject` name is the spec's own helper, not a mention. When its block builds one class, a call on it is a call on that class: with `let(:cart) { Cart.new }` or `subject(:cart) { described_class.new }`, `cart.total` names `Cart#total`. An implicit `subject` and `spec/support` helpers are not read, so call the changed method in the example or its `let`.
 - A Rails `rails_helper` loads in each worktree. Read Rails apps below before you write candidates that touch the database.
 
-On jitcatch itself, across the change that drops the `---Backtrace---` lines from an `assert_raises` message, three specs that `branchout explore --format rspec --require-by-name` emitted on base for `JitCatch::MinitestParser.parse` gave:
+On jitcatch itself, across the change that drops the `---Backtrace---` lines from an `assert_raises` message, three specs that `branchout explore --format rspec --require-by-name` emitted on base for `JitCatch::MinitestParser.parse`, in `candidates/backtrace/` of a clone, gave:
 
 ```text
 tests:
   t01 no_signal JitCatch::MinitestParser.parse returns summary: false when stdout is "" minitest_parse_spec.rb:11
   t02 no_signal JitCatch::MinitestParser.parse returns summary: true when stdout is "T#test_a = 0.00 s = F\n..." minitest_parse_spec.rb:21
-  t03 reported JitCatch::MinitestParser.parse returns summary: true, status: "fail" when stdout is "ArTest#test_raises = 0..." minitest_parse_spec.rb:16 m17
+  t03 reported JitCatch::MinitestParser.parse returns summary: true, status: "fail" when stdout is "ArTest#test_raises = 0..." minitest_parse_spec.rb:16 m02
 counts generated=3 no_signal=2 fail_on_base=0 candidates=1 flaky=0 discarded=0 reported=1
 assess:
-  c01 JitCatch::MinitestParser.parse returns summary: true, status: "fail" when stdout is "ArTest#test_raises = 0..." base=pass head=fail m17 assertion,report,touches:unchanged_caller
+  c01 JitCatch::MinitestParser.parse returns summary: true, status: "fail" when stdout is "ArTest#test_raises = 0..." base=pass head=fail m02 assertion,report,touches:unchanged_caller
     hash keys differ: "tests"
     -...ror>\nMessage: <\"wrapped k\">\n---Backtrace---\n------------...
     +...ror>\nMessage: <\"wrapped k\">", "message_first_line" => "[Ke...
                                       ^ column 301
-    rerun: bundle exec ruby -Ilib -I. -e 'require "rspec/core"; require "rspec/support/object_formatter"; RSpec::Core::RubyProject.instance_variable_set(:@project_root, Dir.pwd); RSpec::Support::ObjectFormatter.default_instance.max_formatted_output_length = nil; exit(RSpec::Core::Runner.run(ARGV))' {tests}/minitest_parse_spec.rb:16
+    rerun: bundle exec ruby -Ilib -I. -e 'require "rspec/core"; require "rspec/support/object_formatter"; RSpec::Core::RubyProject.instance_variable_set(:@project_root, Dir.pwd); RSpec::Support::ObjectFormatter.default_instance.max_formatted_output_length = nil; exit(RSpec::Core::Runner.run(ARGV))' candidates/backtrace/minitest_parse_spec.rb:16
 ```
 
-That row is intended: the message no longer ends in the two lines that framed the frames. `m17` is the private `MinitestParser#parse_issue`, and the spec reaches it through `parse`, an unchanged caller.
+That row is intended: the message no longer ends in the two lines that framed the frames. `m02` is the private `MinitestParser#parse_issue`, and the spec reaches it through `parse`, an unchanged caller.
 
-On the commit that pinned the project root, two hand-written specs next to two that branchout emitted for `JitCatch::Assessor.apply` gave this row, with the rerun line it now prints:
+Across the commit that pinned the project root, with `rspec-core` added to both sides of a clone, two hand-written specs next to two that branchout emitted for `JitCatch::Assessor.apply`, in `candidates/root/`, gave this row. The emitted example for `b_spec.rb` already fails on base, so it is `fail_on_base`:
 
 ```text
-counts generated=4 no_signal=2 fail_on_base=0 candidates=2 flaky=0 discarded=0 reported=2
-  c02 JitCatch::Framework::RSpec reruns a row with rspec base=pass head=fail m16 assertion,report,touches:changed_method
+counts generated=4 no_signal=2 fail_on_base=1 candidates=1 flaky=0 discarded=0 reported=1
+assess:
+  c01 JitCatch::Framework::RSpec reruns a row with rspec base=pass head=fail m02 assertion,report,touches:changed_method
     -"rspec {tests}/a_spec.rb:7"
     +"ruby -Ilib -I. -e 'require \"rspec/core\"; RSpec::Core::Ruby...
        ^ column 3
-    rerun: bundle exec ruby -Ilib -I. -e 'require "rspec/core"; require "rspec/support/object_formatter"; RSpec::Core::RubyProject.instance_variable_set(:@project_root, Dir.pwd); RSpec::Support::ObjectFormatter.default_instance.max_formatted_output_length = nil; exit(RSpec::Core::Runner.run(ARGV))' {tests}/rerun_spec.rb:4
+    rerun: bundle exec ruby -Ilib -I. -e 'require "rspec/core"; require "rspec/support/object_formatter"; RSpec::Core::RubyProject.instance_variable_set(:@project_root, Dir.pwd); RSpec::Support::ObjectFormatter.default_instance.max_formatted_output_length = nil; exit(RSpec::Core::Runner.run(ARGV))' candidates/root/rerun_spec.rb:4
 ```
 
 Not supported yet: shared example groups (an example from a group in another file reads the whole candidate file for mentions), an error outside every example when some example ran (such as in `after(:suite)`). A project whose bundle has no `rspec-core` cannot run RSpec candidates: `run` stops with exit status 3 and says so.
@@ -166,7 +167,7 @@ A side can load its bundle and still fail to boot what every candidate requires,
 
 Judge only rows whose disposition is `reported`.
 
-Each candidate row under `assess:` ends with `rerun:`, the command that runs that one test again from the repository root on the checkout you have (`--json` rows carry it as `rerun`). It names the candidate the way the repository root reaches it: from the root when `TESTS_DIR` is inside the repository, by its whole path when it is not, so the line runs as printed. Runs before this version printed `{tests}/` there, as the two quotes above do. The line runs in your shell, and every variable `--env` passed came from that shell, so the line sees it too (`BUNDLE_VERSION=system`, for example); it holds no values, since the run records names only. A Minitest row reads `ruby -Ilib -I. candidates/cart_test.rb -n CartTest#test_total`, an RSpec row `ruby -Ilib -I. -e 'require "rspec/core"; require "rspec/support/object_formatter"; RSpec::Core::RubyProject.instance_variable_set(:@project_root, Dir.pwd); RSpec::Support::ObjectFormatter.default_instance.max_formatted_output_length = nil; exit(RSpec::Core::Runner.run(ARGV))' candidates/cart_spec.rb:11`, both behind `bundle exec` when head has a `Gemfile`. The RSpec line runs Ruby with the run's `-I` flags and pins RSpec's project root to the working directory, because `rspec` puts `lib/` of the nearest directory holding `spec/` first on the load path: a checkout under a Rails app's `tmp/` would load the app's `lib/`. When head holds `spec` at its root, as a Rails app does, RSpec finds that root on its own, so the line leaves out `RSpec::Core::RubyProject.instance_variable_set(:@project_root, Dir.pwd); `, the one part that sets rspec-core's private state. It also lifts RSpec's 200-character cut on a printed object, so a `raise_error` row shows the whole error it got. Use it to rerun a row on head after you read the diff.
+Each candidate row under `assess:` ends with `rerun:`, the command that runs that one test again from the repository root on the checkout you have (`--json` rows carry it as `rerun`). It names the candidate the way the repository root reaches it: from the root when `TESTS_DIR` is inside the repository, by its whole path when it is not, so the line runs as printed. The line runs in your shell, and every variable `--env` passed came from that shell, so the line sees it too (`BUNDLE_VERSION=system`, for example); it holds no values, since the run records names only. A Minitest row reads `ruby -Ilib -I. candidates/cart_test.rb -n CartTest#test_total`, an RSpec row `ruby -Ilib -I. -e 'require "rspec/core"; require "rspec/support/object_formatter"; RSpec::Core::RubyProject.instance_variable_set(:@project_root, Dir.pwd); RSpec::Support::ObjectFormatter.default_instance.max_formatted_output_length = nil; exit(RSpec::Core::Runner.run(ARGV))' candidates/cart_spec.rb:11`, both behind `bundle exec` when head has a `Gemfile`. The RSpec line runs Ruby with the run's `-I` flags and pins RSpec's project root to the working directory, because `rspec` puts `lib/` of the nearest directory holding `spec/` first on the load path: a checkout under a Rails app's `tmp/` would load the app's `lib/`. When head holds `spec` at its root, as a Rails app does, RSpec finds that root on its own, so the line leaves out `RSpec::Core::RubyProject.instance_variable_set(:@project_root, Dir.pwd); `, the one part that sets rspec-core's private state. It also lifts RSpec's 200-character cut on a printed object, so a `raise_error` row shows the whole error it got. Use it to rerun a row on head after you read the diff.
 
 | Bucket | Meaning |
 | --- | --- |
