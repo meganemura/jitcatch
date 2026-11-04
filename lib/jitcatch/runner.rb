@@ -416,7 +416,7 @@ module JitCatch
     # waits on: network settings, and names the head's Ruby source or a
     # candidate reads from ENV.
     def env_not_passed(head, files)
-      sources = @git.ruby_matches(head, ENV_READ_GREP) + files.map { |relative| read_candidate(relative) }
+      sources = [@git.ruby_matches(head, ENV_READ_GREP), *files.map { |relative| read_candidate(relative) }]
       read = sources.flat_map { |text| text.scan(ENV_READ).flatten }
       passed = PASSED_ENV + RESERVED_ENV + @env_names
       ENV.keys.select { |name| name.match?(NETWORK_ENV) || read.include?(name) }.reject { |name| passed.include?(name) }.sort
@@ -543,7 +543,7 @@ module JitCatch
       tests = File.realpath(@tests_dir)
       # From a directory directly under the root, a path that stays in
       # TESTS_DIR and one that leaves it each name one file either way.
-      one_level = !tests_from_root.include?("/") && !tests_from_root.start_with?(".")
+      one_level = !tests_from_root.include?("/") && !%w[. ..].include?(tests_from_root)
       files.flat_map do |relative|
         SourceIndex.relative_requires(read_candidate(relative)).filter_map do |required|
           if required.path.nil?

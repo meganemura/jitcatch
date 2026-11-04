@@ -109,10 +109,10 @@ module JitCatch
     end
 
     # The parts of the Ruby files at ref that match pattern, an extended
-    # regexp. git grep exits 1 when nothing matches.
+    # regexp, one per line. git grep exits 1 when nothing matches.
     def ruby_matches(ref, pattern)
       stdout, _stderr, status = capture("grep", "-h", "-o", "-I", "-E", "-e", pattern, ref, "--", "*.rb")
-      status.success? ? stdout.lines(chomp: true) : []
+      status.success? ? stdout : ""
     end
 
     def worktree_add(path, sha)

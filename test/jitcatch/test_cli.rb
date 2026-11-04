@@ -171,16 +171,17 @@ class TestCLI < Minitest::Test
       repo.write("README.md", "head\n")
       repo.commit("Touch readme.", date: "2026-02-12T00:00:00Z")
       tests = File.join(repo.dir, "candidates")
-      write_tests(tests, { "slow_test.rb" => %(require "minitest/autorun"\nrequire "flag"\n\nclass SlowTest < Minitest::Test\n  def test_slow\n    sleep 60\n    assert Flag.ok\n  end\nend\n) })
+      write_tests(tests, { "slow_test.rb" => %(require "minitest/autorun"\nrequire "flag"\n\nclass SlowTest < Minitest::Test\n  def test_slow\n    sleep 60\n    assert Flag.ok && ENV["JITCATCH_CANDIDATE_FLAG"] && ENV["TERM"]\n  end\nend\n) })
 
-      out, err, status = with_parent_env("JITCATCH_SLOW_SERVICE" => "on", "HTTPS_PROXY" => "http://proxy.invalid:3128") do
+      # TERM is a name jitcatch sets itself, so --env cannot pass it.
+      out, err, status = with_parent_env("JITCATCH_SLOW_SERVICE" => "on", "JITCATCH_CANDIDATE_FLAG" => "1", "TERM" => "xterm", "HTTPS_PROXY" => "http://proxy.invalid:3128") do
         cli("run", "--repo", repo.dir, "--timeout", "1", "base", "HEAD", tests)
       end
 
       assert_equal [3, ""], [status, err]
       assert_equal "jitcatch: no row ran to a result on both sides (1 of 1 timed out or found no database), so this run cannot tell base from head\n", out.lines.first
       assert_includes out, "    hint: base and head timed out after 1s; raise --timeout if the file needs longer, as a Rails app's first run in a new checkout can (it loads db/schema.rb)\n" \
-        "    not passed: HTTPS_PROXY JITCATCH_SLOW_SERVICE (add --env HTTPS_PROXY --env JITCATCH_SLOW_SERVICE if the file needs them)\n"
+        "    not passed: HTTPS_PROXY JITCATCH_CANDIDATE_FLAG JITCATCH_SLOW_SERVICE (add --env HTTPS_PROXY --env JITCATCH_CANDIDATE_FLAG --env JITCATCH_SLOW_SERVICE if the file needs them)\n"
 
       json, _err, json_status = with_parent_env("JITCATCH_SLOW_SERVICE" => "on", "HTTPS_PROXY" => "http://proxy.invalid:3128") do
         cli("run", "--json", "--repo", repo.dir, "--timeout", "1", "--env", "JITCATCH_SLOW_SERVICE", "base", "HEAD", tests)
