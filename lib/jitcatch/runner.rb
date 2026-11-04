@@ -503,9 +503,13 @@ module JitCatch
     def build_normalizer(roots)
       prefix = RbConfig::CONFIG["prefix"].to_s.sub(%r{/+\z}, "")
       ordered = roots.compact.map { |root| File.expand_path(root).sub(%r{/+\z}, "") }.uniq.sort_by { |item| -item.length }
+      # A root can end the path, as `Dir.pwd` does, but `head` must not
+      # match the start of `head2`.
+      patterns = ordered.map { |root| /#{Regexp.escape(root)}(?![\w.-])/ }
+      root = Failure::WORKTREE.chomp("/")
       lambda do |text|
         out = text.to_s.gsub("\r\n", "\n")
-        ordered.each { |root| out = out.gsub("#{root}/", Failure::WORKTREE) }
+        patterns.each { |pattern| out = out.gsub(pattern, root) }
         out = out.gsub("#{prefix}/", "{ruby}/") unless prefix.empty?
         out
       end

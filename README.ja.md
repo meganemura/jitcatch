@@ -349,7 +349,7 @@ head での `LoadError`、タイムアウト、データベースが無いか届
 
 同じリポジトリと同じテストなら、出力は同じバイトになる。
 順序は固定で、テキストに時刻は無い。
-メッセージの中の worktree の絶対パスの根は `{worktree}/lib/cart.rb` のように `{worktree}/` と書き、バックトレースのフレームからは除く。
+メッセージの中の worktree の絶対パスの根は、`{worktree}/lib/cart.rb` の中でも `Dir.pwd` だけでも `{worktree}` と書き、バックトレースのフレームからは除く。
 Ruby 自身の prefix は `{ruby}/` と書く。
 
 `assess:` の下の候補の行は、それぞれ `rerun:` の行で終わる。

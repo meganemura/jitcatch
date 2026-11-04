@@ -879,6 +879,10 @@ class TestRunner < Minitest::Test
               assert_equal "x", File.expand_path("lib/calc.rb")
             end
 
+            def test_root
+              assert_equal "x", "in \#{Dir.pwd}, the root, not \#{Dir.pwd}2"
+            end
+
             def test_lib_frame
               raise "moved" unless Calc.new.double(2) == 4
             end
@@ -894,6 +898,7 @@ class TestRunner < Minitest::Test
       assert_equal "Expected: \"x\"\n  Actual: \".jitcatch/words_test.rb\"", by_name["WordsTest#test_file"]["head"]["message"]
       assert_equal "{ruby}/", by_name["WordsTest#test_parse"]["head"]["backtrace"].fetch(0)["file"][0, 7]
       assert_includes by_name["WordsTest#test_path"]["head"]["message"], "+\"{worktree}/lib/calc.rb\"", "a rewritten worktree root stays visible"
+      assert_includes by_name["WordsTest#test_root"]["head"]["message"], "in {worktree}, the root, not /", "a root with no path after it"
       assert_includes by_name["WordsTest#test_word"]["head"]["message"], "café"
       frames = doc["tests"].flat_map { |test| [test["base"], test["head"]] }.flat_map { |side| side["backtrace"] }.map { |frame| frame["file"] }
       assert_includes frames, ".jitcatch/words_test.rb"
