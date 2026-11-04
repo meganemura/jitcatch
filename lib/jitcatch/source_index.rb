@@ -16,6 +16,8 @@ module JitCatch
     # Exception#message and the messages built on it call to_s, the method an
     # error class overrides to say what went wrong.
     MESSAGE_CALLS = %i[message full_message detailed_message].freeze
+    # A relative path with a directory part and no spaces: `exe/tool`.
+    PATH_LIKE = %r{\A(?:\.\.?/)*[\w.-]+(?:/[\w.-]+)+\z}
     ATTRIBUTE_MACROS = { attr_reader: [""], attr: [""], attr_writer: ["="], attr_accessor: ["", "="] }.freeze
     # The constant a member list is given to, and whether its members get writers.
     MEMBER_BUILDERS = { %i[Struct new] => true, %i[Data define] => false }.freeze
@@ -97,6 +99,7 @@ module JitCatch
       @described = []
       @returned = {}
       @symbol_lists = {}
+      @paths = Hash.new { |hash, key| hash[key] = [] }
     end
 
     def parse
@@ -152,8 +155,13 @@ module JitCatch
     # call. A group described as `"#total"` or `".build"` names that method.
     # Nil when no example starts on the line.
     def example_references(line)
+      keys = example_keys(line)
+      keys.empty? ? nil : names_reached_from(keys)
+    end
+
+    def example_keys(line)
       example = @spec_blocks.find { |block| block.kind == "example" && block.start_line == line }
-      return nil unless example
+      return [] unless example
 
       groups = @spec_blocks.select { |block| block.kind == "group" && block.covers?(line) }
       setups = @spec_blocks.select { |block|
@@ -162,7 +170,18 @@ module JitCatch
         parent = @spec_blocks.select { |group| group.kind == "group" && group.covers?(block.start_line) }.max_by(&:start_line)
         parent.nil? || groups.include?(parent)
       }
-      names_reached_from([example, *groups, *setups].map(&:key))
+      [example, *groups, *setups].map(&:key)
+    end
+
+    # The strings shaped like a file path (`"exe/tool"`, `"../bin/x"`) that
+    # the test or example, or the same-file helpers it calls, writes: the
+    # path of a script it may start in another process. With no such test
+    # or example, those of the whole file.
+    def paths_named(qualified, line)
+      keys = line ? example_keys(line) : [@methods.find { |method| method.qualified == qualified }&.qualified].compact
+      return @paths.values.flatten.uniq.sort if keys.empty?
+
+      reached_from(keys).flat_map { |name| @paths.fetch(name, []) }.uniq.sort
     end
 
     # Code outside the namespace cannot name a private constant, so no method
@@ -178,6 +197,12 @@ module JitCatch
     private
 
     def names_reached_from(keys)
+      reached = reached_from(keys)
+      names = reached.flat_map { |name| @references.fetch(name, []) }
+      (names + receiver_names(reached)).uniq.sort
+    end
+
+    def reached_from(keys)
       helpers = @methods.group_by(&:bare_name).transform_values { |list| list.map(&:qualified) }
       @defined.each { |bare, names| helpers[bare] = (helpers.fetch(bare, []) + names).uniq }
       calls = @calls.group_by(&:enclosing)
@@ -189,8 +214,7 @@ module JitCatch
           end
         end
       end
-      names = reached.flat_map { |name| @references.fetch(name, []) }
-      (names + receiver_names(reached)).uniq.sort
+      reached
     end
 
     # `Index.parse` for a call whose receiver the source names as the class
@@ -649,6 +673,9 @@ def record_generated(arg, qualifier, bare, visibility, singleton, macro, source)
         node.compact_child_nodes.each { |child| walk(child, qualifier, singleton_context, enclosing) }
       when Prism::SymbolNode
         refer(enclosing, node.unescaped)
+      when Prism::StringNode
+        text = node.unescaped
+        @paths[enclosing] << text if text.match?(PATH_LIKE)
       when Prism::LocalVariableWriteNode
         built = built_constants(node.value).uniq
         @local_classes[[enclosing, node.name.to_s]] << (built.size == 1 ? built.first : nil)

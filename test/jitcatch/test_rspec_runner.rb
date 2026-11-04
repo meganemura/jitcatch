@@ -314,6 +314,24 @@ class TestRSpecRunner < Minitest::Test
     end
   end
 
+  def test_a_script_an_example_starts_lends_its_calls_to_the_mentions
+    with_repo do |repo|
+      tool = "module Tool\n  def self.run = value + 1\n\n  def self.value = 0\nend\n"
+      repo.write("lib/tool.rb", tool)
+      repo.write("exe/tool", "require \"tool\"\nputs Tool.run\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/tool.rb", tool.sub("value = 0", "value = 1"))
+      repo.commit("Start at one.", date: "2026-02-12T00:00:00Z")
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, { "tool_spec.rb" => %(RSpec.describe "tool" do\n  it("prints one") { expect(IO.popen(["ruby", "-Ilib", "exe/tool"], &:read)).to eq("1\\n") }\nend\n) })
+
+      row = execute(repo, tests)["tests"].fetch(0)
+
+      assert_equal ["m01", %w[assertion report touches:unchanged_caller]], row.values_at("method_id", "tags")
+    end
+  end
+
   def test_an_error_row_names_the_error_it_was_raised_from
     with_repo do |repo|
       repo.write("lib/a.rb", "module A; def self.g = 1; end\n")

@@ -126,7 +126,7 @@ module JitCatch
       base_thread = Thread.new { execute(base_dir, relative, normalizer) }
       head_run = execute(head_dir, relative, normalizer)
       base_run = base_thread.value
-      rows = rows_for(relative, base_run, head_run, index, known)
+      rows = rows_for(relative, base_run, head_run, index, known, head_dir)
       return rows unless rows.any? { |row| row["classification"] == "candidate" }
       return rows if head_run.timed_out
 
@@ -145,10 +145,10 @@ module JitCatch
       rows
     end
 
-    def rows_for(relative, base_run, head_run, index, known)
+    def rows_for(relative, base_run, head_run, index, known, head_dir)
       if file_level?(base_run) || file_level?(head_run)
         name = file_level_name(relative, base_run, head_run)
-        [build_row(relative, name, nil, side_result(base_run), side_result(head_run), mentions_for(index, name, nil, known))]
+        [build_row(relative, name, nil, side_result(base_run), side_result(head_run), mentions_for(index, name, nil, known, relative, head_dir))]
       else
         names = (base_run.tests.keys | head_run.tests.keys).sort
         names.map { |name|
@@ -159,7 +159,7 @@ module JitCatch
             line,
             base_run.tests[name],
             head_run.tests[name],
-            mentions_for(index, name, line, known)
+            mentions_for(index, name, line, known, relative, head_dir)
           )
         }
       end
@@ -378,12 +378,32 @@ module JitCatch
 
     # Mentions are taken from the test method and the same-file helpers it
     # calls, so a neighbor test in the same file does not change its tags.
-    def mentions_for(index, test_name, line, known)
+    def mentions_for(index, test_name, line, known, relative, head_dir)
       referenced = (line && index.example_references(line)) || index.referenced_names(test_name)
+      referenced += script_names(index.paths_named(test_name, line), relative, head_dir)
       referenced.select { |name| known.include?(name) || known.include?(SourceIndex.split_qualified(name).last) || known.include?(Assessor.mention_of(name)) }
     end
 
-    # A file-level row (`file#load`, `file#timeout`) reruns the whole file.
+# A test that starts a script in another process (`IO.popen(["ruby",
+# "exe/tool"])`) reaches the code that script calls, which no call in
+# the test names. A path the test writes, read from the worktree root,
+# from the candidate's directory, or from the candidate file as
+# `File.expand_path` reads it, names such a script when it is a file of
+# head outside `.jitcatch/`; the names it refers to count as mentions.
+def script_names(paths, relative, head_dir)
+  candidate = File.join(head_dir, ".jitcatch", relative)
+  root = File.join(head_dir, "")
+  own = File.join(head_dir, ".jitcatch", "")
+  paths.flat_map { |path|
+    [head_dir, File.dirname(candidate), candidate].map { |dir| File.expand_path(path, dir) }
+      .select { |full| full.start_with?(root) && !full.start_with?(own) && File.file?(full) }
+  }.uniq.flat_map { |full|
+    script = SourceIndex.parse(read_text(full), file: full.delete_prefix(root))
+    script.parse_error ? [] : script.referenced_names("")
+  }
+end
+
+# A file-level row (`file#load`, `file#timeout`) reruns the whole file.
     def rerun_command(row, bundled, pin_root)
       file_level = row["line"].nil? && row["name"].start_with?("#{File.basename(row["file"])}#")
       name = file_level ? nil : row["name"]

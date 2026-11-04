@@ -686,6 +686,40 @@ class TestRunner < Minitest::Test
     end
   end
 
+  def test_a_script_a_test_starts_lends_its_calls_to_the_mentions
+    with_repo do |repo|
+      tool = "module Tool\n  def self.run = value + 1\n\n  def self.value = 0\nend\n"
+      repo.write("lib/tool.rb", tool)
+      repo.write("exe/tool", "#!/usr/bin/env ruby\nrequire \"tool\"\nputs Tool.run\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/tool.rb", tool.sub("value = 0", "value = 1"))
+      repo.commit("Start at one.", date: "2026-02-12T00:00:00Z")
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, {
+        "tool_test.rb" => <<~RUBY
+          require "minitest/autorun"
+
+          class ToolTest < Minitest::Test
+            def test_prints_one
+              assert_equal "1\\n", IO.popen(["ruby", "-Ilib", "exe/tool"], &:read)
+            end
+
+            def test_prints_one_from_a_path_beside_the_file
+              assert_equal "1\\n", IO.popen(["ruby", "-Ilib", File.expand_path("../exe/tool", __dir__)], &:read)
+            end
+          end
+        RUBY
+      })
+
+      doc = execute(repo, tests)
+      rows = doc["tests"].to_h { |test| [test["name"], test.values_at("method_id", "tags")] }
+
+      assert_equal [["m01", %w[assertion report touches:unchanged_caller]]] * 2, rows.values_at("ToolTest#test_prints_one", "ToolTest#test_prints_one_from_a_path_beside_the_file")
+      assert_equal "Tool.value", doc["methods"].find { |method| method["id"] == "m01" }&.fetch("name")
+    end
+  end
+
   def test_reruns_judge_only_candidates_and_run_every_rerun
     with_repo do |repo|
       repo.write("lib/calc.rb", BASE_CALC)
