@@ -555,7 +555,8 @@ class TestChangesGraph < Minitest::Test
 
   # ActiveRecord's `create`, `create!`, and `build` call `new`, so on a
   # model they reach `initialize`. On any other class they are methods the
-  # index does not see, and reach nothing.
+  # index does not see, and reach nothing. A class method of that name
+  # takes the call, and an instance has no `build` of its own.
   def test_create_and_build_reach_initialize_only_on_an_active_record_model
     with_repo do |repo|
       models = <<~SRC
@@ -574,6 +575,16 @@ class TestChangesGraph < Minitest::Test
             BODY
           end
         end
+
+        class Journal < ApplicationRecord
+          def self.create(text) = text
+        end
+
+        class Note < Journal
+          def initialize
+            BODY
+          end
+        end
       SRC
       users = <<~SRC
         class Feed
@@ -582,6 +593,12 @@ class TestChangesGraph < Minitest::Test
           def draft = Post.build
           def report = Report.build
           def saved = Report.create
+          def jotted = Note.create("a")
+          def again = @post.build
+
+          def initialize
+            @post = Post.new
+          end
         end
       SRC
       repo.write("app/models.rb", models.gsub("BODY", "1"))
@@ -594,7 +611,8 @@ class TestChangesGraph < Minitest::Test
       doc = JitCatch::Changes.between(repo.dir, "base", "HEAD")
 
       assert_equal [
-        ["Post#initialize", ["Feed#draft", "Feed#publish", "Feed#publish!"]],
+        ["Note#initialize", []],
+        ["Post#initialize", ["Feed#draft", "Feed#initialize", "Feed#publish", "Feed#publish!"]],
         ["Report#initialize", []]
       ], doc["methods"].map { |method| method.values_at("name", "reachable_from") }
     end

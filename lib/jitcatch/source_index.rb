@@ -266,8 +266,8 @@ module JitCatch
         nested = join_qual(qualifier, name)
         record_constant(@namespaces, nested, stmt.location.start_line, stmt.location.end_line, @lines[stmt.location.start_line - 1]) if name
         record_members(stmt.superclass, nested) if stmt.is_a?(Prism::ClassNode) && stmt.superclass.is_a?(Prism::CallNode)
-        parent = stmt.is_a?(Prism::ClassNode) && const_name(stmt.superclass)
-        @superclasses << Superclass.new(qualified: nested, written: parent, scope: qualifier.to_s) if name && parent
+        parent = stmt.is_a?(Prism::ClassNode) && name && const_name(stmt.superclass)
+        @superclasses << Superclass.new(qualified: nested, written: parent, scope: qualifier.to_s) if parent
         scan_body(stmt, nested, :public, false)
         visibility
       when Prism::SingletonClassNode

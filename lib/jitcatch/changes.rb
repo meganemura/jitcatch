@@ -519,7 +519,7 @@ module JitCatch
         found = (by_class[[owner, call.bare_name]] || []).select { |method| method.kind == receiver.kind }
         if found.size == 1
           found.first
-        elsif found.empty? && receiver.kind == "singleton" && owner
+        elsif receiver.kind == "singleton"
           constructor_of(owner, call.bare_name, by_class, parents)
         end
       when "one_of"

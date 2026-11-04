@@ -250,7 +250,7 @@ module JitCatch
       return [] unless test["disposition"] == "fail_on_base" && base && base["status"] != "timeout"
 
       first, *rest = message_lines(base)
-      outcome = [base["status"], base["error_class"], first || base["message_first_line"]].reject { |part| part.to_s.empty? }
+      outcome = [base["status"], base["error_class"], first].reject { |part| part.to_s.empty? }
       ["    base: #{outcome.join(" ")}", *rest.map { |line| "      #{line}" }]
     end
 
