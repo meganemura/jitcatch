@@ -306,7 +306,7 @@ destroy のコールバックには `Loan#destroy` と `Loan#destroy!` が出る
 そのようなコールバックから届くメソッド（`reachable_from`）にも同じ行が出る。
 テスト以外のメソッドがソースに書いた形でその呼び出しをするとき（`LoanDesk.open` の中の `Loan.create!` や、`Loan` のメソッドの中の `update!`）、そのメソッドとその呼び出し元が `reachable_from` に加わる。
 そのため `LoanDesk.open` を呼ぶテストはそのコールバックを指す。
-引数のように、ソースが型を決めないローカル変数への呼び出しは、Rails がその名前から決めるモデルへの呼び出しとして読む。
+引数のように、ソースが型を決めないローカル変数やインスタンス変数への呼び出しは、Rails がその名前から決めるモデルへの呼び出しとして読む。
 そのため `Teller#renew(loan)` の中の `loan.save!` は `Loan` の save のコールバックに届き、`record.save!` はどれにも届かない。
 その `tests:` には、grep の結果に加えて、そのどれかを呼ぶテストファイルが出る（`spec/models/loan_spec.rb via Loan.create!`）。
 `run` はその呼び出しをそのメソッドへの言及として数える。
@@ -516,8 +516,14 @@ CLI を使わない場合は、`skills/jitcatch` をエージェントの skills
 - 呼び出しを数えるのは、レシーバのクラスがソースに書かれているときだけである。
   `self`（レシーバなしを含む）、定数（`Cart.build`）、`self.class`、それらの `new`、そしてクラスが一つの `Const.new` だけを代入するインスタンス変数がこれに当たる。
   メソッドの中のすべての代入が同じ `Const.new` であるローカル変数（`repo = Repo.new; repo.read`）もこれに当たる。
+  ソースが型を決めない値は、Rails がその名前から決めるクラスがそのメソッドを定義していれば、そのクラスへの呼び出しになる。
+  引数とブロック引数（`Gate#check(loan)` の中の `loan.approve`）、どの代入も `Const.new` でないローカル変数、そしてどの代入も `Const.new` でないインスタンス変数（`@loan = loan`）は、どれも `Loan` として読む。
+  `belongs_to :borrower` や `has_one :borrower` が定義する読み出しは `Borrower` を返すものとして読み、`class_name:` に文字列があればそのクラスとして読む。
+  そのため `Loan#approve` の中の `borrower.approved_cents` は `Borrower#approved_cents` を呼ぶ。
+  polymorphic の関連はどのクラスとしても読まない。
+  メソッドやクラスがその変数に代入する `Const.new` と名前が食い違うときは、どのクラスとしても読まない。
   同じクラスのメソッドが返す値への呼び出し（`emitter_for(format).render`）は、そのメソッドが定数と nil だけを返すとき（`case`、`if`、三項演算子を通して）、返しうる定数それぞれへ向かう。
-  引数、ほかの値を代入したローカル変数、それ以外の戻り値への呼び出しは辺にならないので、`reachable_from` が呼び出し元を落とすことがある。
+  二つの違う定数を代入したローカル変数、どのクラスも指さない名前、それ以外の戻り値への呼び出しは辺にならないので、`reachable_from` が呼び出し元を落とすことがある。
   そうした呼び出しは、送る名前が変更メソッドの名前か、その `reachable_from` にあるメソッドの名前であれば、その変更メソッドの `dynamic_callers:` に `Emit.looked_up (render)` のように出る。
   クラスが定義していないメソッドを `self` に呼ぶと、その名前を持つ索引上ただ一つのメソッドへ向かう。
   モジュールやスーパークラスのメソッドのためである。

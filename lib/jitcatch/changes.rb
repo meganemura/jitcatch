@@ -10,8 +10,8 @@ module JitCatch
     ENTRY_CAP = 12
     UPSTREAM_DEPTH = 4
     RECORD_BUILDERS = %w[create create! build].freeze
-    # A local keeps its name when the source does not type it.
-    UNTYPED_RECEIVERS = %w[unknown local].freeze
+    # A value the source does not type, whether or not its name names a model.
+    UNTYPED_RECEIVERS = %w[unknown named].freeze
 
     # The classes and modules head defines, after `build`.
     attr_reader :head_constants
@@ -525,7 +525,7 @@ module JitCatch
       when "self" then "#{qualifier}#{sep}#{call.bare_name}"
       when "singleton" then "#{receiver.const}.#{call.bare_name}"
       when "instance" then "#{receiver.const}##{call.bare_name}"
-      when "local" then "#{receiver.const.split("_").map(&:capitalize).join}##{call.bare_name}"
+      when "named" then "#{SourceIndex.model_name(receiver.const)}##{call.bare_name}"
       end
     end
 
@@ -673,6 +673,10 @@ module JitCatch
         elsif receiver.kind == "singleton"
           constructor_of(owner, call.bare_name, by_class, parents)
         end
+      when "named"
+        owner = resolve_constant(SourceIndex.model_name(receiver.const), qualifier, qualifiers)
+        found = (by_class[[owner, call.bare_name]] || []).select { |method| method.kind == "instance" }
+        found.first if found.size == 1
       when "one_of"
         receiver.const.filter_map do |const|
           found = (by_class[[resolve_constant(const, qualifier, qualifiers), call.bare_name]] || []).select { |method| method.kind == "singleton" }

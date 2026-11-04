@@ -335,6 +335,66 @@ class TestChangesGraph < Minitest::Test
     end
   end
 
+  # Rails names a record after its model, so a value the source does not
+  # type goes to the model its name names: a parameter, a block parameter,
+  # an instance variable set from one, and an association reader.
+  def test_a_value_the_source_does_not_type_goes_to_the_model_its_name_names
+    with_repo do |repo|
+      borrower = "class Borrower < ApplicationRecord\n  def approved_cents = BODY\nend\n"
+      loan = <<~SRC
+        class Loan < ApplicationRecord
+          belongs_to :borrower
+          belongs_to :cosigner, class_name: "Borrower"
+          belongs_to :owner, polymorphic: true
+
+          def approve(officer)
+            borrower.approved_cents
+          end
+
+          def cosigned = cosigner.approved_cents
+
+          def owned = owner.approved_cents
+        end
+      SRC
+      services = <<~SRC
+        module Approvals
+          class Gate
+            def initialize(loan)
+              @loan = loan
+            end
+
+            def check(officer) = @loan.approve(officer)
+          end
+        end
+
+        class Desk
+          def approve_each(loans) = loans.each { |loan| loan.approve(nil) }
+
+          def through(record) = record.approve(nil)
+
+          def mixed(flag)
+            loan = flag ? Borrower.new : Loan.new
+            loan.approve(nil)
+          end
+        end
+      SRC
+      repo.write("app/models/application_record.rb", "class ApplicationRecord < ActiveRecord::Base\nend\n")
+      repo.write("app/models/borrower.rb", borrower.sub("BODY", "1"))
+      repo.write("app/models/loan.rb", loan)
+      repo.write("app/services/approvals.rb", services)
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("app/models/borrower.rb", borrower.sub("BODY", "2"))
+      repo.commit("Count other approvals.", date: "2026-02-12T00:00:00Z")
+
+      method = JitCatch::Changes.between(repo.dir, "base", "HEAD")["methods"].fetch(0)
+
+      assert_equal ["app/models/loan.rb:7 Loan#approve", "app/models/loan.rb:10 Loan#cosigned"], method["callsites"].map { |site| "#{site["file"]}:#{site["line"]} #{site["enclosing"]}" }
+      assert_equal %w[Approvals::Gate#check Desk#approve_each Loan#approve Loan#cosigned], method["reachable_from"]
+      assert_equal [%w[Desk#mixed approve], %w[Desk#through approve], %w[Loan#owned approved_cents]], method["dynamic_callers"].map { |caller| caller.values_at("from", "name") }
+    end
+  end
+
   def test_a_self_call_does_not_reach_another_class_method_or_past_an_attribute
     with_repo do |repo|
       leaf = "class Runner\n  def self.simulate\n    BODY\n  end\n\n  def label\n    BODY\n  end\n\n  def size\n    BODY\n  end\nend\n"

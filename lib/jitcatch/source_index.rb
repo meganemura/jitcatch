@@ -42,12 +42,15 @@ module JitCatch
     # object (`self`), a class or module itself (`singleton`), an instance
     # of one (`instance`), one of the constants a method of the same class
     # returns (`one_of`, with `const` the list), or a value only a run would
-    # know (`unknown`).
+    # know (`unknown`), or a value the source does not type that Rails would
+    # name after its model (`named`, with `const` the name in snake case).
     # `const` is the constant as written, or nil for the enclosing class.
     # An instance variable is an `instance` when every `Const.new` assigned
-    # to it in the class names the same constant. A local variable is one
-    # when every assignment to it in its method builds the same constant
-    # and it is not a parameter.
+    # to it in the class names the same constant, and `named` when none
+    # does. A local variable is an `instance` when every assignment to it in
+    # its method builds the same constant, and `named` when none builds
+    # one, as for a parameter. A reader that `belongs_to` or `has_one`
+    # declares is an `instance` of the model it names.
     Receiver = Data.define(:kind, :const)
     UNKNOWN_RECEIVER = Receiver.new(kind: "unknown", const: nil)
     # A block given to an RSpec call: a `group` (describe, context), an
@@ -72,6 +75,8 @@ module JitCatch
       Prism::LocalVariableOperatorWriteNode, Prism::LocalVariableOrWriteNode, Prism::LocalVariableAndWriteNode
     ].freeze
     SPEC_HELPERS = %i[let let! subject subject!].freeze
+    # The Active Record macros that define a reader returning one record.
+    ASSOCIATION_READERS = %i[belongs_to has_one].freeze
     DESCRIBED_METHOD = /\A[#.]([a-z_][\w]*[?!=]?)\z/
     # FactoryBot's calls that build an object, so run its class's
     # `initialize`. `attributes_for` builds a Hash.
@@ -178,6 +183,7 @@ module JitCatch
       @defined = Hash.new { |hash, key| hash[key] = [] }
       @described = []
       @returned = {}
+      @association_classes = {}
       @symbol_lists = {}
       @paths = Hash.new { |hash, key| hash[key] = [] }
       @factory_calls = Hash.new { |hash, key| hash[key] = [] }
@@ -250,6 +256,11 @@ module JitCatch
       return false if sep != call_sep || bare != call_bare
 
       call_owner.end_with?("::#{owner}") || owner.end_with?("::#{call_owner}")
+    end
+
+    # The model Rails names a record after: `line_item` is a LineItem.
+    def self.model_name(snake)
+      snake.split("_").map(&:capitalize).join
     end
 
     def self.split_qualified(qname)
@@ -443,6 +454,7 @@ module JitCatch
 
         handle_class_visibility(stmt, qualifier) if stmt.receiver.nil? && CLASS_VISIBILITY.key?(stmt.name)
         record_callbacks(stmt, qualifier) if (stmt.receiver.nil? || stmt.receiver.is_a?(Prism::SelfNode)) && !singleton && RECORD_CALLBACKS.key?(stmt.name)
+        record_association(stmt, qualifier) if stmt.receiver.nil? && !singleton && ASSOCIATION_READERS.include?(stmt.name)
         if stmt.receiver.nil? && ATTRIBUTE_MACROS.key?(stmt.name)
           record_attributes_as_methods(stmt, qualifier, visibility == :module_function ? :public : visibility, singleton)
         end
@@ -562,6 +574,23 @@ module JitCatch
       end
     end
 
+    # `belongs_to :cosigner, class_name: "Borrower"` reads a Borrower. A
+    # polymorphic one reads whatever class the row names.
+    def record_association(stmt, qualifier)
+      name, *rest = Array(stmt.arguments&.arguments)
+      return unless name.is_a?(Prism::SymbolNode)
+
+      options = rest.grep(Prism::KeywordHashNode).flat_map(&:elements).grep(Prism::AssocNode)
+        .select { |pair| pair.key.is_a?(Prism::SymbolNode) }.to_h { |pair| [pair.key.unescaped, pair.value] }
+      return if options.key?("polymorphic")
+
+      written = options["class_name"]
+      model = if written.nil? then self.class.model_name(name.unescaped)
+      elsif written.is_a?(Prism::StringNode) then written.unescaped.delete_prefix("::")
+      end
+      @association_classes[self.class.qualify(qualifier, name.unescaped, false)] = model if model
+    end
+
     # An `on:` the source does not spell as symbols could be any context,
     # so it narrows nothing.
     def callback_contexts(value)
@@ -672,7 +701,7 @@ module JitCatch
 
         qualifier, _sep, _bare = self.class.split_qualified(call.enclosing.to_s)
         named = @ivar_classes[[qualifier, call.receiver.const]].uniq
-        call.with(receiver: named.size == 1 ? Receiver.new(kind: "instance", const: named.first) : UNKNOWN_RECEIVER)
+        call.with(receiver: typed_or_named(named, named.size == 1, call.receiver.const.delete_prefix("@")))
       end
     end
 
@@ -680,9 +709,19 @@ module JitCatch
       @calls.map! do |call|
         next call unless call.receiver.kind == "local"
 
-        built = @local_classes[[call.enclosing, call.receiver.const]].uniq
-        typed = built.size == 1 && built.first
-        typed ? call.with(receiver: Receiver.new(kind: "instance", const: typed)) : call
+        assigned = @local_classes[[call.enclosing, call.receiver.const]]
+        built = assigned.flatten.uniq
+        call.with(receiver: typed_or_named(built, assigned.all? { |consts| consts.size == 1 }, call.receiver.const))
+      end
+    end
+
+    def typed_or_named(built, every_assignment_builds, name)
+      if built.empty?
+        Receiver.new(kind: "named", const: name)
+      elsif built.size == 1 && every_assignment_builds
+        Receiver.new(kind: "instance", const: built.first)
+      else
+        UNKNOWN_RECEIVER
       end
     end
 
@@ -708,6 +747,10 @@ module JitCatch
         qualifier, sep, _bare = self.class.split_qualified(call.enclosing.to_s)
         names = [sep == ".", sep != "."].map { |singleton| self.class.qualify(qualifier, call.receiver.const, singleton) }
         consts = @returned.values_at(*names).compact.first.to_a.uniq
+        reader = self.class.qualify(qualifier, call.receiver.const, false)
+        association = @association_classes[reader] if sep == "#" && !@defined.fetch(call.receiver.const, []).include?(reader)
+        next call.with(receiver: Receiver.new(kind: "instance", const: association)) if association
+
         call.with(receiver: consts.empty? ? UNKNOWN_RECEIVER : Receiver.new(kind: "one_of", const: consts))
       end
     end
@@ -857,11 +900,10 @@ module JitCatch
         text = node.unescaped
         @paths[enclosing] << text if text.valid_encoding? && text.match?(PATH_LIKE)
       when Prism::LocalVariableWriteNode
-        built = built_constants(node.value).uniq
-        @local_classes[[enclosing, node.name.to_s]] << (built.size == 1 ? built.first : nil)
+        @local_classes[[enclosing, node.name.to_s]] << built_constants(node.value).uniq
         node.compact_child_nodes.each { |child| walk(child, qualifier, singleton_context, enclosing) }
       when *LOCAL_BINDINGS
-        @local_classes[[enclosing, node.name.to_s]] << nil if node.name
+        @local_classes[[enclosing, node.name.to_s]] << [] if node.name
         node.compact_child_nodes.each { |child| walk(child, qualifier, singleton_context, enclosing) }
       when Prism::InstanceVariableWriteNode, Prism::InstanceVariableOrWriteNode
         @ivar_classes[[qualifier.to_s, node.name.to_s]].concat(built_constants(node.value))
