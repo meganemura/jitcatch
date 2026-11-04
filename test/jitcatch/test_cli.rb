@@ -82,6 +82,12 @@ class TestCLI < Minitest::Test
     end
   end
 
+  def test_version
+    assert_equal ["jitcatch #{JitCatch::VERSION}\n", "", 0], cli("--version")
+    assert_equal ["jitcatch #{JitCatch::VERSION}\n", "", 0], cli("-v")
+    assert_includes cli.first, "jitcatch --version"
+  end
+
   def test_usage_errors_exit_1_and_git_errors_exit_2
     with_repo do |repo|
       repo.write("a.rb", "A = 1\n")

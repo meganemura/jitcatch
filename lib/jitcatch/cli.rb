@@ -21,6 +21,10 @@ module JitCatch
         $stdout.write(help_text)
         return 0
       end
+      if %w[-v --version].include?(@argv.first)
+        $stdout.write("jitcatch #{VERSION}\n")
+        return 0
+      end
 
       case @argv.first
       when "context" then command_context(@argv.drop(1))
@@ -158,6 +162,7 @@ module JitCatch
           jitcatch context [--json] [--repo DIR] [--coverage FILE] BASE HEAD
           jitcatch run [--json] [--repo DIR] [--reruns N] [--timeout SEC] [--workers N | --serial] [--env NAME]... BASE HEAD TESTS_DIR
           jitcatch assess [--json] RUN.json
+          jitcatch --version
 
         context   Short brief of changed methods, old/new source, call sites, and tests.
         run       Run each candidate file on base and head. Keep pass/fail, drop flakes.
