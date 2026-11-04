@@ -7,6 +7,8 @@ module JitCatch
     LONG_LINE = 100
     WINDOW = 30
     DIFF_KEYS = 4
+    # The element diff keeps a table of this many cells.
+    MAX_ELEMENT_PAIRS = 250_000
 
     def context_text(doc)
       lines = []
@@ -319,11 +321,73 @@ module JitCatch
     def changed_pair(expected, actual)
       return ["-#{expected}", "+#{actual}"] if [expected, actual].all? { |text| text.length <= LONG_LINE }
 
-      hash_entry_lines(expected, actual) || column_lines(expected, actual)
+      hash_entry_lines(expected, actual) || array_element_lines(expected, actual) || column_lines(expected, actual)
     end
 
     def shortened(line)
       line.length > LONG_LINE ? "#{line[0, (2 * WINDOW) + 1]}..." : line
+    end
+
+    # The elements one Array literal has and the other lacks, by index, from
+    # a longest common subsequence, so one inserted element is one line and
+    # not a shift of every element after it.
+    def array_element_lines(expected, actual)
+      old_items = array_elements(expected)
+      new_items = array_elements(actual)
+      return nil unless old_items && new_items && old_items.size * new_items.size <= MAX_ELEMENT_PAIRS
+
+      changes = element_changes(old_items, new_items)
+      return nil if changes.empty?
+
+      shown = changes.first(DIFF_KEYS)
+      more = changes.size > DIFF_KEYS ? " (+#{changes.size - DIFF_KEYS} more)" : ""
+      lines = ["array elements differ: #{shown.map { |index, _, _| "[#{index}]" }.join(", ")}#{more}"]
+      shown.each do |index, old_item, new_item|
+        old_entry = "[#{index}] #{old_item}" if old_item
+        new_entry = "[#{index}] #{new_item}" if new_item
+        lines.concat(old_entry && new_entry ? changed_pair(old_entry, new_entry) : [old_entry && "-#{old_entry}", new_entry && "+#{new_entry}"].compact)
+      end
+      lines
+    end
+
+    def array_elements(text)
+      result = Prism.parse(text)
+      body = result.success? ? result.value.statements.body : []
+      return nil unless body.size == 1 && body.first.is_a?(Prism::ArrayNode)
+
+      body.first.elements.map(&:slice)
+    end
+
+    # Each change as [index, old element, new element]: a removed element
+    # has no new one and an added one no old one. Within one run of changes,
+    # the removed and added elements pair up in order, as replacements.
+    def element_changes(old_items, new_items)
+      lengths = Array.new(old_items.size + 1) { Array.new(new_items.size + 1, 0) }
+      old_items.each_index.reverse_each do |i|
+        new_items.each_index.reverse_each do |j|
+          lengths[i][j] = old_items[i] == new_items[j] ? lengths[i + 1][j + 1] + 1 : [lengths[i + 1][j], lengths[i][j + 1]].max
+        end
+      end
+      runs = [[[], []]]
+      i = j = 0
+      while i < old_items.size || j < new_items.size
+        if i < old_items.size && j < new_items.size && old_items[i] == new_items[j]
+          runs << [[], []]
+          i += 1
+          j += 1
+        elsif j < new_items.size && (i == old_items.size || lengths[i][j + 1] > lengths[i + 1][j])
+          runs.last[1] << [j, new_items[j]]
+          j += 1
+        else
+          runs.last[0] << [i, old_items[i]]
+          i += 1
+        end
+      end
+      runs.flat_map do |removed, added|
+        Array.new([removed.size, added.size].max) do |k|
+          [(removed[k] || added[k]).first, removed[k]&.last, added[k]&.last]
+        end
+      end
     end
 
     def hash_entry_lines(expected, actual)

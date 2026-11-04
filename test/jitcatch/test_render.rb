@@ -87,6 +87,20 @@ class TestRender < Minitest::Test
     assert_equal diffs.values, JitCatch::Render.assess_json(doc)["candidates"].map { |row| row["message"] }
   end
 
+  def test_a_long_array_diff_shows_the_elements_that_differ
+    names = (1..8).map { |n| "name_number_#{n}" }
+    pair = ->(expected, actual) { JitCatch::Render.message_lines({ "message" => "--- expected\n+++ actual\n@@ -1 +1 @@\n-#{expected.inspect}\n+#{actual.inspect}\n" }) }
+
+    assert_equal ["array elements differ: [3]", %(-[3] "name_number_4"), %(+[3] "other")], pair.call(names, names.dup.tap { |list| list[3] = "other" })
+    assert_equal ["array elements differ: [2], [6]", %(-[2] "name_number_3"), %(+[6] "added")], pair.call(names, (names - ["name_number_3"]).insert(6, "added"))
+    many = names.map { |name| "#{name}!" }
+    assert_equal "array elements differ: [0], [1], [2], [3] (+4 more)", pair.call(names, many).first
+    assert_equal 9, pair.call(names, many).size
+    big = (1..500).to_a
+    assert_equal "array elements differ: [499]", pair.call(big, big[0..-2] + [0]).first
+    assert_match(/\^ column/, pair.call(big + [1], big[0..-2] + [0]).last)
+  end
+
   # Minitest's first removed and first added lines are a pair only when the
   # added line replaces the removed one; otherwise a column says nothing.
   def test_two_diff_lines_that_do_not_replace_each_other_get_no_column
