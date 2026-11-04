@@ -20,12 +20,17 @@ module JitCatch
     ENV_READ_GREP = %q{ENV(\.fetch\(|\.key\?\(|\[) *["'][A-Za-z_][A-Za-z0-9_]*["']}
     # What reads a proxy or CA setting: an HTTP client, by the name a file
     # requires or a Gemfile.lock lists, and a command a file starts that
-    # fetches, such as `npx --yes`. A spec of a local SQLite app uses none,
-    # so the host's proxy settings are noise there.
+    # fetches, such as `npx --yes` or `bundle install`, in a string, a
+    # backtick, or an argument list. A spec of a local SQLite app uses none,
+    # so the host's proxy settings are noise there. A command spelled any
+    # other way, as in a script file, is not seen.
     NETWORK_REQUIRES = %w[net/http net/https open-uri faraday httparty excon http httpx httpclient rest-client typhoeus].freeze
     NETWORK_GEMS = %w[net-http faraday httparty excon http httpx httpclient rest-client typhoeus].freeze
     NETWORK_COMMANDS = %w[npx npm curl wget].freeze
-    NETWORK_USE_GREP = "require *\\(? *[\"'](#{NETWORK_REQUIRES.join("|")})[\"']|[\"'](#{NETWORK_COMMANDS.join("|")}) "
+    FETCHING_TOOLS = %w[bundle gem git].freeze
+    FETCHING_SUBCOMMANDS = %w[install update clone fetch pull].freeze
+    NETWORK_USE_GREP = "require *\\(? *[\"'](#{NETWORK_REQUIRES.join("|")})[\"']|[\"'`](#{NETWORK_COMMANDS.join("|")}) " \
+                       "|[\"'`](#{FETCHING_TOOLS.join("|")})([\"'], *[\"']| +)(#{FETCHING_SUBCOMMANDS.join("|")})"
     NETWORK_USE = Regexp.new(NETWORK_USE_GREP)
     # Rescuing in the child keeps Bundler's own message and drops its backtrace.
     BUNDLE_SETUP = 'begin; require "bundler/setup"; rescue Exception => e; $stderr.puts e.message; exit 1; end'

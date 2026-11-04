@@ -1216,9 +1216,15 @@ class TestRunner < Minitest::Test
 
   # A proxy setting is a likely reason for a wait only in an app that
   # loads an HTTP client, as its Gemfile.lock lists, or starts a command
-  # that fetches, as `npx --yes` does.
+  # that fetches, as `npx --yes`, `bundle install`, and `git clone` do.
   def test_an_http_client_or_a_fetching_command_names_the_proxy_a_timed_out_child_did_not_get
-    { "Gemfile.lock" => "GEM\n  remote: https://rubygems.org/\n  specs:\n    faraday (2.12.0)\n", "lib/quint.rb" => %(QUINT = "npx --yes quint"\n), "lib/notes.rb" => %(NOTE = "npx"\n) }.each do |path, text|
+    fetching = {
+      "Gemfile.lock" => "GEM\n  remote: https://rubygems.org/\n  specs:\n    faraday (2.12.0)\n", "lib/quint.rb" => %(QUINT = "npx --yes quint"\n),
+      "lib/setup.rb" => %(def setup = system("bundle install --quiet")\n), "lib/split.rb" => %(def setup = system("bundle", "install")\n),
+      "lib/clone.rb" => "def fetch_repo = `git clone https://example.invalid/r.git`\n", "lib/gem.rb" => %(def add = system('gem install rake')\n)
+    }
+    local = { "lib/notes.rb" => %(NOTE = "npx"\n), "lib/exec.rb" => %(RUN = "bundle exec rake"\n), "lib/status.rb" => %(def dirty = `git status --short`\n) }
+    fetching.merge(local).each do |path, text|
       with_repo do |repo|
         repo.write("lib/flag.rb", "module Flag; def self.ok; true; end; end\n")
         repo.commit("base", date: "2026-02-11T00:00:00Z")
@@ -1232,7 +1238,7 @@ class TestRunner < Minitest::Test
           execute(repo, tests, timeout: 1, finished_in_time: blocked_children_time_out(repo.dir))["env_not_passed"]
         end
 
-        assert_equal path != "lib/notes.rb", names.include?("HTTPS_PROXY"), path
+        assert_equal fetching.key?(path), names.include?("HTTPS_PROXY"), path
       end
     end
   end
