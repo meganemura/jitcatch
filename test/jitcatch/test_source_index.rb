@@ -547,6 +547,40 @@ class TestSourceIndexExamples < Minitest::Test
     refute_includes index.example_references(8), "Index.parse"
   end
 
+  # Only a `belongs_to`/`has_one` line of the class body is an association,
+  # and only a local the method sets to one class is that class.
+  def test_only_an_association_line_or_a_built_local_types_a_receiver
+    source = <<~RUBY
+      class Loan < ApplicationRecord
+        READERS = %i[cosigner].freeze
+        validates :borrower
+        belongs_to(*READERS)
+
+        class << self
+          belongs_to :guarantor
+        end
+
+        def checked = borrower.check
+
+        def guaranteed = guarantor.check
+
+        def early
+          lender.check
+          lender = Lender.new
+        end
+
+        def maybe(loan)
+          loan = Loan.new if loan.nil?
+          loan.check
+        end
+      end
+    RUBY
+    index = JitCatch::SourceIndex.parse(source, file: "app/models/loan.rb")
+    receivers = index.calls.select { |call| call.bare_name == "check" }.to_h { |call| [call.enclosing, call.receiver.kind] }
+
+    assert_equal({ "Loan#checked" => "unknown", "Loan#guaranteed" => "unknown", "Loan#early" => "unknown", "Loan#maybe" => "unknown" }, receivers)
+  end
+
   def test_a_let_or_subject_that_builds_one_class_types_its_calls
     source = <<~SPEC
       RSpec.describe Cart do

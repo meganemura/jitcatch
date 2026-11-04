@@ -752,7 +752,8 @@ module JitCatch
         names = [sep == ".", sep != "."].map { |singleton| self.class.qualify(qualifier, call.receiver.const, singleton) }
         consts = @returned.values_at(*names).compact.first.to_a.uniq
         reader = names.first
-        association = @association_classes[reader] if sep == "#" && @association_classes.key?(reader) && !@defined.fetch(call.receiver.const, []).include?(reader)
+        # A singleton reader names `Loan.borrower`, which no association line records.
+        association = @association_classes[reader] unless @defined.fetch(call.receiver.const, []).include?(reader)
         next call.with(receiver: Receiver.new(kind: "instance", const: association)) if association
 
         call.with(receiver: consts.empty? ? UNKNOWN_RECEIVER : Receiver.new(kind: "one_of", const: consts))
