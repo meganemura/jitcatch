@@ -210,7 +210,12 @@ module JitCatch
         return [lowest(hits), hits] if hits.any?
       end
       framed = @methods.select { |item| frame_hits?(test, item) }
-      return [method_from_backtrace(test), framed] if framed.any?
+      # The innermost changed frame is where the error came from; the frames
+      # outside it only called it.
+      if framed.any?
+        innermost = method_from_backtrace(test)
+        return [innermost, [innermost]]
+      end
 
       mentions = Array(test["mentions"])
       mentioned = sent_to_named_receivers(@methods.select { |item| mentioned?(item, mentions) }, mentions)
