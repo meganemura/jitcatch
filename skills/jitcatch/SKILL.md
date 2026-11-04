@@ -87,20 +87,24 @@ ruby -Ilib -I. -e 'require "rspec/core"; require "rspec/support/object_formatter
 - An example's mentions come from its own block, the `let`, `subject`, and `before`/`after`/`around` blocks of the groups around it, those groups' arguments, and the same-file helpers they call. `describe "#total"` and `describe ".build"` name that method. `described_class.new` names `Owner.new`, and `described_class.parse` or `Index.parse` picks that class's `parse` among changed methods of the name. A `let` or `subject` name is the spec's own helper, not a mention. An implicit `subject` and `spec/support` helpers are not read, so call the changed method in the example or its `let`.
 - A Rails `rails_helper` loads in each worktree, but base and head run at the same time with the same `config/database.yml`. Keep candidates off the database, or expect the two sides to see each other's rows.
 
-On jitcatch itself (the commit that added RSpec, with `rspec-core` in a scratch clone's bundle), six specs that `branchout explore --format rspec --require-by-name` emitted on base for `JitCatch::Render.message_lines`, next to four Minitest tests, gave:
+On jitcatch itself, across the change that drops the `---Backtrace---` lines from an `assert_raises` message, three specs that `branchout explore --format rspec --require-by-name` emitted on base for `JitCatch::MinitestParser.parse` gave:
 
 ```text
-  t05 reported JitCatch::Render.message_lines [{"message":"\nexpected: 3\n     got: 4\n\n(compared using ==)\n"}] returns ["expected: 3"] message_lines_spec.rb:31 m29
-  ...
-counts generated=10 no_signal=9 fail_on_base=0 candidates=1 flaky=0 discarded=0 reported=1
+tests:
+  t01 no_signal JitCatch::MinitestParser.parse returns summary: false when stdout is "" minitest_parse_spec.rb:11
+  t02 no_signal JitCatch::MinitestParser.parse returns summary: true when stdout is "T#test_a = 0.00 s = F\n..." minitest_parse_spec.rb:21
+  t03 reported JitCatch::MinitestParser.parse returns summary: true, status: "fail" when stdout is "ArTest#test_raises = 0..." minitest_parse_spec.rb:16 m17
+counts generated=3 no_signal=2 fail_on_base=0 candidates=1 flaky=0 discarded=0 reported=1
 assess:
-  c01 JitCatch::Render.message_lines [...] returns ["expected: 3"] base=pass head=fail m29 assertion,report,touches:changed_method
-    expected: ["expected: 3"]
-    got: ["expected: 3", "got: 4"]
-    rerun: bundle exec rspec {tests}/message_lines_spec.rb:31
+  c01 JitCatch::MinitestParser.parse returns summary: true, status: "fail" when stdout is "ArTest#test_raises = 0..." base=pass head=fail m17 assertion,report,touches:unchanged_caller
+    hash keys differ: "tests"
+    -...ror>\nMessage: <\"wrapped k\">\n---Backtrace---\n------------...
+    +...ror>\nMessage: <\"wrapped k\">", "message_first_line" => "[Ke...
+                                      ^ column 301
+    rerun: bundle exec ruby -Ilib -I. -e 'require "rspec/core"; require "rspec/support/object_formatter"; RSpec::Core::RubyProject.instance_variable_set(:@project_root, Dir.pwd); RSpec::Support::ObjectFormatter.default_instance.max_formatted_output_length = nil; exit(RSpec::Core::Runner.run(ARGV))' {tests}/minitest_parse_spec.rb:16
 ```
 
-That row is intended: the change shows RSpec's `got:` line too.
+That row is intended: the message no longer ends in the two lines that framed the frames. `m17` is the private `MinitestParser#parse_issue`, and the spec reaches it through `parse`, an unchanged caller.
 
 On the commit that pinned the project root, two hand-written specs next to two that branchout emitted for `JitCatch::Assessor.apply` gave this row, with the rerun line it now prints:
 
