@@ -37,6 +37,7 @@ class TestText < Minitest::Test
     assert_equal %(#<Loan id: 1, created_at: "{time}", updated_at: "{time}">), Text.mask_times(record)
     assert_equal "at {time} and {time} and {time}", Text.mask_times("at 2026-11-04 19:02:03 UTC and 2026-11-04T19:02:03.5Z and 2026-11-04 19:02:03 +09:00")
     assert_equal "due 2026-11-04, 12:30", Text.mask_times("due 2026-11-04, 12:30")
+    assert_equal "saved at {time}.", Text.mask_times("saved at 2026-11-04 19:02:03.")
   end
 
   def test_indent_pads_each_line_and_names_empty_text
