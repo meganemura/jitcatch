@@ -155,4 +155,14 @@ class TestRSpecParser < Minitest::Test
     assert_equal message.rstrip, result["message"]
     assert_equal [{ "file" => ".jitcatch/h_spec.rb", "line" => 3 }], result["backtrace"]
   end
+
+  def test_a_frame_shaped_last_diff_line_with_no_header_stays_in_the_message
+    message = "expected: \"a\\n  # x.rb:20:in 'y'\\n\"\n     got: \"b\\n  # x.rb:20:in 'y'\\n\"\n\n(compared using ==)\n\nDiff:\n@@ -1,2 +1,2 @@\n-a\n+b\n   # x.rb:20:in 'y'\n"
+    examples = [example("1:1", "H text", "failed", 3, exception: { "class" => "RSpec::Expectations::ExpectationNotMetError", "message" => message, "backtrace" => ["./.jitcatch/h_spec.rb:3:in 'block (2 levels) in <top (required)>'"] })]
+
+    result = JitCatch::RSpecParser.parse(report(examples), "", "")["tests"].fetch("H text")
+
+    assert_equal message.rstrip, result["message"]
+    assert_equal [{ "file" => ".jitcatch/h_spec.rb", "line" => 3 }], result["backtrace"]
+  end
 end
