@@ -13,7 +13,7 @@ Do not commit the candidate tests unless the human asks to promote one.
 
 Ruby 3.3 or newer, and git. No gems. `minitest` and `prism` ship with Ruby. RSpec candidates need `rspec-core`: in the project's bundle when it has a `Gemfile`, otherwise installed for the Ruby that runs jitcatch. The subject must be a git repository that can add worktrees. The tool reads commits only. Uncommitted files are not in the diff.
 
-The executable is `bin/jitcatch` in the jitcatch repository. Run `jitcatch` when that `bin` directory is on `PATH`. Otherwise run `ruby /path/to/jitcatch/bin/jitcatch`. There is no gem. `jitcatch --help` prints the commands, and `jitcatch --version` prints `jitcatch 0.1.0`; the `version` line of every report and `version` in `--json` hold the same number.
+The executable is `bin/jitcatch` in the jitcatch repository. Run `jitcatch` when that `bin` directory is on `PATH`. Otherwise run `ruby /path/to/jitcatch/bin/jitcatch`. There is no gem. `jitcatch --help` prints the commands, and `jitcatch --version` prints `jitcatch 0.1.0`, with the commit after it (`jitcatch 0.1.0 (1fbcd18)`) when jitcatch runs from its own git checkout; quote that line with any output you quote. The `version` line of every report and `version` in `--json` hold the number only.
 
 Exit status 0 is success, including when catching tests were found. Exit status 1 is a usage error. Exit status 2 is a git error. Exit status 3 means `run` tested nothing: a side failed its setup check before any test ran, no candidate file loaded on either side, or every row timed out or found no database on a side (below).
 

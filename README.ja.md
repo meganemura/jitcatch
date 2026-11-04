@@ -15,6 +15,7 @@ Ruby 3.3 以降。
 追加の gem はない。
 `minitest` と `prism` は Ruby に付いている。
 `jitcatch --version`（または `-v`）は `jitcatch 0.1.0` を出し、`--help` はコマンドの一覧を出す。
+git から入れた gem のように jitcatch 自身の git のチェックアウトから動くときは、`jitcatch 0.1.0 (1fbcd18)` のようにコミットも出す。
 RSpec の候補には、実行する場所に `rspec-core` が要る。
 プロジェクトの bundle に入れるか、`Gemfile` が無いプロジェクトならその Ruby にインストールしておく。
 `BASE` は親のリビジョン、`HEAD` は変更である。

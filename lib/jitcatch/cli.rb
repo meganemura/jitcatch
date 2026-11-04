@@ -23,7 +23,7 @@ module JitCatch
         return 0
       end
       if %w[-v --version].include?(@argv.first)
-        $stdout.write("jitcatch #{VERSION}\n")
+        $stdout.write(version_line)
         return 0
       end
 
@@ -37,6 +37,17 @@ module JitCatch
     end
 
     private
+
+    # A copy run from its own git checkout, as a gem installed from git
+    # is, names its commit, so a quoted output can say which code wrote it.
+    # A copy inside another project's checkout names none.
+    def version_line
+      root = File.expand_path("../..", __dir__)
+      sha = File.exist?(File.join(root, ".git")) ? IO.popen(["git", "-C", root, "rev-parse", "--short", "HEAD"], err: File::NULL, &:read).strip : ""
+      sha.empty? ? "jitcatch #{VERSION}\n" : "jitcatch #{VERSION} (#{sha})\n"
+    rescue SystemCallError
+      "jitcatch #{VERSION}\n"
+    end
 
     def command_context(argv)
       opts, positional = parse_options(argv, %i[repo coverage])

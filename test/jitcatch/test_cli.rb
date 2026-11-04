@@ -83,8 +83,10 @@ class TestCLI < Minitest::Test
   end
 
   def test_version
-    assert_equal ["jitcatch #{JitCatch::VERSION}\n", "", 0], cli("--version")
-    assert_equal ["jitcatch #{JitCatch::VERSION}\n", "", 0], cli("-v")
+    out, err, status = cli("--version")
+    assert_equal ["", 0], [err, status]
+    assert_match(/\Ajitcatch #{Regexp.escape(JitCatch::VERSION)}( \(\h{7,}\))?\n\z/, out)
+    assert_equal cli("--version"), cli("-v")
     assert_includes cli.first, "jitcatch --version"
   end
 
@@ -191,6 +193,23 @@ class TestCLI < Minitest::Test
       end
       doc = JSON.parse(json)
       assert_equal [3, 1, ["HTTPS_PROXY"]], [json_status, doc["untested"], doc["env_not_passed"]]
+    end
+  end
+
+  # A gem installed from git is a checkout, so its version line can name
+  # the commit a quoted output came from.
+  def test_version_names_the_commit_of_the_checkout_it_runs_from
+    root = File.expand_path("../..", __dir__)
+    version = ->(dir) { Open3.capture3(RbConfig.ruby, File.join(dir, "bin/jitcatch"), "--version").first }
+    with_repo do |repo|
+      %w[bin lib].each { |dir| FileUtils.cp_r(File.join(root, dir), repo.dir) }
+      repo.commit("copy", date: "2026-02-11T00:00:00Z")
+      vendored = File.join(repo.dir, "vendor/jitcatch")
+      FileUtils.mkdir_p(vendored)
+      %w[bin lib].each { |dir| FileUtils.cp_r(File.join(root, dir), vendored) }
+
+      assert_equal "jitcatch #{JitCatch::VERSION} (#{repo.git("rev-parse", "--short", "HEAD").strip})\n", version.(repo.dir)
+      assert_equal "jitcatch #{JitCatch::VERSION}\n", version.(vendored), "a copy inside another project names no commit"
     end
   end
 
