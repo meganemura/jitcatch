@@ -142,11 +142,11 @@ class TestRSpecRunner < Minitest::Test
       rows = doc["tests"].to_h { |test| [test["name"], test.values_at("disposition", "line", "tags", "mentions")] }
       assert_equal({
         "broken_spec.rb#load" => ["discarded", nil, ["discard:load_error", "error:LoadError", "touches:changed_method"], %w[Cart#label Cart.new discount label]],
-        "Cart#label names the cart" => ["no_signal", 17, [], %w[Cart.new label]],
-        "Cart#total sums the prices" => ["reported", 11, %w[assertion report touches:changed_method], %w[Cart.new total]],
-        "Cart counts the prices" => ["discarded", 22, ["discard:signature_change", "error:NoMethodError", "touches:changed_method"], %w[Cart.new count]],
+        "Cart#label names the cart" => ["no_signal", 17, [], %w[Cart#label Cart.new label]],
+        "Cart#total sums the prices" => ["reported", 11, %w[assertion report touches:changed_method], %w[Cart#total Cart.new total]],
+        "Cart counts the prices" => ["discarded", 22, ["discard:signature_change", "error:NoMethodError", "touches:changed_method"], %w[Cart#count Cart.new count]],
         "Cart knows the app" => ["fail_on_base", 30, [], %w[Cart.new]],
-        "Cart takes one rate" => ["discarded", 26, ["assertion", "discard:signature_change", "touches:changed_method"], %w[Cart.new discount]]
+        "Cart takes one rate" => ["discarded", 26, ["assertion", "discard:signature_change", "touches:changed_method"], %w[Cart#discount Cart.new discount]]
       }, rows, doc["tests"].map { |test| [test["name"], test["head"]["message"]] }.inspect)
 
       total = doc["tests"].find { |test| test["name"] == "Cart#total sums the prices" }

@@ -387,11 +387,11 @@ class TestSourceIndexExamples < Minitest::Test
   end
 
   def test_an_example_reads_its_block_its_groups_setup_and_helpers
-    assert_equal %w[* << Cart Cart.new described_class doubled eq expect new subtotal to total twice], index.example_references(15)
+    assert_equal %w[* << Cart Cart#total Cart.new described_class doubled eq expect new subtotal to total twice], index.example_references(15)
   end
   
   def test_a_sibling_group_setup_and_a_neighbor_are_not_read
-    assert_equal %w[Cart Cart.new described_class eq expect label new to], index.example_references(23)
+    assert_equal %w[Cart Cart#label Cart.new described_class eq expect label new to], index.example_references(23)
     refute_includes index.example_references(26), "label"
   end
   
@@ -434,6 +434,22 @@ def test_a_named_receiver_names_its_class_and_a_let_names_no_method
   assert_equal %w[Index Index#size Index.new Index.parse described_class eq expect new parse size to], index.example_references(4)
   refute_includes index.example_references(8), "Index.parse"
 end
+
+  def test_a_let_or_subject_that_builds_one_class_types_its_calls
+    source = <<~SPEC
+      RSpec.describe Cart do
+        it("totals") { expect(cart.total + subject.size + either.label + kept.name + box.cart.weight).to eq(1) }
+
+        let(:cart) { Cart.new }
+        subject { described_class.new }
+        let(:either) { flag ? Cart.new : Order.new }
+        let(:kept) { Cart.new if Order.new }
+      end
+    SPEC
+    names = JitCatch::SourceIndex.parse(source, file: "cart_spec.rb").example_references(2)
+
+    assert_equal %w[Cart#name Cart#size Cart#total], names.grep(/#/)
+  end
 
   def test_only_a_let_or_subject_symbol_names_a_spec_helper
     source = <<~SPEC

@@ -87,6 +87,7 @@ module JitCatch
       @references = Hash.new { |hash, key| hash[key] = [] }
       @ivar_classes = Hash.new { |hash, key| hash[key] = [] }
       @local_classes = Hash.new { |hash, key| hash[key] = [] }
+      @helper_classes = Hash.new { |hash, key| hash[key] = [] }
       @parse_error = nil
       @spec_blocks = []
       @defined = Hash.new { |hash, key| hash[key] = [] }
@@ -106,6 +107,7 @@ module JitCatch
       walk(result.value, "", false, nil)
       type_instance_variables
       type_local_variables
+      type_spec_helpers
       type_returned_receivers
       rename_module_function_callers
       @methods = self.class.hide_private_constants(@methods, @private_constants)
@@ -453,6 +455,18 @@ module JitCatch
       end
     end
 
+    # `let(:cart) { Cart.new }` makes `cart.total` a call on a Cart, as a
+    # local variable would. A name defined twice, in two groups, types none.
+    def type_spec_helpers
+      @calls.map! do |call|
+        next call unless call.receiver.kind == "helper"
+
+        built = @helper_classes[call.receiver.const].uniq
+        typed = built.size == 1 && built.first
+        call.with(receiver: typed ? Receiver.new(kind: "instance", const: typed) : UNKNOWN_RECEIVER)
+      end
+    end
+
     # `emitter_for(format).render` sends `render` to whatever `emitter_for`
     # returns. When that method of the same class returns only constants (and
     # nil), the call goes to one of them.
@@ -498,7 +512,7 @@ module JitCatch
     def built_constants(node)
       case node
       when Prism::CallNode
-        owner = constructor_owner(node)
+        owner = constructor_owner(node) || described_owner(node)
         owner ? [owner] : []
       when Prism::OrNode, Prism::AndNode
         built_constants(node.left) + built_constants(node.right)
@@ -618,6 +632,7 @@ module JitCatch
       kind = SPEC_KINDS.fetch(node.name)
       block = SpecBlock.new(kind: kind, key: "#{kind}:#{node.location.start_line}", start_line: node.location.start_line, end_line: node.location.end_line)
       @spec_blocks << block
+      record_spec_helper(node) if SPEC_HELPERS.include?(node.name)
       arguments = Array(node.arguments&.arguments)
       arguments.each { |arg| walk(arg, qualifier, singleton_context, block.key) unless spec_helper_name?(node, arg) }
       described = kind == "group" ? arguments.first : nil
@@ -636,7 +651,18 @@ module JitCatch
     # a method `result` of the code under test.
     def spec_helper_names(node)
       own = node.is_a?(Prism::CallNode) && spec_helper_name?(node, node.arguments&.arguments&.first) ? [node.arguments.arguments.first.unescaped] : []
+      own << "subject" if node.is_a?(Prism::CallNode) && node.receiver.nil? && node.block && %i[subject subject!].include?(node.name)
       own + node.compact_child_nodes.flat_map { |child| spec_helper_names(child) }
+    end
+
+    # An unnamed `subject` is called as `subject`, and a named one answers
+    # to both names.
+    def record_spec_helper(node)
+      first = node.arguments&.arguments&.first
+      names = first.is_a?(Prism::SymbolNode) ? [first.unescaped] : []
+      names << "subject" if node.name.start_with?("subject")
+      built = built_constants(node.block.body).uniq
+      names.each { |name| @helper_classes[name] << (built.size == 1 ? built.first : nil) }
     end
 
     def spec_helper_name?(node, arg)
@@ -689,6 +715,8 @@ module JitCatch
           Receiver.new(kind: "instance", const: inner.const)
         elsif node.name == :new && inner.kind == "self"
           Receiver.new(kind: "instance", const: nil)
+        elsif node.receiver.nil? && @spec_helpers.include?(node.name.to_s)
+          Receiver.new(kind: "helper", const: node.name.to_s)
         elsif inner.kind == "self"
           Receiver.new(kind: "returned", const: node.name.to_s)
         else

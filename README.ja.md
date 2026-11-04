@@ -390,6 +390,7 @@ CLI を使わない場合は、`skills/jitcatch` をエージェントの skills
   `described_class.new` は `Owner.new` を指す。
   `described_class.parse` は `Owner.parse` として出る。
   `let(:result)` や `subject(:result)` の名前は spec 自身のヘルパーなので、その名前も、レシーバのない `result` の呼び出しも、変更メソッド `result` への言及にならない。
+  そのブロックが一つのクラスを作るときは、`let(:cart) { Cart.new }` のように、`cart.total` は `Cart#total` として出る。
   暗黙の `subject`、共有 example グループ、`spec/support` のヘルパーは読まない。
   別のファイルで定義した共有グループの example は、候補ファイル全体を読む。
 - Rails 風の `rails_helper` はそれぞれのワークツリーで読み込めるが、base と head は同じ `config/database.yml` で同時に走る。
