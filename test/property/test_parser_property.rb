@@ -90,6 +90,27 @@ class TestParserProperty < Minitest::Test
     end
   end
 
+  # `Loan.create!` written inside `module Shop` is `Shop::Loan.create!`,
+  # but a name that only ends in the same letters (`XLoan`) is another
+  # class, and another method or receiver kind is another call.
+  def test_a_call_names_the_same_call_written_from_inside_its_namespace
+    Hegel.test do |tc|
+      segment = from_regex("[A-Z][a-z]{0,3}", fullmatch: true)
+      qualifier = tc.draw(arrays(segment, min_size: 1, max_size: 3)).join("::")
+      outer = tc.draw(arrays(segment, max_size: 2))
+      bare = tc.draw(from_regex("[a-z_][a-z0-9_]{0,6}[?!]?", fullmatch: true))
+      singleton = tc.draw(booleans)
+      written = JitCatch::SourceIndex.qualify(qualifier, bare, singleton)
+      full = JitCatch::SourceIndex.qualify([*outer, qualifier].join("::"), bare, singleton)
+
+      assert JitCatch::SourceIndex.names_call?(written, full)
+      assert JitCatch::SourceIndex.names_call?(full, written)
+      refute JitCatch::SourceIndex.names_call?(JitCatch::SourceIndex.qualify("X#{qualifier}", bare, singleton), full)
+      refute JitCatch::SourceIndex.names_call?(JitCatch::SourceIndex.qualify(qualifier, "#{bare}x", singleton), full)
+      refute JitCatch::SourceIndex.names_call?(JitCatch::SourceIndex.qualify(qualifier, bare, !singleton), full)
+    end
+  end
+
   def test_blobs_read_back_as_written
     repo = Support::Repo.new
     git = JitCatch::GitRepo.new(repo.dir)

@@ -175,6 +175,7 @@ module JitCatch
             lines << "    dynamic_callers: #{method["dynamic_callers"].map { |caller| "#{caller["from"]} (#{caller["name"]})" }.join(", ")}"
           end
           lines << "    built_by: #{method["builders"].join(", ")}" unless method["builders"].to_a.empty?
+          lines << "    run_by: #{method["run_by"].join(", ")} (#{method["callbacks"].join(", ")})" unless method["run_by"].to_a.empty?
           lines << "    tests: #{format_tests(method["existing_tests"])}"
           unless method["entry_point_tests"].empty?
             hits = method["entry_point_tests"].map { |hit| "#{hit["file"]} via #{hit["entry_points"].join(", ")}" }
@@ -212,7 +213,7 @@ module JitCatch
       tests.map { |test|
         if test["via"] == "coverage"
           "#{test["file"]} coverage #{test["test"]}"
-        elsif test["via"] == "builder"
+        elsif %w[builder callback].include?(test["via"])
           "#{test["file"]} via #{test["calls"].join(", ")}"
         else
           "#{test["file"]} grep"

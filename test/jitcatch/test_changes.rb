@@ -710,4 +710,40 @@ class TestChanges < Minitest::Test
       assert_includes text, "factories_skipped:\n  spec/factories/loans.rb:10 factory :mystery: class: is not a constant, a string, or a symbol\n"
     end
   end
+
+  # A test reaches a callback through the call ActiveRecord runs it from,
+  # never by its name. The table of which call runs which declaration is
+  # Rails's; a class outside ActiveRecord gets none.
+  def test_a_callback_lists_the_tests_that_save_its_model
+    with_repo do |repo|
+      callback_history(repo)
+      repo.write("spec/models/create_spec.rb", "Loan.create!(amount: 5)\n")
+      repo.write("spec/models/factory_spec.rb", "create(:loan)\n")
+      repo.write("spec/models/save_spec.rb", "loan = Loan.new\nloan.save!\n")
+      repo.write("spec/models/destroy_spec.rb", "loan = Loan.new\nloan.destroy\n")
+      repo.write("spec/models/valid_spec.rb", "loan = Loan.new\nloan.valid?\n")
+      repo.write("spec/models/named_spec.rb", "Loan.new.count_save\n")
+      repo.commit("specs", date: "2026-02-13T00:00:00Z")
+
+      doc = JitCatch::Changes.between(repo.dir, "base", "HEAD")
+      by_name = doc["methods"].to_h { |method| [method["name"], method] }
+
+      saving = %w[Loan#save Loan#save! Loan#update Loan#update! Loan.create Loan.create! factory(:loan)]
+      assert_equal [["after_save :count_save"], saving], by_name["Loan#count_save"].values_at("callbacks", "run_by")
+      assert_equal [["validates if: :checked?"], (saving + %w[Loan#invalid? Loan#valid? Loan#validate Loan#validate!]).sort],
+        by_name["Loan#checked?"].values_at("callbacks", "run_by")
+      assert_equal [["before_destroy :archive"], %w[Loan#destroy Loan#destroy!]], by_name["Loan#archived_mark"].values_at("callbacks", "run_by")
+      assert_equal [[], []], by_name["Notes#tidy"].values_at("callbacks", "run_by")
+      assert_equal [
+        { "file" => "spec/models/create_spec.rb", "via" => "callback", "calls" => ["Loan.create!"] },
+        { "file" => "spec/models/factory_spec.rb", "via" => "callback", "calls" => ["factory(:loan)"] },
+        { "file" => "spec/models/named_spec.rb", "via" => "grep" },
+        { "file" => "spec/models/save_spec.rb", "via" => "callback", "calls" => ["Loan#save!"] }
+      ], by_name["Loan#count_save"]["existing_tests"]
+      assert_equal %w[spec/models/destroy_spec.rb], by_name["Loan#archived_mark"]["existing_tests"].map { |hit| hit["file"] }
+
+      text = JitCatch::Render.context_text(doc)
+      assert_includes text, "    run_by: #{saving.join(", ")} (after_save :count_save)\n    tests: spec/models/create_spec.rb via Loan.create!; "
+    end
+  end
 end

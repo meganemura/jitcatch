@@ -443,6 +443,34 @@ class TestRSpecRunner < Minitest::Test
     end
   end
 
+  def test_a_save_mentions_the_callback_it_runs
+    with_repo do |repo|
+      callback_history(repo)
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, {
+        "record_standins.rb" => RECORD_STANDINS,
+        "loan_spec.rb" => <<~TEST
+          require_relative "record_standins"
+          require "loan"
+
+          RSpec.describe Loan do
+            include Factories
+
+            it("creates") { expect(Loan.create!.saves).to eq(1) }
+            it("builds a factory") { expect(create(:loan).saves).to eq(1) }
+          end
+        TEST
+      })
+
+      doc = execute(repo, tests)
+
+      ids = doc["methods"].select { |method| %w[Loan#checked? Loan#count_save].include?(method["name"]) }.map { |method| method["id"] }
+      rows = doc["tests"].to_h { |test| [test["name"], test.values_at("mentions", "method_ids")] }
+      assert_equal({ "Loan creates" => [%w[Loan.create! saves], ids], "Loan builds a factory" => [%w[factory(:loan) saves], ids] }, rows)
+      doc["tests"].each { |test| assert_includes test["tags"], "touches:changed_method", test["name"] }
+    end
+  end
+
   def test_an_example_named_like_a_load_row_is_rerun
     with_repo do |repo|
       cart_history(repo)

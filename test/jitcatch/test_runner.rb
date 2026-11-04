@@ -94,8 +94,8 @@ class TestRunner < Minitest::Test
       assert_equal "reported", by_name["TotalTest#test_total"]["disposition"]
       assert_includes by_name["TotalTest#test_total"]["tags"], "caller:unchanged:lib/calc.rb:11"
       assert_includes by_name["TotalTest#test_total"]["tags"], "touches:unchanged_caller"
-      assert_equal %w[bare_name builders callsites_omitted change dynamic_callers end_line file forwards_to_added id kind moved_from name new_end new_start
-        old_end old_start reachable_from signature start_line via_constant visibility],
+      assert_equal %w[bare_name builders callbacks callsites_omitted change dynamic_callers end_line file forwards_to_added id kind moved_from name new_end new_start
+        old_end old_start reachable_from run_by signature start_line via_constant visibility],
         doc["methods"].flat_map(&:keys).uniq.sort
 
       json =JitCatch::Render.dump(JitCatch::Render.run_json(doc))
@@ -1246,6 +1246,52 @@ class TestRunner < Minitest::Test
       id = doc["methods"].find { |method| method["name"] == "Loan#initialize" }["id"]
       rows = doc["tests"].to_h { |test| [test["name"], test.values_at("mentions", "method_id")] }
       assert_equal({ "LoanTest#test_create_bang" => [%w[Loan.create! approved_by], id], "LoanTest#test_factory" => [%w[approved_by factory(:loan)], id] }, rows)
+      doc["tests"].each { |test| assert_includes test["tags"], "touches:changed_method", test["name"] }
+    end
+  end
+
+  def test_a_save_mentions_the_callback_it_runs
+    with_repo do |repo|
+      callback_history(repo)
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, {
+        "record_standins.rb" => RECORD_STANDINS,
+        "loan_test.rb" => <<~TEST
+          require "minitest/autorun"
+          require_relative "record_standins"
+          require "loan"
+
+          class LoanTest < Minitest::Test
+            include Factories
+
+            def test_create_bang
+              assert_equal 1, Loan.create!.saves
+            end
+
+            def test_factory
+              assert_equal 1, create(:loan).saves
+            end
+
+            def test_save_bang
+              loan = Loan.new
+              loan.save!
+              assert_equal 1, loan.saves
+            end
+          end
+        TEST
+      })
+
+      doc = execute(repo, tests)
+
+      # A save runs the validation's `if:` too, so the evidence cannot tell
+      # the two apart; `before_destroy :archive` is not in the pool.
+      ids = doc["methods"].select { |method| %w[Loan#checked? Loan#count_save].include?(method["name"]) }.map { |method| method["id"] }
+      rows = doc["tests"].to_h { |test| [test["name"], test.values_at("mentions", "method_ids")] }
+      assert_equal({
+        "LoanTest#test_create_bang" => [%w[Loan.create! saves], ids],
+        "LoanTest#test_factory" => [%w[factory(:loan) saves], ids],
+        "LoanTest#test_save_bang" => [%w[Loan#save! Loan#saves saves], ids]
+      }, rows)
       doc["tests"].each { |test| assert_includes test["tags"], "touches:changed_method", test["name"] }
     end
   end

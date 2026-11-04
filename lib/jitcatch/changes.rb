@@ -49,6 +49,7 @@ module JitCatch
       decorate_dynamic_callers(methods, head_idx, base_idx)
       factories = factories_of(head_idx)
       builders = builders_for(methods, head_idx, factories)
+      decorate_callbacks(methods, base_idx, head_idx, factories)
       decorate_tests(methods, base_idx, head_idx, builders)
       entrypoints = entrypoints_for(methods, head_idx, base_idx)
 
@@ -384,9 +385,9 @@ module JitCatch
           # No test calls `initialize` by that name, so a file that writes
           # the word only reads or names the method.
           if constructor?(node)
-            merge_hits(builder_hits(test_sources.keys, node.qualifier, method["builders"], base_idx, head_idx), [])
+            merge_hits(call_hits(test_sources.keys, ["#{node.qualifier}.new", *method["builders"]], "builder", base_idx, head_idx), [])
           else
-            grep_hits(test_sources, node.bare_name)
+            merge_hits(call_hits(test_sources.keys, method["run_by"], "callback", base_idx, head_idx), grep_hits(test_sources, node.bare_name))
           end
         end
         method["entry_point_tests"] = if @coverage || !method["existing_tests"].empty?
@@ -457,32 +458,60 @@ module JitCatch
       by_class, _by_bare, _qualifiers, parents = lookups(idx)
       methods.map { |method| (method["new"] || method["old"]).qualifier }.uniq.to_h do |qualifier|
         records = RECORD_BUILDERS.filter_map { |bare| "#{qualifier}.#{bare}" if constructor_of(qualifier, bare, by_class, parents) }
-        built = factories.filter_map { |factory| SourceIndex.factory_mention(factory.name) if factory.reason.nil? && factory.class_name == qualifier }
-        [qualifier, (records + built).sort]
+        [qualifier, (records + factory_mentions(qualifier, factories)).sort]
       end
+    end
+
+    def factory_mentions(qualifier, factories)
+      factories.filter_map { |factory| SourceIndex.factory_mention(factory.name) if factory.reason.nil? && factory.class_name == qualifier }
+    end
+
+    # The calls that run a changed method because a model's class body
+    # names it, or names a method that reaches it, in a callback or a
+    # validation (`after_save :count_save`). A factory of the model counts
+    # where `.create` does: `create(:loan)` saves, though a test that only
+    # writes `build(:loan)` is read as the same mention.
+    def decorate_callbacks(methods, base_idx, head_idx, factories)
+      base_callbacks = record_callbacks(base_idx)
+      head_callbacks = record_callbacks(head_idx)
+      methods.each do |method|
+        node = method["new"] || method["old"]
+        callbacks = method["change"] == "removed" ? base_callbacks : head_callbacks
+        found = [node.qualified, *method["reachable_from"]].flat_map { |name| callbacks.fetch(name, []) }
+        method["callbacks"] = found.map(&:declared).uniq.sort
+        method["run_by"] = found.flat_map { |callback| callback_calls(callback, factories) }.uniq.sort
+      end
+    end
+
+    # A callback line counts in a class whose superclass chain reaches
+    # ActiveRecord::Base. One in a Concern runs on each class that includes
+    # it, which the source does not list, so it is not followed.
+    def record_callbacks(idx)
+      parents = lookups(idx)[3]
+      idx["indexes"].reject { |path, _index| test_file?(path) }.values.flat_map(&:callbacks)
+        .select { |callback| ancestry(callback.qualifier, parents).include?("ActiveRecord::Base") }
+        .group_by { |callback| SourceIndex.qualify(callback.qualifier, callback.method, false) }
+    end
+
+    def callback_calls(callback, factories)
+      calls = SourceIndex::RECORD_CALLBACKS.fetch(callback.macro.to_sym).map { |call| "#{callback.qualifier}#{call}" }
+      calls.include?("#{callback.qualifier}.create") ? calls + factory_mentions(callback.qualifier, factories) : calls
     end
 
     def constructor?(node)
       node.bare_name == "initialize" && node.kind == "instance" && !node.qualifier.empty?
     end
 
-    # A test file that calls `Loan.new`, a record builder, or a factory of
-    # the class, as its parsed source writes it. `Loan.new` also names
-    # `Shop::Loan` from inside `Shop`.
-    def builder_hits(paths, qualifier, builders, base_idx, head_idx)
-      calls = ["#{qualifier}.new", *builders]
+    # A test file that makes one of the calls, as its parsed source writes
+    # it. `Loan.new` also names `Shop::Loan` from inside `Shop`.
+    def call_hits(paths, calls, via, base_idx, head_idx)
+      return [] if calls.empty?
+
       paths.filter_map { |path|
         index = head_idx["indexes"][path] || base_idx["indexes"][path]
-        found = (@test_names[path] ||= index.referenced_names("")).select { |name| builds?(name, qualifier, calls) }
-        { "file" => path, "via" => "builder", "calls" => found } unless found.empty?
+        found = (@test_names[path] ||= index.referenced_names("")).select { |name| calls.any? { |call| SourceIndex.names_call?(name, call) } }
+        { "file" => path, "via" => via, "calls" => found } unless found.empty?
       }
-    end
-
-    def builds?(name, qualifier, calls)
-      return calls.include?(name) if name.start_with?("factory(")
-
-      written, sep, bare = name.rpartition(".")
-      !sep.empty? && calls.include?("#{qualifier}.#{bare}") && (written == qualifier || qualifier.end_with?("::#{written}"))
     end
 
     def merge_hits(builds, greps)
@@ -609,8 +638,7 @@ module JitCatch
     # only there. A class method of the same name up the chain answers the
     # call instead.
     def constructor_of(owner, bare, by_class, parents)
-      chain = [owner]
-      chain << parents[chain.last] while parents.key?(chain.last) && !chain.include?(parents[chain.last])
+      chain = ancestry(owner, parents)
       return nil unless bare == "new" || (RECORD_BUILDERS.include?(bare) && chain.include?("ActiveRecord::Base"))
       return nil if chain.any? { |klass| Array(by_class[[klass, bare]]).any? { |method| method.kind == "singleton" } }
 
@@ -619,6 +647,12 @@ module JitCatch
         return found.first if found.size == 1
       end
       nil
+    end
+
+    def ancestry(owner, parents)
+      chain = [owner]
+      chain << parents[chain.last] while parents.key?(chain.last) && !chain.include?(parents[chain.last])
+      chain
     end
 
     # Ruby looks a constant up from the innermost enclosing namespace out.
@@ -688,6 +722,8 @@ module JitCatch
         "reachable_from" => item["reachable_from"],
         "dynamic_callers" => item["dynamic_callers"],
         "builders" => item["builders"],
+        "callbacks" => item["callbacks"],
+        "run_by" => item["run_by"],
         "existing_tests" => item["existing_tests"],
         "entry_point_tests" => item["entry_point_tests"],
         "via_constant" => item["via_constant"],

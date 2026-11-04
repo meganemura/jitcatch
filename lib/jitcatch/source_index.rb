@@ -76,11 +76,34 @@ module JitCatch
     # `initialize`. `attributes_for` builds a Hash.
     FACTORY_CALLS = %i[build build_list build_pair build_stubbed build_stubbed_list build_stubbed_pair create create_list create_pair].freeze
 
+    # The calls on an Active Record model that run a method its class body
+    # names in a callback or a validation, by Rails's own rules: `.create`
+    # is sent to the class, `#save` to a record. `validates` takes its
+    # positional symbols as attributes, so only its `if:` and `unless:`
+    # name methods.
+    creating = %w[.create .create! #save #save!]
+    updating = %w[#save #save! #update #update!]
+    saving = (creating + updating).uniq
+    destroying = %w[#destroy #destroy!]
+    RECORD_CALLBACKS = {
+      saving + %w[#valid? #invalid? #validate #validate!] => %i[validate validates before_validation after_validation],
+      saving => %i[before_save around_save after_save after_save_commit],
+      creating => %i[before_create around_create after_create after_create_commit],
+      updating => %i[before_update around_update after_update after_update_commit],
+      destroying => %i[before_destroy around_destroy after_destroy after_destroy_commit],
+      saving + destroying => %i[after_commit after_rollback]
+    }.flat_map { |calls, macros| macros.map { |macro| [macro, calls.sort.freeze] } }.to_h.freeze
+    CALLBACK_CONDITIONS = %w[if unless].freeze
+
     # A class header's superclass as written, and the namespace the header
     # is in, which the name is looked up from.
     Superclass = Data.define(:qualified, :written, :scope)
+    # One method a callback or validation line in a class body names.
+    # `declared` is the line in short (`after_save :count_save`,
+    # `validates if: :checked?`).
+    Callback = Data.define(:qualifier, :macro, :method, :declared)
 
-    attr_reader :methods, :constants, :namespaces, :superclasses, :calls, :private_constants, :parse_error
+    attr_reader :methods, :constants, :namespaces, :superclasses, :callbacks, :calls, :private_constants, :parse_error
 
     def self.parse(source, file:)
       new(source, file).parse
@@ -94,6 +117,7 @@ module JitCatch
       @constants = []
       @namespaces = []
       @superclasses = []
+      @callbacks = []
       @module_functions = []
       @private_constants = []
       @calls = []
@@ -138,6 +162,20 @@ module JitCatch
     # How a test that builds an object from the factory `name` mentions it.
     def self.factory_mention(name)
       "factory(:#{name})"
+    end
+
+    # Whether a call a test writes (`Loan.create!`, `Loan#save`) is the
+    # call `call` names. The written owner can be shorter or longer than
+    # the call's by whole namespace segments, as `Loan` is written inside
+    # `module Shop` for `Shop::Loan`.
+    def self.names_call?(written, call)
+      return true if written == call
+
+      owner, sep, bare = split_qualified(written)
+      call_owner, call_sep, call_bare = split_qualified(call)
+      return false if owner.empty? || call_owner.empty? || sep != call_sep || bare != call_bare
+
+      call_owner.end_with?("::#{owner}") || owner.end_with?("::#{call_owner}")
     end
 
     def self.split_qualified(qname)
@@ -330,6 +368,7 @@ module JitCatch
         end
 
         handle_class_visibility(stmt, qualifier) if stmt.receiver.nil? && CLASS_VISIBILITY.key?(stmt.name)
+        record_callbacks(stmt, qualifier) if stmt.receiver.nil? && !singleton && RECORD_CALLBACKS.key?(stmt.name)
         if stmt.receiver.nil? && ATTRIBUTE_MACROS.key?(stmt.name)
           record_attributes_as_methods(stmt, qualifier, visibility == :module_function ? :public : visibility, singleton)
         end
@@ -427,6 +466,22 @@ module JitCatch
         params: params,
         macro: nil
       )
+    end
+
+    # A string, a lambda, or a block runs code the line does not name, so
+    # only symbols count.
+    def record_callbacks(stmt, qualifier)
+      arguments = Array(stmt.arguments&.arguments)
+      options = arguments.grep(Prism::KeywordHashNode).flat_map(&:elements).grep(Prism::AssocNode)
+        .select { |pair| pair.key.is_a?(Prism::SymbolNode) && CALLBACK_CONDITIONS.include?(pair.key.unescaped) }
+      named = stmt.name == :validates ? [] : arguments.grep(Prism::SymbolNode).map { |arg| [arg.unescaped, ":#{arg.unescaped}"] }
+      named += options.flat_map do |pair|
+        values = pair.value.is_a?(Prism::ArrayNode) ? pair.value.elements : [pair.value]
+        values.grep(Prism::SymbolNode).map { |arg| [arg.unescaped, "#{pair.key.unescaped}: :#{arg.unescaped}"] }
+      end
+      named.each do |method, written|
+        @callbacks << Callback.new(qualifier: qualifier.to_s, macro: stmt.name.to_s, method: method, declared: "#{stmt.name} #{written}")
+      end
     end
 
     def record_attributes_as_methods(stmt, qualifier, visibility, singleton)

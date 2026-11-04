@@ -281,6 +281,17 @@ Concern の `included do`、`prepended do`、`class_methods do` ブロックの�
 クラスはまず `class:`（定数、文字列、シンボル）から、次に親（`parent:` か、入れ子の外側のファクトリー）から、最後に名前を camelize したものから決まり、`aliases:` の別名も同じクラスを作る。
 ソースからクラスが決まらないファクトリーはたどらず、理由と一緒に `factories_skipped:` に出す。
 実行時に計算する `class:`、そこで読んだファクトリーにない親、どのファイルも定義しないクラスがこれに当たり、最後のものはアプリが設定する活用（`ApiKey` と `APIKey`）で起こりうる。
+Active Record のモデルのクラス本体がコールバックかバリデーション（`after_save :count_save`、`validate :check`、またはそのどちらかの `if:` や `unless:`。`validates :amount, presence: true, if: :checked?` もこれに当たる）で名前を挙げるメソッドには `run_by:` が出る。
+これは Rails の規則でそのメソッドを走らせる呼び出しで、後ろに名前を挙げた行が続く。
+save のコールバックには `Loan.create`、`Loan.create!`、`Loan#save`、`Loan#save!`、`Loan#update`、`Loan#update!` と、そのクラスのファクトリーが出る（create のコールバックには update が、update のコールバックには create が出ない）。
+バリデーションにはさらに `Loan#valid?`、`Loan#invalid?`、`Loan#validate`、`Loan#validate!` が出る。
+destroy のコールバックには `Loan#destroy` と `Loan#destroy!` が出る。
+そのようなコールバックから届くメソッド（`reachable_from`）にも同じ行が出る。
+その `tests:` には、grep の結果に加えて、そのどれかを呼ぶテストファイルが出る（`spec/models/loan_spec.rb via Loan.create!`）。
+`run` はその呼び出しをそのメソッドへの言及として数える。
+`Loan#save` は、テストのソースからレコードのクラスが決まるとき（`loan = Loan.new`）に数える。
+ファクトリーは保存しない `build(:loan)` でも数える。
+Concern の中のコールバックの行、親クラスが宣言するもの、サブクラスへの呼び出しはたどらない。
 言及しているテストがないときは `entry_point_tests` が出る。
 `reachable_from` のうち public な入口について、そのクラスを書き、入口と同じ名前のメソッドを呼んでいるテストファイルである。
 `--coverage` を渡すと、grep の代わりに JSON の行リストを使う。

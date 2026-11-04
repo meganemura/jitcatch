@@ -129,15 +129,74 @@ module JitCatch
       repo.commit("Mark a new loan as pending.", date: "2026-02-12T00:00:00Z")
     end
 
+    # Head changes three methods of Loan that ActiveRecord runs through a
+    # declaration: an `after_save` callback, an `if:` condition of a
+    # validation, and a method a `before_destroy` callback calls. Notes
+    # declares an `after_save` too, but is not a model.
+    def callback_history(repo)
+      repo.write("lib/application_record.rb", "class ApplicationRecord < ActiveRecord::Base\nend\n")
+      loan = lambda do |step|
+        <<~RUBY
+          require "application_record"
+
+          class Loan < ApplicationRecord
+            attr_reader :saves
+
+            validates :amount, presence: true, if: :checked?
+            after_save :count_save
+            before_destroy :archive
+
+            def count_save
+              @saves = (@saves || 0) + #{step}
+            end
+
+            def checked?
+              #{step} > 0
+            end
+
+            def archive
+              archived_mark
+            end
+
+            def archived_mark
+              #{step}
+            end
+          end
+        RUBY
+      end
+      notes = ->(step) { "class Notes\n  after_save :tidy\n\n  def tidy\n    #{step}\n  end\nend\n" }
+      repo.write("lib/loan.rb", loan.call(1))
+      repo.write("lib/notes.rb", notes.call(1))
+      repo.write("spec/factories/loans.rb", "FactoryBot.define do\n  factory :loan do\n  end\nend\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/loan.rb", loan.call(2))
+      repo.write("lib/notes.rb", notes.call(2))
+      repo.commit("Count each save twice.", date: "2026-02-12T00:00:00Z")
+    end
+
+    # The stand-in runs each `after_save` callback on `save!`, as
+    # ActiveRecord does, and FactoryBot's `create` saves what it builds.
+    # It runs no validation, so the test reads which changed methods a save
+    # can reach, not which one it did.
     RECORD_STANDINS = <<~RUBY
       module ActiveRecord
         class Base
-          def self.create!(attributes = nil) = new(attributes)
+          def self.create!(attributes = nil) = new(attributes).tap(&:save!)
+          def initialize(attributes = nil) = nil
+          def self.after_save(*names) = (@after_save ||= []).concat(names)
+          def self.validates(*) = nil
+          def self.before_destroy(*) = nil
+
+          def save!
+            Array(self.class.instance_variable_get(:@after_save)).each { |name| send(name) }
+            true
+          end
         end
       end
 
       module Factories
-        def create(name) = Object.const_get(name.to_s.capitalize).new
+        def create(name) = Object.const_get(name.to_s.capitalize).new.tap(&:save!)
       end
     RUBY
 
