@@ -385,6 +385,31 @@ class TestRSpecRunner < Minitest::Test
     end
   end
 
+  # The example's name ends in "#load", as a file-level row's does.
+  def test_an_example_named_like_a_load_row_that_errors_on_both_sides_is_a_row
+    with_repo do |repo|
+      cart_history(repo)
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, { "cart_spec.rb" => %(require "rails_helper"\n\nRSpec.describe(Cart) { it("#load") { raise ArgumentError, "no file" } }\n) })
+
+      row = execute(repo, tests)["tests"].fetch(0)
+
+      assert_equal ["Cart #load", "error", "error"], [row["name"], row["base"]["status"], row["head"]["status"]]
+    end
+  end
+
+  def test_an_example_named_like_a_load_row_is_rerun
+    with_repo do |repo|
+      cart_history(repo)
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, { "cart_spec.rb" => %(require "rails_helper"\n\nRSpec.describe(Cart) { it("#load") { expect(Cart.new([1]).total).to eq(1) } }\n) })
+
+      row = execute(repo, tests, reruns: 1)["tests"].fetch(0)
+
+      assert_equal ["Cart #load", ["fail"]], [row["name"], row.fetch("reruns", []).map { |again| again["status"] }]
+    end
+  end
+
   def execute(repo, tests, reruns: 0)
     raw = JitCatch::Runner.run(repo.dir, "base", "HEAD", tests, reruns: reruns, timeout: 20)
     JitCatch::Assessor.apply(raw)

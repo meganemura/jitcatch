@@ -156,7 +156,7 @@ module JitCatch
         rerun = execute(head_dir, relative, normalizer)
         rows.each do |row|
           next unless row["classification"] == "candidate"
-          next if row["name"].end_with?("#load")
+          next if load_row?(row)
 
           again = rerun.tests[row["name"]] || missing_result
           (row["reruns"] ||= []) << again.slice("status", "error_class", "message_first_line", "message")
@@ -189,6 +189,11 @@ module JitCatch
 
     def file_level?(execution)
       execution.timed_out || execution.file_error
+    end
+
+    # A test of its own can also end in "#load", so match the whole name.
+    def load_row?(row)
+      row["name"] == "#{File.basename(row["file"])}#load"
     end
 
     def file_level_name(relative, base_run, head_run)
@@ -357,7 +362,7 @@ module JitCatch
     # When no file loaded on either side, no row can tell base from head.
     def load_failure_doc(change, rows, bundled)
       return nil if rows.empty?
-      return nil unless rows.all? { |row| row["name"].end_with?("#load") && row["base"]["status"] == "error" && row["head"]["status"] == "error" }
+      return nil unless rows.all? { |row| load_row?(row) && row["base"]["status"] == "error" && row["head"]["status"] == "error" }
 
       first = rows.min_by { |row| row["file"] }
       failed = %w[base head].map { |side|
