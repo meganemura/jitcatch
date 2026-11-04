@@ -96,6 +96,12 @@ class TestRender < Minitest::Test
     many = names.map { |name| "#{name}!" }
     assert_equal "array elements differ: [0], [1], [2], [3] (+4 more)", pair.call(names, many).first
     assert_equal 9, pair.call(names, many).size
+    swapped = [names[1], names[0], *names.drop(2)]
+    assert_equal ["array elements differ: [0], [1]", %(-[0] "name_number_1"), %(+[1] "name_number_1")], pair.call(names, swapped)
+    four = names.first(4).map { |name| "#{name}!" } + names.drop(4)
+    assert_equal "array elements differ: [0], [1], [2], [3]", pair.call(names, four).first
+    spaced = ->(list) { "[#{list.map(&:inspect).join(",  ")}]" }
+    assert_match(/\^ column/, JitCatch::Render.changed_pair(names.inspect, spaced.call(names)).last)
     big = (1..500).to_a
     assert_equal "array elements differ: [499]", pair.call(big, big[0..-2] + [0]).first
     assert_match(/\^ column/, pair.call(big + [1], big[0..-2] + [0]).last)
@@ -156,7 +162,7 @@ class TestRender < Minitest::Test
   def test_run_text_names_omitted_files_and_an_empty_run
     doc = JitCatch::Assessor.apply({
       "version" => "0.1.0", "base" => "b", "head" => "h", "reruns" => 2, "timeout_s" => 10,
-      "test_files_omitted" => 3, "tests" => [], "warnings" => ["base is not an ancestor of head"],
+      "test_files_omitted" => 3, "tests" => [], "warnings" => ["base is not an ancestor of head"], "serial" => true,
       "env" => %w[A_VAR B_VAR], "env_unset" => %w[B_VAR]
     })
     assert_equal <<~TEXT, JitCatch::Render.run_text(doc)
@@ -167,6 +173,7 @@ class TestRender < Minitest::Test
       warning: base is not an ancestor of head
       reruns 2
       timeout_s 10
+      serial
       env A_VAR B_VAR
       env_unset B_VAR
       test_files_omitted 3
@@ -220,6 +227,20 @@ constants: (none)
     assert_includes JitCatch::Render.context_text(doc.reject { |key, _| key == "dependencies" }), "  (none)
 constants: (none)
 "
+  end
+
+  def test_context_text_names_the_file_a_moved_method_came_from
+    method = {
+      "id" => "m01", "change" => "moved", "name" => "A#b", "file" => "test/a.rb", "start_line" => 3, "end_line" => 5,
+      "signature" => "()", "visibility" => "public", "moved_from" => "lib/a.rb", "callsites" => [], "reachable_from" => [],
+      "existing_tests" => [], "entry_point_tests" => []
+    }
+    doc = {
+      "version" => "0.1.0", "base" => "b", "head" => "h", "existing_tests_via" => "grep",
+      "intent" => [], "files" => [], "constants" => [], "methods" => [method], "entrypoints" => [], "parse_errors" => []
+    }
+    assert_includes JitCatch::Render.context_text(doc),
+      "  [m01] moved A#b test/a.rb:3-5 signature=() visibility=public moved_from=lib/a.rb\n"
   end
 
   def test_context_text_starts_with_the_revisions_and_any_warning
