@@ -522,6 +522,50 @@ class TestRunner < Minitest::Test
     end
   end
 
+  def test_an_error_message_read_by_a_test_names_the_error_s_to_s
+    with_repo do |repo|
+      source = <<~RUBY
+        class Mismatch < StandardError
+          def initialize(var) = (@var = var; super())
+
+          def to_s = "differs at \#{@var}"
+        end
+
+        module Check
+          def self.run(var) = raise(Mismatch.new(var))
+
+          def self.label(text) = "L\#{text}"
+        end
+      RUBY
+      repo.write("lib/check.rb", source)
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/check.rb", source.sub("differs at", "differs:").sub('"L', '"M'))
+      repo.commit("Shorten the message.", date: "2026-02-12T00:00:00Z")
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, {
+        "check_test.rb" => <<~RUBY
+          require "minitest/autorun"
+          require "check"
+
+          class CheckTest < Minitest::Test
+            def test_message
+              error = assert_raises(Mismatch) { Check.run("x") }
+              assert_equal "differs at x", error.message
+            end
+          end
+        RUBY
+      })
+
+      doc = execute(repo, tests)
+      ids = doc["methods"].to_h { |method| [method["name"], method["id"]] }
+      row = doc["tests"].fetch(0)
+
+      assert_equal [ids.fetch("Mismatch#to_s"), [ids.fetch("Mismatch#to_s")]], row.values_at("method_id", "method_ids")
+      assert_includes row["tags"], "touches:changed_method"
+    end
+  end
+
   def test_reruns_judge_only_candidates_and_run_every_rerun
     with_repo do |repo|
       repo.write("lib/calc.rb", BASE_CALC)

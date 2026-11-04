@@ -380,6 +380,8 @@ CLI を使わない場合は、`skills/jitcatch` をエージェントの skills
   文字列とコメントの中の語は言及にならない。
   ただし、`send`、`public_send`、`method`、`respond_to?` に普通の文字列で渡したメソッド名は、`send("total")` のように言及になる。
   `snap[:total]`、`snap.fetch(:total)`、`{ total: 1 }` のようにハッシュのキーとして使ったシンボルは言及にならない。
+  `message`、`full_message`、`detailed_message` の呼び出しは、`to_s` への言及にもなる。
+  エラークラスは、メッセージを作るために `to_s` を上書きするからである。
   別のファイルのヘルパーは読まない。
 - `--workers` を渡さなければ、ファイルは 1 つずつ実行する。
   1 つのファイルの base 側と head 側は、それぞれの worktree で同時に走る。

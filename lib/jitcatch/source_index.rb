@@ -13,6 +13,9 @@ module JitCatch
     HASH_KEY_CALLS = %i[[] []= fetch dig key? has_key? values_at fetch_values].freeze
     # These name a method by their first argument, as a symbol or a string.
     REFLECTIVE_CALLS = %i[send __send__ public_send method public_method respond_to?].freeze
+    # Exception#message and the messages built on it call to_s, the method an
+    # error class overrides to say what went wrong.
+    MESSAGE_CALLS = %i[message full_message detailed_message].freeze
     ATTRIBUTE_MACROS = { attr_reader: [""], attr: [""], attr_writer: ["="], attr_accessor: ["", "="] }.freeze
     # The constant a member list is given to, and whether its members get writers.
     MEMBER_BUILDERS = { %i[Struct new] => true, %i[Data define] => false }.freeze
@@ -597,6 +600,7 @@ module JitCatch
           refer(enclosing, "#{owner.split("::").last}.new") if owner
           named = reflective_name(node)
           refer(enclosing, named) if named
+          refer(enclosing, "to_s") if MESSAGE_CALLS.include?(node.name)
         end
         node.compact_child_nodes.each do |child|
           children = child.is_a?(Prism::ArgumentsNode) && HASH_KEY_CALLS.include?(node.name) ? child.arguments.grep_v(Prism::SymbolNode) : [child]
