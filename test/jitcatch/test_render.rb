@@ -87,6 +87,14 @@ class TestRender < Minitest::Test
     assert_equal diffs.values, JitCatch::Render.assess_json(doc)["candidates"].map { |row| row["message"] }
   end
 
+  # From a run on jitcatch itself: the two sides held a Minitest diff of
+  # their own, so its lines came back as context lines.
+  def test_a_context_line_that_starts_with_a_sign_is_not_a_change
+    message = "--- expected\n+++ actual\n@@ -2,4 +2,5 @@\n +++ actual\n -\\\"a\n-b\n+c\n"
+
+    assert_equal ["-b", "+c"], JitCatch::Render.message_lines({ "message" => message })
+  end
+
   def test_the_short_forms_of_a_diff_line_at_their_bounds
     diff = ->(expected, actual) { { "message" => "--- expected\n+++ actual\n@@ -1 +1 @@\n#{expected}#{actual}" } }
     pair = ->(expected, actual) { JitCatch::Render.message_lines(diff.call("-#{expected}\n", "+#{actual}\n")) }

@@ -298,7 +298,8 @@ module JitCatch
       elsif lines[0] == "--- expected" && lines[1] == "+++ actual"
         # Minitest prints a unified diff when either side spans lines or is
         # long; its header says nothing, so show the first removed and added line.
-        changed = lines.drop(2)
+        # A context line starts with a space, which strip would take away.
+        changed = head["message"].to_s.lines.map(&:rstrip).reject(&:empty?).drop(2)
         removed = changed.find { |line| line.start_with?("-") }
         added = changed.find { |line| line.start_with?("+") }
         removed && added ? changed_pair(removed[1..], added[1..]) : [removed, added].compact
