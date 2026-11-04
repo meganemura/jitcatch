@@ -199,8 +199,8 @@ module JitCatch
       scan_body(result.value, "", :public, false)
       @spec_helpers = spec_helper_names(result.value)
       walk(result.value, "", false, nil)
-      type_instance_variables
       type_local_variables
+      type_instance_variables
       type_spec_helpers
       type_returned_receivers
       rename_module_function_callers
@@ -705,11 +705,15 @@ module JitCatch
       end
     end
 
+    # A local read starts `named`; most are parameters and stay so. This
+    # runs before the instance variables become `named` too.
     def type_local_variables
       @calls.map! do |call|
-        next call unless call.receiver.kind == "local"
+        next call unless call.receiver.kind == "named"
 
-        assigned = @local_classes[[call.enclosing, call.receiver.const]]
+        assigned = @local_classes.fetch([call.enclosing, call.receiver.const], [])
+        next call if assigned.all?(&:empty?)
+
         built = assigned.flatten.uniq
         call.with(receiver: typed_or_named(built, assigned.all? { |consts| consts.size == 1 }, call.receiver.const))
       end
@@ -747,8 +751,8 @@ module JitCatch
         qualifier, sep, _bare = self.class.split_qualified(call.enclosing.to_s)
         names = [sep == ".", sep != "."].map { |singleton| self.class.qualify(qualifier, call.receiver.const, singleton) }
         consts = @returned.values_at(*names).compact.first.to_a.uniq
-        reader = self.class.qualify(qualifier, call.receiver.const, false)
-        association = @association_classes[reader] if sep == "#" && !@defined.fetch(call.receiver.const, []).include?(reader)
+        reader = names.first
+        association = @association_classes[reader] if sep == "#" && @association_classes.key?(reader) && !@defined.fetch(call.receiver.const, []).include?(reader)
         next call.with(receiver: Receiver.new(kind: "instance", const: association)) if association
 
         call.with(receiver: consts.empty? ? UNKNOWN_RECEIVER : Receiver.new(kind: "one_of", const: consts))
@@ -1025,7 +1029,7 @@ module JitCatch
       when Prism::InstanceVariableReadNode
         Receiver.new(kind: "ivar", const: node.name.to_s)
       when Prism::LocalVariableReadNode
-        Receiver.new(kind: "local", const: node.name.to_s)
+        Receiver.new(kind: "named", const: node.name.to_s)
       when Prism::CallNode
         if node.name == :described_class && node.receiver.nil?
           return @described.last ? Receiver.new(kind: "singleton", const: @described.last) : UNKNOWN_RECEIVER

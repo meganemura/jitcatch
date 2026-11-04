@@ -628,10 +628,11 @@ module JitCatch
     def edges_for(idx)
       by_class, by_bare, qualifiers, parents = lookups(idx)
       edges = []
+      named_owners = {}
       idx["calls"].each do |call|
         next if call.enclosing.nil? || test_file?(call.file)
 
-        Array(call_target(call, by_class, by_bare, qualifiers, parents)).each do |target|
+        Array(call_target(call, by_class, by_bare, qualifiers, parents, named_owners)).each do |target|
           next if target.qualified == call.enclosing
 
           edges << { "from" => call.enclosing, "to" => target.qualified, "file" => call.file, "line" => call.line }
@@ -656,7 +657,9 @@ module JitCatch
     # `self` call still falls back to a unique bare name, for methods a class
     # gets from a module or a superclass; from an instance method, only to
     # an instance method, since no mixin turns a class method into one.
-    def call_target(call, by_class, by_bare, qualifiers, parents)
+    # `named_owners` keeps the class each name resolves to from each
+    # namespace, since a repository sends to the same few names many times.
+    def call_target(call, by_class, by_bare, qualifiers, parents, named_owners = {})
       qualifier, sep, _bare = SourceIndex.split_qualified(call.enclosing)
       receiver = call.receiver
       case receiver.kind
@@ -682,7 +685,10 @@ module JitCatch
           constructor_of(owner, call.bare_name, by_class, parents)
         end
       when "named"
-        owner = resolve_constant(SourceIndex.model_name(receiver.const), qualifier, qualifiers)
+        key = [qualifier, receiver.const]
+        owner = named_owners.fetch(key) { named_owners[key] = resolve_constant(SourceIndex.model_name(receiver.const), qualifier, qualifiers) }
+        return nil unless owner
+
         found = (by_class[[owner, call.bare_name]] || []).select { |method| method.kind == "instance" }
         found.first if found.size == 1
       when "one_of"
