@@ -98,6 +98,9 @@ class TestCLI < Minitest::Test
         %w[run --workers 0 base HEAD t] => "--workers must be >= 1",
         # 1 passes both bounds, so the run gets as far as the missing directory.
         %w[run --timeout 1 --workers 1 base HEAD t] => "tests directory not found: t",
+        %w[run --serial --workers 2 base HEAD t] => "--serial runs one process at a time, so it takes no --workers above 1",
+        %w[run --serial base HEAD t] => "tests directory not found: t",
+        %w[context --serial base HEAD] => "unknown option: --serial",
         %w[run --env 1X base HEAD t] => "--env needs a variable name, not 1X",
         %w[run --env LANG base HEAD t] => "--env cannot pass LANG: jitcatch sets it",
         %w[run --env BUNDLE_GEMFILE base HEAD t] => "--env cannot pass BUNDLE_GEMFILE: jitcatch sets it",

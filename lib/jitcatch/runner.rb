@@ -19,11 +19,11 @@ module JitCatch
     # One worker's two checkouts. A worker runs one file at a time in them.
     Pair = Data.define(:base, :head)
 
-    def self.run(repo, base_ref, head_ref, tests_dir, reruns: 2, timeout: 10, env: [], workers: 1)
-      new(repo, base_ref, head_ref, tests_dir, reruns: reruns, timeout: timeout, env: env, workers: workers).run
+    def self.run(repo, base_ref, head_ref, tests_dir, reruns: 2, timeout: 10, env: [], workers: 1, serial: false)
+      new(repo, base_ref, head_ref, tests_dir, reruns: reruns, timeout: timeout, env: env, workers: workers, serial: serial).run
     end
 
-    def initialize(repo, base_ref, head_ref, tests_dir, reruns:, timeout:, env:, workers: 1)
+    def initialize(repo, base_ref, head_ref, tests_dir, reruns:, timeout:, env:, workers: 1, serial: false)
       @git = repo.is_a?(GitRepo) ? repo : GitRepo.new(repo)
       @base_ref = base_ref
       @head_ref = head_ref
@@ -33,6 +33,11 @@ module JitCatch
       @env_names = env.uniq.sort
       @workers = workers
       raise UsageError, "--workers must be at least 1" unless workers.is_a?(Integer) && workers >= 1
+      # Candidates that share a fixed path or port outside the worktree
+      # collide when two processes run at once; serial runs one at a time.
+      raise UsageError, "--serial runs one process at a time, so it takes no --workers above 1" if serial && workers > 1
+
+      @serial = serial
       raise UsageError, "tests directory not found: #{tests_dir}" unless File.directory?(@tests_dir)
     end
 
@@ -74,6 +79,7 @@ module JitCatch
         "warnings" => change["warnings"],
         "reruns" => @reruns,
         "timeout_s" => @timeout,
+        "serial" => @serial,
         "env" => @env_names,
         "env_unset" => @env_names.reject { |name| ENV.key?(name) },
         "bundle" => bundle,
@@ -123,9 +129,14 @@ module JitCatch
       source = read_candidate(relative)
       index = SourceIndex.parse(source, file: relative)
       # Each side runs in its own worktree, so the two can run at once.
-      base_thread = Thread.new { execute(base_dir, relative, normalizer) }
-      head_run = execute(head_dir, relative, normalizer)
-      base_run = base_thread.value
+      if @serial
+        base_run = execute(base_dir, relative, normalizer)
+        head_run = execute(head_dir, relative, normalizer)
+      else
+        base_thread = Thread.new { execute(base_dir, relative, normalizer) }
+        head_run = execute(head_dir, relative, normalizer)
+        base_run = base_thread.value
+      end
       rows = rows_for(relative, base_run, head_run, index, known, head_dir)
       return rows unless rows.any? { |row| row["classification"] == "candidate" }
       return rows if head_run.timed_out

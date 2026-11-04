@@ -44,7 +44,7 @@ module JitCatch
     end
 
     def command_run(argv)
-      opts, positional = parse_options(argv, %i[repo reruns timeout env workers])
+      opts, positional = parse_options(argv, %i[repo reruns timeout env workers serial])
       return write_help if opts[:help]
       raise UsageError, "usage: jitcatch run BASE HEAD TESTS_DIR" unless positional.size == 3
 
@@ -56,7 +56,8 @@ module JitCatch
         reruns: opts.fetch(:reruns, 2),
         timeout: opts.fetch(:timeout, 10),
         env: opts.fetch(:env, []),
-        workers: opts.fetch(:workers, 1)
+        workers: opts.fetch(:workers, 1),
+        serial: opts.fetch(:serial, false)
       )
       doc = Assessor.apply(raw)
       $stdout.write(opts[:json] ? Render.dump(Render.run_json(doc)) : Render.run_text(doc))
@@ -90,6 +91,8 @@ module JitCatch
           opts[:help] = true
         elsif arg == "--json"
           opts[:json] = true
+        elsif arg == "--serial" && allowed.include?(:serial)
+          opts[:serial] = true
         elsif arg.start_with?("--")
           name = arg.delete_prefix("--").tr("-", "_").to_sym
           raise UsageError, "unknown option: #{arg}" unless allowed.include?(name)
@@ -148,7 +151,7 @@ module JitCatch
 
         Usage:
           jitcatch context [--json] [--repo DIR] [--coverage FILE] BASE HEAD
-          jitcatch run [--json] [--repo DIR] [--reruns N] [--timeout SEC] [--workers N] [--env NAME]... BASE HEAD TESTS_DIR
+          jitcatch run [--json] [--repo DIR] [--reruns N] [--timeout SEC] [--workers N | --serial] [--env NAME]... BASE HEAD TESTS_DIR
           jitcatch assess [--json] RUN.json
 
         context   Short brief of changed methods, old/new source, call sites, and tests.

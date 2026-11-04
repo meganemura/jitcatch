@@ -1275,6 +1275,45 @@ end
     end
   end
 
+  def test_serial_runs_one_side_at_a_time_and_records_it
+    with_repo do |repo|
+      repo.write("lib/flag.rb", "module Flag; end\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("README.md", "head\n")
+      repo.commit("Touch readme.", date: "2026-02-12T00:00:00Z")
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, {
+        "alone_test.rb" => <<~RUBY
+          require "minitest/autorun"
+
+          class AloneTest < Minitest::Test
+            def test_no_other_side_runs
+              mine = File.join(ENV.fetch("MEET_DIR"), Process.pid.to_s)
+              File.write(mine, "")
+              seen = 1
+              deadline = Time.now + 0.5
+              (seen = [seen, Dir.children(ENV.fetch("MEET_DIR")).size].max; sleep 0.01) while Time.now < deadline
+              File.delete(mine)
+              assert_equal 1, seen
+            end
+          end
+        RUBY
+      })
+
+      Dir.mktmpdir("jitcatch-meet-") do |meet|
+        ENV["MEET_DIR"] = meet
+        raw = JitCatch::Runner.run(repo.dir, "base", "HEAD", tests, reruns: 0, timeout: 10, env: ["MEET_DIR"], serial: true)
+        assert_equal [%w[pass pass]], raw["tests"].map { |test| [test.dig("base", "status"), test.dig("head", "status")] }
+        assert raw["serial"]
+        assert_includes JitCatch::Render.run_text(JitCatch::Assessor.apply(raw)), "\nserial\n"
+        assert_raises(JitCatch::UsageError) { JitCatch::Runner.run(repo.dir, "base", "HEAD", tests, serial: true, workers: 2) }
+      ensure
+        ENV.delete("MEET_DIR")
+      end
+    end
+  end
+
   def test_the_base_and_head_runs_of_a_file_overlap
     with_repo do |repo|
       repo.write("lib/flag.rb", "module Flag; end\n")
