@@ -563,10 +563,12 @@ class TestChangesGraph < Minitest::Test
       model = "class Model\n  private_class_method :new\n\n  def self.plain = new(1)\n\n  def initialize(n) = @n = n\n\n  def value = BODY\nend\n"
       single = "class Single\n  class << self\n    private :new\n  end\n\n  def initialize = nil\n\n  def run = BODY\nend\n"
       again = "class Again\n  private_class_method :new\n  public_class_method :new\n\n  def initialize = nil\n\n  def run = BODY\nend\n"
-      { "model" => model, "single" => single, "again" => again }.each { |name, text| repo.write("lib/#{name}.rb", text.sub("BODY", "1")) }
+      other = "class Other\n  def self.helper = nil\n  private_class_method :helper\n\n  def new = nil\n  private :new\n\n  def initialize = nil\n\n  def run = BODY\nend\n"
+      files = { "model" => model, "single" => single, "again" => again, "other" => other }
+      files.each { |name, text| repo.write("lib/#{name}.rb", text.sub("BODY", "1")) }
       repo.commit("base", date: "2026-02-11T00:00:00Z")
       repo.branch("base")
-      { "model" => model, "single" => single, "again" => again }.each { |name, text| repo.write("lib/#{name}.rb", text.sub("BODY", "2")) }
+      files.each { |name, text| repo.write("lib/#{name}.rb", text.sub("BODY", "2")) }
       repo.commit("Change each body.", date: "2026-02-12T00:00:00Z")
 
       doc = JitCatch::Changes.between(repo.dir, "base", "HEAD")
@@ -574,6 +576,7 @@ class TestChangesGraph < Minitest::Test
       assert_equal({
         "Again" => [["Again#run", "modified"], ["Again.new", "unchanged"]],
         "Model" => [["Model#value", "modified"], ["Model.plain", "unchanged"]],
+        "Other" => [["Other#run", "modified"], ["Other.new", "unchanged"]],
         "Single" => [["Single#run", "modified"]]
       }, doc["entrypoints"].to_h { |entry| [entry["class"], entry["methods"].map { |method| method.values_at("name", "role") }] })
     end
