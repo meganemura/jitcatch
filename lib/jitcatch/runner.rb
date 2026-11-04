@@ -13,6 +13,11 @@ module JitCatch
     FIXED_ENV = { "LANG" => "C.UTF-8", "LC_ALL" => "C.UTF-8", "TERM" => "dumb" }.freeze
     # Names jitcatch sets itself, so --env cannot pass them.
     RESERVED_ENV = (FIXED_ENV.keys + %w[BUNDLE_GEMFILE TEST_ENV_NUMBER]).freeze
+    # How a child reaches the network. Tools read both https_proxy and
+    # HTTPS_PROXY, so the case does not matter.
+    NETWORK_ENV = /\A(?:(?:HTTPS?|NO|ALL)_PROXY|SSL_CERT_(?:FILE|DIR)|NODE_EXTRA_CA_CERTS)\z/i
+    ENV_READ = /ENV(?:\.fetch\(\s*|\.key\?\(\s*|\[\s*)["']([A-Za-z_][A-Za-z0-9_]*)["']/
+    ENV_READ_GREP = %q{ENV(\.fetch\(|\.key\?\(|\[) *["'][A-Za-z_][A-Za-z0-9_]*["']}
     # Rescuing in the child keeps Bundler's own message and drops its backtrace.
     BUNDLE_SETUP = 'begin; require "bundler/setup"; rescue Exception => e; $stderr.puts e.message; exit 1; end'
     SETUP_STDERR_LINES = 10
@@ -99,6 +104,7 @@ module JitCatch
         "serial" => @serial,
         "env" => @env_names,
         "env_unset" => @env_names.reject { |name| ENV.key?(name) },
+        "env_not_passed" => rows.any? { |row| %w[base head].any? { |side| row.dig(side, "status") == "timeout" } } ? env_not_passed(change["head"], files) : [],
         "bundle" => bundle,
         "tests_dir" => tests_from_root,
         "test_files_omitted" => omitted,
@@ -406,6 +412,16 @@ module JitCatch
     # Bundler reads settings such as BUNDLE_WITHOUT from the environment,
     # and the child gets only the names --env passes. `bundle exec` sets the
     # Gemfile and lockfile names for jitcatch's own bundle, not the checkout's.
+    # Names the parent has and the child does not get that a child often
+    # waits on: network settings, and names the head's Ruby source or a
+    # candidate reads from ENV.
+    def env_not_passed(head, files)
+      sources = @git.ruby_matches(head, ENV_READ_GREP) + files.map { |relative| read_candidate(relative) }
+      read = sources.flat_map { |text| text.scan(ENV_READ).flatten }
+      passed = PASSED_ENV + RESERVED_ENV + @env_names
+      ENV.keys.select { |name| name.match?(NETWORK_ENV) || read.include?(name) }.reject { |name| passed.include?(name) }.sort
+    end
+
     def unpassed_bundler_settings
       ENV.keys.grep(/\ABUNDLE_/).sort - %w[BUNDLE_BIN_PATH BUNDLE_GEMFILE BUNDLE_LOCKFILE] - @env_names
     end

@@ -364,7 +364,6 @@ Run that command in a checkout of that side, fix what it says (often `bundle ins
 `--json` のときは、代わりに stdout に `{"command": "run", "error": "setup_failed", "stage", "base", "head", "setup_failed": [{"side", "commit", "command", "stderr", "not_passed"}]}` を出す。
 `stage` は `setup` か `load` である。
 `assess` はこの文書を受け付けない。
-プロセスに渡す環境変数は、決まった一覧と `--env` で名前を挙げたものだけである。
 失敗した側は、今の環境にあって `--env` で渡していない Bundler の設定（`BUNDLE_WITHOUT`、`BUNDLE_PATH` などの `BUNDLE_` で始まる変数）を `not passed:` の行（`--json` では `not_passed`）で名指しする。
 
 どの行も変更について何も言えないまま、行を出して終わる `run` もある。
@@ -373,6 +372,12 @@ Run that command in a checkout of that side, fix what it says (often `bundle ins
 テキストは `jitcatch: no row ran to a result on both sides (6 of 6 timed out or found no database), so this run cannot tell base from head` の行で始まり、そのあとにいつもの報告が続くので、各行のヒントも残る。
 `--json` はいつもの run の文書を出し、その `untested` は、どの run でもそのような行の数を数える。
 終了コード 3 は、`untested` が行の数と等しいことを意味する。
+
+テストのプロセスは決まった環境変数と `--env` で名指しした変数だけを受け取るので、シェルにある名前が無いために、届かないコマンドやネットワークを待ち続けることがある。
+ある行がタイムアウトすると、そのヒントの下の `not passed:` の行が、今の環境にあり、`--env` で渡しておらず、子プロセスが必要としそうな変数を名指しする。
+それはネットワークの設定（大文字でも小文字でも `HTTPS_PROXY`、`NO_PROXY`、`ALL_PROXY`、`HTTP_PROXY`、そして `SSL_CERT_FILE`、`SSL_CERT_DIR`、`NODE_EXTRA_CA_CERTS`）か、head の Ruby ファイルか候補がリテラルで読む名前（`ENV["QUINT"]`、`ENV.fetch("QUINT")`、`ENV.key?("QUINT")`）である。
+たとえば `not passed: HTTPS_PROXY QUINT (add --env HTTPS_PROXY --env QUINT if the file needs them)` となる。
+`--json` では `env_not_passed` に並び、タイムアウトした行が無ければ空である。
 
 実行されるのは `*_test.rb`、`test_*.rb`、`*_spec.rb` である。
 その名前が 1 つも無いときは、すべての `.rb` を実行する。

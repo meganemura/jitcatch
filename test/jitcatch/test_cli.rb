@@ -155,8 +155,9 @@ class TestCLI < Minitest::Test
   end
 
   # A run whose every file timed out compared nothing, so it must not read
-  # like a clean change.
-  def test_run_exits_3_when_every_row_timed_out
+  # like a clean change. The child gets only the names --env passes, and a
+  # name the code reads is a common reason for the wait.
+  def test_run_exits_3_when_every_row_timed_out_and_names_what_the_child_did_not_get
     with_repo do |repo|
       repo.write("lib/flag.rb", %(module Flag\n  def self.ok = ENV.fetch("JITCATCH_SLOW_SERVICE", "") != ""\nend\n))
       repo.commit("base", date: "2026-02-11T00:00:00Z")
@@ -172,12 +173,14 @@ class TestCLI < Minitest::Test
 
       assert_equal [3, ""], [status, err]
       assert_equal "jitcatch: no row ran to a result on both sides (1 of 1 timed out or found no database), so this run cannot tell base from head\n", out.lines.first
+      assert_includes out, "    hint: base and head timed out after 1s; raise --timeout if the file needs longer, as a Rails app's first run in a new checkout can (it loads db/schema.rb)\n" \
+        "    not passed: HTTPS_PROXY JITCATCH_SLOW_SERVICE (add --env HTTPS_PROXY --env JITCATCH_SLOW_SERVICE if the file needs them)\n"
 
       json, _err, json_status = with_parent_env("JITCATCH_SLOW_SERVICE" => "on", "HTTPS_PROXY" => "http://proxy.invalid:3128") do
         cli("run", "--json", "--repo", repo.dir, "--timeout", "1", "--env", "JITCATCH_SLOW_SERVICE", "base", "HEAD", tests)
       end
       doc = JSON.parse(json)
-      assert_equal [3, 1], [json_status, doc["untested"]]
+      assert_equal [3, 1, ["HTTPS_PROXY"]], [json_status, doc["untested"], doc["env_not_passed"]]
     end
   end
 

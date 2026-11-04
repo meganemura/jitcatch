@@ -72,7 +72,7 @@ module JitCatch
         doc["tests"].each do |test|
           lines << "  #{test_line(test)}"
           lines.concat(rerun_lines(test)) if test["disposition"] == "flaky"
-          lines.concat(timeout_lines(test, doc["timeout_s"]))
+          lines.concat(timeout_lines(test, doc["timeout_s"], Array(doc["env_not_passed"])))
           lines.concat(base_failure_lines(test))
         end
       end
@@ -268,11 +268,15 @@ module JitCatch
       "jitcatch: no row ran to a result on both sides (#{doc["untested"]} of #{doc["tests"].size} timed out or found no database), so this run cannot tell base from head"
     end
 
-    def timeout_lines(test, seconds)
+    # A child that waits on the network or on a command an environment
+    # variable names often lacks a name the parent has.
+    def timeout_lines(test, seconds, not_passed)
       sides = %w[base head].select { |side| test.dig(side, "status") == "timeout" }
       return [] if sides.empty?
 
-      ["    hint: #{sides.join(" and ")} timed out after #{seconds}s; raise --timeout if the file needs longer, as a Rails app's first run in a new checkout can (it loads db/schema.rb)"]
+      lines = ["    hint: #{sides.join(" and ")} timed out after #{seconds}s; raise --timeout if the file needs longer, as a Rails app's first run in a new checkout can (it loads db/schema.rb)"]
+      lines << "    not passed: #{not_passed.join(" ")} (add #{not_passed.map { |name| "--env #{name}" }.join(" ")} if the file needs them)" unless not_passed.empty?
+      lines
     end
 
     def counts_line(counts)
