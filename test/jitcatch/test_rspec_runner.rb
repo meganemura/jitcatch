@@ -151,8 +151,13 @@ class TestRSpecRunner < Minitest::Test
 
       total = doc["tests"].find { |test| test["name"] == "Cart#total sums the prices" }
       assert_equal "expected: 6", total["head"]["message_first_line"]
-      assert_equal JitCatch::Framework::RSpec.rerun("cart_spec.rb", nil, 11), total["rerun"]
-      assert_equal JitCatch::Framework::RSpec.rerun("broken_spec.rb", nil, nil), doc["tests"].find { |test| test["name"] == "broken_spec.rb#load" }["rerun"]
+      # The fixture has spec/, where RSpec finds its root without the pin.
+      assert_equal JitCatch::Framework::RSpec.rerun("cart_spec.rb", nil, 11, pin_root: false), total["rerun"]
+      assert_equal JitCatch::Framework::RSpec.rerun("broken_spec.rb", nil, nil, pin_root: false), doc["tests"].find { |test| test["name"] == "broken_spec.rb#load" }["rerun"]
+      words = Shellwords.split(total["rerun"]).map { |word| word.sub(JitCatch::Framework::TESTS, "#{tests}/") }
+      stdout, status = Open3.capture2e(*words, chdir: repo.dir)
+      refute status.success?, stdout
+      assert_includes stdout, "got: 7"
 
       text = JitCatch::Render.run_text(doc)
       assert_includes text, "reported Cart#total sums the prices cart_spec.rb:11 #{total["method_id"]}\n"

@@ -55,7 +55,8 @@ module JitCatch
         bundle = { "base" => base_bundle.value, "head" => head_bundle }
         rows = classify_files(files, pairs, normalizer, mention_names(change))
         bundled = gemfile?(first.head)
-        rows.each { |row| row["rerun"] = rerun_command(row, bundled) }
+        spec_root = File.exist?(File.join(first.head, "spec"))
+        rows.each { |row| row["rerun"] = rerun_command(row, bundled, !spec_root) }
       ensure
         pairs.each do |pair|
           @git.worktree_remove(pair.base)
@@ -383,10 +384,10 @@ module JitCatch
     end
 
     # A file-level row (`file#load`, `file#timeout`) reruns the whole file.
-    def rerun_command(row, bundled)
+    def rerun_command(row, bundled, pin_root)
       file_level = row["line"].nil? && row["name"].start_with?("#{File.basename(row["file"])}#")
       name = file_level ? nil : row["name"]
-      command = @frameworks.fetch(row["file"]).rerun(row["file"], name, row["line"])
+      command = @frameworks.fetch(row["file"]).rerun(row["file"], name, row["line"], pin_root: pin_root)
       bundled ? "bundle exec #{command}" : command
     end
 

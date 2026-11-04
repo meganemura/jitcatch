@@ -27,5 +27,7 @@ class TestFramework < Minitest::Test
     launch = %('require "rspec/core"; require "rspec/support/object_formatter"; RSpec::Core::RubyProject.instance_variable_set(:@project_root, Dir.pwd); RSpec::Support::ObjectFormatter.default_instance.max_formatted_output_length = nil; exit(RSpec::Core::Runner.run(ARGV))')
     assert_equal "ruby -Ilib -I. -e #{launch} {tests}/a_spec.rb:7", JitCatch::Framework::RSpec.rerun("a_spec.rb", "A b", 7)
     assert_equal "ruby -Ilib -I. -e #{launch} {tests}/a_spec.rb", JitCatch::Framework::RSpec.rerun("a_spec.rb", nil, nil)
+    short = %('require "rspec/core"; require "rspec/support/object_formatter"; RSpec::Support::ObjectFormatter.default_instance.max_formatted_output_length = nil; exit(RSpec::Core::Runner.run(ARGV))')
+    assert_equal "ruby -Ilib -I. -e #{short} {tests}/a_spec.rb:7", JitCatch::Framework::RSpec.rerun("a_spec.rb", "A b", 7, pin_root: false)
   end
 end

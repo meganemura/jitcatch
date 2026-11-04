@@ -42,7 +42,7 @@ module JitCatch
         'begin; require "minitest"; rescue LoadError; $stderr.puts %(minitest is not in the bundle: add gem "minitest" to the Gemfile); exit 1; end'
       end
 
-      def rerun(file, name, _line)
+      def rerun(file, name, _line, pin_root: true)
         ["ruby", "-Ilib", "-I.", "#{TESTS}#{file}", *(["-n", name] if name)].map { |part| quote(part) }.join(" ")
       end
 
@@ -64,7 +64,10 @@ module JitCatch
       # loads the checkout's lib/ in the run and in its rerun line alike.
       # RSpec cuts an object it prints to 200 characters, which can cut
       # the class and message a raise_error got out of the row.
-      LAUNCH = 'require "rspec/core"; require "rspec/support/object_formatter"; RSpec::Core::RubyProject.instance_variable_set(:@project_root, Dir.pwd); RSpec::Support::ObjectFormatter.default_instance.max_formatted_output_length = nil; exit(RSpec::Core::Runner.run(ARGV))'
+      PIN_ROOT = "RSpec::Core::RubyProject.instance_variable_set(:@project_root, Dir.pwd); "
+      LAUNCH = 'require "rspec/core"; require "rspec/support/object_formatter"; ' \
+               "#{PIN_ROOT}" \
+               "RSpec::Support::ObjectFormatter.default_instance.max_formatted_output_length = nil; exit(RSpec::Core::Runner.run(ARGV))"
 
       def names?(basename)
         basename.end_with?("_spec.rb")
@@ -85,9 +88,12 @@ module JitCatch
       end
 
       # The same Ruby flags and launch as the run, so the rerun loads what
-      # the row loaded.
-      def rerun(file, _name, line)
-        ["ruby", "-Ilib", "-I.", "-e", LAUNCH, "#{TESTS}#{file}#{":#{line}" if line}"].map { |part| Minitest.quote(part) }.join(" ")
+      # the row loaded. In a checkout that holds spec/ RSpec already takes
+      # the working directory as its root, so the line leaves out the pin,
+      # the one part that sets rspec-core's private state.
+      def rerun(file, _name, line, pin_root: true)
+        launch = pin_root ? LAUNCH : LAUNCH.sub(PIN_ROOT, "")
+        ["ruby", "-Ilib", "-I.", "-e", launch, "#{TESTS}#{file}#{":#{line}" if line}"].map { |part| Minitest.quote(part) }.join(" ")
       end
     end
   end
