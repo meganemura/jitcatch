@@ -371,7 +371,7 @@ Run that command in a checkout of that side, fix what it says (often `bundle ins
 すべてのファイルが両方の側でエラーになった `<file>#load` の行なら、どの行も base と head を区別できないので、`run` はやはり終了コード 3 で止まる。
 そのときの最初の行は `jitcatch: every candidate file failed to load on both sides, so no row can tell base from head` で、側ごとに最初のファイルの再実行コマンドを示す `load base failed:` の行と、その下にエラーが出る。
 
-この文は stderr に出る。
+この文は、終了コード 3 の報告がどれもそうであるように stdout に出て、stderr には何も出ない。
 `--json` のときは、代わりに stdout に `{"command": "run", "error": "setup_failed", "stage", "base", "head", "setup_failed": [{"side", "commit", "command", "stderr", "not_passed"}]}` を出す。
 `stage` は `setup` か `load` である。
 `assess` はこの文書を受け付けない。

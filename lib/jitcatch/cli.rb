@@ -69,8 +69,8 @@ module JitCatch
       $stdout.write(opts[:json] ? Render.dump(Render.run_json(doc)) : Render.run_text(doc))
       Assessor.untested_run?(doc) ? 3 : 0
     rescue EnvironmentError => err
-      # --json keeps stdout a document an agent can parse; text is an error message.
-      opts[:json] ? $stdout.write(Render.dump(err.doc)) : $stderr.write(Render.setup_failed_text(err.doc))
+      # Every exit 3 is a report on stdout, so a caller reads one stream for it.
+      $stdout.write(opts[:json] ? Render.dump(err.doc) : Render.setup_failed_text(err.doc))
       3
     end
 

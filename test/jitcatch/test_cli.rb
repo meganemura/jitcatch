@@ -139,8 +139,10 @@ class TestCLI < Minitest::Test
         [cli("run", "--repo", repo.dir, "base", "HEAD", tests), cli("run", "--json", "--repo", repo.dir, "base", "HEAD", tests)]
       end
 
-      assert_equal [3, ""], [text_status, text_out]
-      assert_equal <<~TEXT, text_err
+      # Every exit 3 prints its report on stdout, as a run whose rows all
+      # timed out does.
+      assert_equal [3, ""], [text_status, text_err]
+      assert_equal <<~TEXT, text_out
         jitcatch: setup failed, so no test ran; a test cannot pass or fail on a side that cannot load
         base #{base}
         head #{head}
