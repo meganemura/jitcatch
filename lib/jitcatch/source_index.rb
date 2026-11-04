@@ -541,7 +541,8 @@ module JitCatch
 
     # `Point = Struct.new(:x) do ... end` and `Class.new do ... end` define
     # methods for that constant. Those methods are indexed on their own, so
-    # the constant keeps only the text before the block.
+    # the constant keeps only the text up to the block's `do` or `{`, which
+    # still shows a block that came or went.
     def value_block(node)
       value = node.value
       value.block if value.is_a?(Prism::CallNode) && value.block.is_a?(Prism::BlockNode)
@@ -551,7 +552,7 @@ module JitCatch
       block = value_block(node)
       return [slice_of(node), node.location.end_line] unless block
 
-      length = block.location.start_offset - node.location.start_offset
+      length = block.opening_loc.end_offset - node.location.start_offset
       [@source.byteslice(node.location.start_offset, length).force_encoding(@source.encoding).rstrip, block.location.start_line]
     end
 

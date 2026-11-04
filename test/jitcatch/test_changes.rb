@@ -481,4 +481,17 @@ class TestChanges < Minitest::Test
         doc["files"].map { |file| file.values_at("status", "file") }
     end
   end
+  def test_a_constant_that_gains_a_block_shows_the_block_open
+    with_repo do |repo|
+      repo.write("lib/line.rb", "Line = Struct.new(:cents)\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/line.rb", "Line = Struct.new(:cents) do\n  def total_cents = cents * 2\nend\n")
+      repo.commit("Price a line.", date: "2026-02-12T00:00:00Z")
+
+      doc = JitCatch::Changes.between(repo.dir, "base", "HEAD")
+
+      assert_equal [["modified", "Line = Struct.new(:cents)", "Line = Struct.new(:cents) do"]], doc["constants"].map { |const| const.values_at("change", "old_source", "new_source") }
+    end
+  end
 end

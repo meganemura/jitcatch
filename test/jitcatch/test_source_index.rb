@@ -267,7 +267,7 @@ class TestSourceIndex < Minitest::Test
     index = JitCatch::SourceIndex.parse(source, file: "lib/geo.rb")
     assert_equal [["Geo::Line.build", "Geo::Line", 9], ["Geo::Point#norm", "Geo::Point", 3], ["Geo::Point#x", "Geo::Point", 2], ["Geo::Point#x=", "Geo::Point", 2], ["Geo::Point#y", "Geo::Point", 2], ["Geo::Point#y=", "Geo::Point", 2]],
       index.methods.map { |method| [method.qualified, method.qualifier, method.start_line] }.sort
-    assert_equal [["Geo::LIMIT", "LIMIT = 3", 14, 14], ["Geo::Line", "Geo::Line = Class.new(Base)", 8, 8], ["Geo::Point", "Point = Struct.new(:x, :y)", 2, 2]],
+    assert_equal [["Geo::LIMIT", "LIMIT = 3", 14, 14], ["Geo::Line", "Geo::Line = Class.new(Base) do", 8, 8], ["Geo::Point", "Point = Struct.new(:x, :y) do", 2, 2]],
       index.constants.map { |const| [const.qualified, const.source, const.start_line, const.end_line] }.sort
     assert_equal "Geo::Line.build", index.calls.find { |call| call.bare_name == "norm" }.enclosing
   end
