@@ -73,7 +73,11 @@ module JitCatch
     SPEC_HELPERS = %i[let let! subject subject!].freeze
     DESCRIBED_METHOD = /\A[#.]([a-z_][\w]*[?!=]?)\z/
 
-    attr_reader :methods, :constants, :namespaces, :calls, :private_constants, :parse_error
+    # A class header's superclass as written, and the namespace the header
+    # is in, which the name is looked up from.
+    Superclass = Data.define(:qualified, :written, :scope)
+
+    attr_reader :methods, :constants, :namespaces, :superclasses, :calls, :private_constants, :parse_error
 
     def self.parse(source, file:)
       new(source, file).parse
@@ -86,6 +90,7 @@ module JitCatch
       @methods = []
       @constants = []
       @namespaces = []
+      @superclasses = []
       @module_functions = []
       @private_constants = []
       @calls = []
@@ -261,6 +266,8 @@ module JitCatch
         nested = join_qual(qualifier, name)
         record_constant(@namespaces, nested, stmt.location.start_line, stmt.location.end_line, @lines[stmt.location.start_line - 1]) if name
         record_members(stmt.superclass, nested) if stmt.is_a?(Prism::ClassNode) && stmt.superclass.is_a?(Prism::CallNode)
+        parent = stmt.is_a?(Prism::ClassNode) && const_name(stmt.superclass)
+        @superclasses << Superclass.new(qualified: nested, written: parent, scope: qualifier.to_s) if name && parent
         scan_body(stmt, nested, :public, false)
         visibility
       when Prism::SingletonClassNode

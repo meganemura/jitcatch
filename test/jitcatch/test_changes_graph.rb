@@ -511,4 +511,73 @@ class TestChangesGraph < Minitest::Test
       assert_includes JitCatch::Render.context_text(JitCatch::Changes.between(repo.dir, "base", "HEAD")), "  Support.k unchanged\n  (+3 more)\n"
     end
   end
+
+  def test_a_call_of_new_reaches_initialize_and_what_initialize_calls
+    with_repo do |repo|
+      runner = "class Runner\n  def initialize = boot\n\n  def self.fresh = new\n\n  private def boot = BODY\nend\n\nclass Quiet < Runner\nend\n"
+      users = <<~SRC
+        class Engine
+          def self.explore = Runner.new
+          def self.hush = Quiet.new
+        end
+      SRC
+      repo.write("lib/runner.rb", runner.sub("BODY", "1"))
+      repo.write("lib/engine.rb", users)
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/runner.rb", runner.sub("BODY", "2"))
+      repo.commit("Boot to 2.", date: "2026-02-12T00:00:00Z")
+
+      doc = JitCatch::Changes.between(repo.dir, "base", "HEAD")
+
+      assert_equal [["Runner#boot", ["Engine.explore", "Engine.hush", "Runner#initialize", "Runner.fresh"]]], doc["methods"].map { |method| method.values_at("name", "reachable_from") }
+    end
+  end
+
+  # ActiveRecord's `create`, `create!`, and `build` call `new`, so on a
+  # model they reach `initialize`. On any other class they are methods the
+  # index does not see, and reach nothing.
+  def test_create_and_build_reach_initialize_only_on_an_active_record_model
+    with_repo do |repo|
+      models = <<~SRC
+        class ApplicationRecord < ActiveRecord::Base
+        end
+
+        class Post < ApplicationRecord
+          def initialize(attributes = nil)
+            super
+            BODY
+          end
+        end
+
+        class Report
+          def initialize
+            BODY
+          end
+        end
+      SRC
+      users = <<~SRC
+        class Feed
+          def publish = Post.create(title: "a")
+          def publish! = Post.create!(title: "a")
+          def draft = Post.build
+          def report = Report.build
+          def saved = Report.create
+        end
+      SRC
+      repo.write("app/models.rb", models.gsub("BODY", "1"))
+      repo.write("app/feed.rb", users)
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("app/models.rb", models.gsub("BODY", "2"))
+      repo.commit("Start at 2.", date: "2026-02-12T00:00:00Z")
+
+      doc = JitCatch::Changes.between(repo.dir, "base", "HEAD")
+
+      assert_equal [
+        ["Post#initialize", ["Feed#draft", "Feed#publish", "Feed#publish!"]],
+        ["Report#initialize", []]
+      ], doc["methods"].map { |method| method.values_at("name", "reachable_from") }
+    end
+  end
 end

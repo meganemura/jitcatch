@@ -9,6 +9,7 @@ module JitCatch
     TEST_CAP = 5
     ENTRY_CAP = 12
     UPSTREAM_DEPTH = 4
+    RECORD_BUILDERS = %w[create create! build].freeze
 
     def self.between(repo, base_ref, head_ref, coverage: nil)
       new(repo, base_ref, head_ref, coverage: coverage).build
@@ -121,6 +122,7 @@ module JitCatch
       methods = []
       constants = []
       namespaces = []
+      superclasses = []
       calls = []
       private_constants = []
       errors = []
@@ -139,11 +141,12 @@ module JitCatch
         methods.concat(index.methods)
         constants.concat(index.constants)
         namespaces.concat(index.namespaces)
+        superclasses.concat(index.superclasses)
         calls.concat(index.calls)
         private_constants.concat(index.private_constants)
       end
       methods = SourceIndex.hide_private_constants(methods, private_constants.uniq)
-      { "methods" => methods, "constants" => constants, "namespaces" => namespaces, "calls" => calls, "errors" => errors, "sources" => sources }
+      { "methods" => methods, "constants" => constants, "namespaces" => namespaces, "superclasses" => superclasses, "calls" => calls, "errors" => errors, "sources" => sources }
     end
 
     def changed_methods(base_idx, head_idx, hunks)
@@ -464,12 +467,14 @@ module JitCatch
       methods = idx["methods"]
       by_class = methods.group_by { |method| [method.qualifier, method.bare_name] }
       by_bare = methods.group_by(&:bare_name)
-      qualifiers = methods.group_by(&:qualifier)
+      # A class with no method of its own still names a class to look up.
+      qualifiers = idx["namespaces"].to_h { |node| [node.qualified, []] }.merge(methods.group_by(&:qualifier))
+      parents = idx["superclasses"].to_h { |sup| [sup.qualified, resolve_constant(sup.written, sup.scope, qualifiers) || sup.written] }
       edges = []
       idx["calls"].each do |call|
         next if call.enclosing.nil? || test_file?(call.file)
 
-        Array(call_target(call, by_class, by_bare, qualifiers)).each do |target|
+        Array(call_target(call, by_class, by_bare, qualifiers, parents)).each do |target|
           next if target.qualified == call.enclosing
 
           edges << { "from" => call.enclosing, "to" => target.qualified, "file" => call.file, "line" => call.line }
@@ -484,7 +489,7 @@ module JitCatch
     # `self` call still falls back to a unique bare name, for methods a class
     # gets from a module or a superclass; from an instance method, only to
     # an instance method, since no mixin turns a class method into one.
-    def call_target(call, by_class, by_bare, qualifiers)
+    def call_target(call, by_class, by_bare, qualifiers, parents)
       qualifier, sep, _bare = SourceIndex.split_qualified(call.enclosing)
       receiver = call.receiver
       case receiver.kind
@@ -495,6 +500,8 @@ module JitCatch
           instance.first
         elsif same.size == 1
           same.first
+        elsif sep == "." && (built = constructor_of(qualifier, call.bare_name, by_class, parents))
+          built
         else
           inherited = (by_bare[call.bare_name] || []).select { |method| sep == "." || method.kind == "instance" }
           inherited.first if inherited.size == 1
@@ -502,13 +509,35 @@ module JitCatch
       when "singleton", "instance"
         owner = receiver.const.nil? ? qualifier : resolve_constant(receiver.const, qualifier, qualifiers)
         found = (by_class[[owner, call.bare_name]] || []).select { |method| method.kind == receiver.kind }
-        found.first if found.size == 1
+        if found.size == 1
+          found.first
+        elsif found.empty? && receiver.kind == "singleton" && owner
+          constructor_of(owner, call.bare_name, by_class, parents)
+        end
       when "one_of"
         receiver.const.filter_map do |const|
           found = (by_class[[resolve_constant(const, qualifier, qualifiers), call.bare_name]] || []).select { |method| method.kind == "singleton" }
           found.first if found.size == 1
         end
       end
+    end
+
+    # `new` runs the nearest `initialize` up the superclass chain. On an
+    # ActiveRecord model, `create`, `create!`, and `build` call `new`; on
+    # another class they are methods the index cannot see, so they count
+    # only there. A class method of the same name up the chain answers the
+    # call instead.
+    def constructor_of(owner, bare, by_class, parents)
+      chain = [owner]
+      chain << parents[chain.last] while parents.key?(chain.last) && !chain.include?(parents[chain.last])
+      return nil unless bare == "new" || (RECORD_BUILDERS.include?(bare) && chain.include?("ActiveRecord::Base"))
+      return nil if chain.any? { |klass| Array(by_class[[klass, bare]]).any? { |method| method.kind == "singleton" } }
+
+      chain.each do |klass|
+        found = Array(by_class[[klass, "initialize"]]).select { |method| method.kind == "instance" }
+        return found.first if found.size == 1
+      end
+      nil
     end
 
     # Ruby looks a constant up from the innermost enclosing namespace out.

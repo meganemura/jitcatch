@@ -444,6 +444,13 @@ CLI を使わない場合は、`skills/jitcatch` をエージェントの skills
   クラスが定義していないメソッドを `self` に呼ぶと、その名前を持つ索引上ただ一つのメソッドへ向かう。
   モジュールやスーパークラスのメソッドのためである。
   インスタンスメソッドからはインスタンスメソッドだけが対象になる。
+  `Const.new` と、クラスメソッドの中でレシーバなしに呼ぶ `new` は、そのクラスの `initialize` へも向かう。
+  クラスが定義していなければ、スーパークラスをたどって最も近い `initialize` へ向かう。
+  そのため `Runner.new` の呼び出し元は `Runner#initialize` とそこから呼ぶメソッドに届く。
+  `create`、`create!`、`build` も、リポジトリ内のスーパークラスの連なりが `ActiveRecord::Base` に届くクラス（`class Post < ApplicationRecord`）では同じく `initialize` へ向かう。
+  Active Record はこれらを `new` を呼ぶメソッドとして定義しているからである。
+  ほかのクラスでは、定義しているコードが索引にないので辺にならない。
+  連なりの上に同じ名前のクラスメソッドがあれば、呼び出しはそちらへ向かう。
   クラスが `attr_reader`、`attr_writer`、`attr_accessor` で宣言した名前は、その読み書きのメソッドへの辺になる。
 - `define_method` と `class_eval` は索引しない。
   `def self.foo` 以外のレシーバ付き定義は粗い。
