@@ -93,8 +93,10 @@ module JitCatch
         @git.worktree_add(pair.base, change["base"])
       end
       @git.worktree_add(pair.head, change["head"])
-      install(pair.base)
-      install(pair.head)
+      [pair.base, pair.head].each do |worktree|
+        install(worktree)
+        copy_bundler_settings(worktree)
+      end
     end
 
     # Each worker takes the next file and runs it in its own pair, so the
@@ -319,6 +321,20 @@ module JitCatch
     def unpassed_bundler_settings
       names = ENV.keys.grep(/\ABUNDLE_/).sort - %w[BUNDLE_BIN_PATH BUNDLE_GEMFILE BUNDLE_LOCKFILE] - @env_names
       names.empty? ? nil : "not passed: #{names.join(" ")} (add #{names.map { |name| "--env #{name}" }.join(" ")})"
+    end
+
+    # `bundle config set --local` writes .bundle/config, which git does not
+    # track, so a worktree would load its bundle without the checkout's
+    # settings, such as BUNDLE_WITHOUT. A relative BUNDLE_PATH names a
+    # directory of the checkout, so it is written out from there.
+    def copy_bundler_settings(worktree)
+      source = File.join(@git.dir, ".bundle", "config")
+      target = File.join(worktree, ".bundle", "config")
+      return unless gemfile?(worktree) && File.file?(source) && !File.exist?(target)
+
+      text = File.read(source).gsub(/^BUNDLE_PATH: "?([^"\n]*)"?$/) { %(BUNDLE_PATH: "#{File.expand_path(Regexp.last_match(1), @git.dir)}") }
+      FileUtils.mkdir_p(File.dirname(target))
+      File.write(target, text)
     end
 
     def install(worktree)

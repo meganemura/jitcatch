@@ -1231,6 +1231,29 @@ end
     end
   end
 
+  def test_each_side_reads_the_bundler_settings_of_the_checkout
+    with_repo do |repo|
+      repo.write("lib/flag.rb", "module Flag; end\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("Gemfile", %(source "https://rubygems.org"\ngem "jitcatch_vendored", "1.0"\ngroup :db do\n  gem "jitcatch_absent_gem", "9.9.9"\nend\n))
+      repo.write("Gemfile.lock", "GEM\n  remote: https://rubygems.org/\n  specs:\n    jitcatch_absent_gem (9.9.9)\n    jitcatch_vendored (1.0)\n\nPLATFORMS\n  ruby\n\nDEPENDENCIES\n  jitcatch_absent_gem (= 9.9.9)\n  jitcatch_vendored (= 1.0)\n")
+      repo.write(".gitignore", ".bundle/\nvendor/\n")
+      repo.commit("Add a Gemfile.", date: "2026-02-12T00:00:00Z")
+      gems = "vendor/bundle/ruby/#{RbConfig::CONFIG["ruby_version"]}"
+      repo.write("#{gems}/specifications/jitcatch_vendored-1.0.gemspec", %(Gem::Specification.new { |s| s.name = "jitcatch_vendored"; s.version = "1.0"; s.summary = "x"; s.authors = ["x"] }\n))
+      repo.write("#{gems}/gems/jitcatch_vendored-1.0/lib/jitcatch_vendored.rb", "")
+      repo.write(".bundle/config", %(---\nBUNDLE_PATH: "vendor/bundle"\nBUNDLE_WITHOUT: "db"\n))
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, { "flag_test.rb" => candidate_source("FlagTest", "test_flag", "assert true").sub('require "calc"', 'require "flag"') })
+
+      doc = without_bundler_settings { execute(repo, tests) }
+
+      # The vendored gem loads and the db group is skipped, so the next check speaks.
+      assert_equal 'minitest is not in the bundle: add gem "minitest" to the Gemfile', doc["bundle"]["head"]["message"]
+    end
+  end
+
   def test_reports_a_bundle_that_does_not_list_minitest
     with_repo do |repo|
       repo.write("lib/flag.rb", "module Flag; end\n")

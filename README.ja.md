@@ -282,6 +282,8 @@ RSpec がファイルを読む途中のエラーは、Minitest と同じく `<fi
 
 リビジョンに `Gemfile` があるときは、`-rbundler/setup` を付け、`BUNDLE_GEMFILE` をその `Gemfile` にして実行する。
 そのため、それぞれの側は自分のロックファイルにある gem を読む。
+それぞれの側には、git が追跡しないチェックアウトの `.bundle/config`（`bundle config set --local` が書く `BUNDLE_WITHOUT` などの設定）も写す。
+相対パスの `BUNDLE_PATH` は、チェックアウトのディレクトリを指したままにする。
 `run` は側ごとに 1 回 bundle を確かめ、`bundle base ok` や `bundle head failed: <メッセージ>` を出す。
 たとえばロックした gem がインストールされていないときや、bundle に `minitest`（Minitest の候補のとき）や `rspec-core`（RSpec の候補のとき）が無いときである。
 プロセスに渡す環境変数は、決まった一覧と `--env` で名前を挙げたものだけである。
