@@ -811,7 +811,31 @@ class TestChanges < Minitest::Test
     end
   end
 
-  # `on:` narrows a validation or commit callback to the saves of that
+# `create(:loan, :cosigned)` builds the Cosigner its trait names, and
+# plain `create(:loan)` does not.
+def test_a_trait_runs_the_callbacks_of_the_records_its_associations_build
+  with_repo do |repo|
+    repo.write("lib/application_record.rb", "class ApplicationRecord < ActiveRecord::Base\nend\n")
+    cosigner = ->(name) { "class Cosigner < ApplicationRecord\n  before_save :tidy\n\n  def tidy\n    #{name}\n  end\nend\n" }
+    repo.write("lib/cosigner.rb", cosigner.call(":strip"))
+    repo.write("lib/loan.rb", "class Loan < ApplicationRecord\nend\n")
+    repo.write("spec/factories/lending.rb", "FactoryBot.define do\n  factory :cosigner\n  factory :loan do\n    trait :cosigned do\n      cosigner\n    end\n  end\nend\n")
+    repo.write("spec/models/cosigned_spec.rb", "create(:loan, :cosigned, amount: 5)\n")
+    repo.write("spec/models/plain_spec.rb", "create(:loan)\n")
+    repo.commit("base", date: "2026-02-11T00:00:00Z")
+    repo.branch("base")
+    repo.write("lib/cosigner.rb", cosigner.call(":squish"))
+    repo.commit("Squish the name.", date: "2026-02-12T00:00:00Z")
+
+    tidy = JitCatch::Changes.between(repo.dir, "base", "HEAD")["methods"].fetch(0)
+
+    assert_includes tidy["run_by"], "create(:loan, :cosigned)"
+    refute_includes tidy["run_by"], "create(:loan)"
+    assert_equal [{ "file" => "spec/models/cosigned_spec.rb", "via" => "callback", "calls" => ["create(:loan, :cosigned)"] }], tidy["existing_tests"]
+  end
+end
+
+# `on:` narrows a validation or commit callback to the saves of that
   # context: an update never runs a create-only callback, so a method that
   # only updates does not reach it. A custom context runs only from a call
   # that takes one.

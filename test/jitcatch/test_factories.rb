@@ -70,7 +70,42 @@ class TestFactories < Minitest::Test
     }, found)
   end
 
-  def test_factory_files_are_under_spec_or_test_factories
+# A trait runs only when a test names it, so what its associations build
+# is kept apart by trait name. A nested or child factory takes the
+# traits of the factory it inherits from.
+def test_a_trait_builds_the_classes_of_its_associations
+  source = <<~SOURCE
+    FactoryBot.define do
+      factory :branch
+      factory :cosigner do
+        branch
+      end
+      factory :loan do
+        amount_cents { 1 }
+        trait :cosigned do
+          cosigner
+        end
+        trait(:filed) { association :record, factory: :branch }
+        trait :approved do
+          state { "approved" }
+        end
+
+        factory :big_loan
+      end
+      factory :copy, parent: :loan
+    end
+  SOURCE
+
+  found = JitCatch::Factories.read("spec/factories.rb" => source).to_h { |factory| [factory.name, [factory.builds, factory.trait_builds]] }
+
+  traits = { "approved" => [], "cosigned" => %w[Branch Cosigner], "filed" => %w[Branch] }
+  assert_equal [[], traits], found["loan"]
+  assert_equal [[], traits], found["big_loan"]
+  assert_equal [[], traits], found["copy"]
+  assert_equal [%w[Branch], {}], found["cosigner"]
+end
+
+def test_factory_files_are_under_spec_or_test_factories
     assert_equal [true, true, true, false, false],
       %w[spec/factories.rb test/factories/loans.rb engines/a/spec/factories/x.rb spec/models/loan_spec.rb lib/factories.rb].map { |path| JitCatch::Factories.file?(path) }
   end

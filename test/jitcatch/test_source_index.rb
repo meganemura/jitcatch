@@ -358,8 +358,8 @@ class TestSourceIndex < Minitest::Test
     RUBY
     index = JitCatch::SourceIndex.parse(source, file: "spec/loan_spec.rb")
 
-    assert_equal %w[build(:debt) build(:ledger) create(:loan)], index.example_references(4).grep(/\A(?:build|create)\(/)
-    assert_equal ["create(:loan)"], index.example_references(5).grep(/\A(?:build|create)\(/)
+    assert_equal ["build(:debt)", "build(:ledger)", "create(:loan)", "create(:loan, :approved)"], index.example_references(4).grep(/\A(?:build|create)\(/)
+    assert_equal ["create(:loan)", "create(:loan, :approved)"], index.example_references(5).grep(/\A(?:build|create)\(/)
     assert_equal [], JitCatch::SourceIndex.parse(own, file: "test/own_test.rb").referenced_names("OwnTest#test_own").grep(/\A(?:build|create)\(/)
     assert_includes JitCatch::SourceIndex.parse("create(:loan)\n", file: "spec/top_spec.rb").referenced_names(""), "create(:loan)"
   end

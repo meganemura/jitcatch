@@ -466,10 +466,14 @@ module JitCatch
 
     # A factory whose association builds the class runs its constructor and
     # its save callbacks too: `create(:loan)` saves the Borrower that
-    # `borrower` builds, and `build(:loan)` builds it unsaved.
+    # `borrower` builds, and `build(:loan)` builds it unsaved. A trait's
+    # associations build only when the test names the trait.
     def factory_mentions(qualifier, factories)
-      factories.select { |factory| factory.reason.nil? && (factory.class_name == qualifier || factory.builds.include?(qualifier)) }
-        .flat_map { |factory| %w[build create].map { |call| SourceIndex.factory_mention(factory.name, call) } }
+      factories.reject(&:reason).flat_map do |factory|
+        traits = factory.trait_builds.select { |_trait, classes| classes.include?(qualifier) }.keys
+        traits.unshift(nil) if factory.class_name == qualifier || factory.builds.include?(qualifier)
+        traits.product(%w[build create]).map { |trait, call| SourceIndex.factory_mention(factory.name, call, trait) }
+      end
     end
 
     # The calls that run a changed method because a model's class body

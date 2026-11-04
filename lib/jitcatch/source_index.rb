@@ -186,9 +186,10 @@ module JitCatch
 
     # How a test that builds an object from the factory `name` mentions it:
     # `create(:loan)` when the call saves the record, `build(:loan)` when it
-    # does not.
-    def self.factory_mention(name, call)
-      SAVING_FACTORY_CALLS.include?(call.to_s) ? "create(:#{name})" : "build(:#{name})"
+    # does not, and `create(:loan, :cosigned)` with a trait.
+    def self.factory_mention(name, call, trait = nil)
+      verb = SAVING_FACTORY_CALLS.include?(call.to_s) ? "create" : "build"
+      trait ? "#{verb}(:#{name}, :#{trait})" : "#{verb}(:#{name})"
     end
 
     def self.unsaved_mention?(name)
@@ -819,7 +820,7 @@ module JitCatch
           refer(enclosing, named) if named
           refer(enclosing, "to_s") if MESSAGE_CALLS.include?(node.name)
           factory = factory_built(node)
-          @factory_calls[enclosing] << [node.name.to_s, factory] if factory
+          @factory_calls[enclosing] << [node.name.to_s, factory, factory_traits(node)] if factory
         end
         node.compact_child_nodes.each do |child|
           children = child.is_a?(Prism::ArgumentsNode) && HASH_KEY_CALLS.include?(node.name) ? child.arguments.grep_v(Prism::SymbolNode) : [child]
@@ -918,7 +919,14 @@ module JitCatch
     # helper, not FactoryBot's.
     def factory_names(enclosings)
       enclosings.flat_map { |name| @factory_calls.fetch(name, []) }
-        .filter_map { |call, factory| self.class.factory_mention(factory, call) unless @defined.key?(call) }
+        .flat_map { |call, factory, traits|
+          @defined.key?(call) ? [] : [nil, *traits].map { |trait| self.class.factory_mention(factory, call, trait) }
+        }
+    end
+
+    # `create(:loan, :cosigned)` names the trait :cosigned after the factory.
+    def factory_traits(node)
+      Array(node.arguments&.arguments).drop(1).grep(Prism::SymbolNode).map(&:unescaped)
     end
 
     # `create(:loan)` or `FactoryBot.build("loan")` builds from the factory

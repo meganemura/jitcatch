@@ -10,12 +10,14 @@ module JitCatch
   # with a reason and no class.
   module Factories
     # `builds` holds the classes its associations build, through their own
-    # associations too.
-    Factory = Data.define(:name, :class_name, :file, :line, :reason, :builds)
+    # associations too. `trait_builds` holds, by trait name, what a trait
+    # builds when a test names it.
+    Factory = Data.define(:name, :class_name, :file, :line, :reason, :builds, :trait_builds)
     # One `factory` call as written. `outer` is the factory it nests in.
     # `associations` names the factories it may build with: a bare name
-    # counts only when a factory of that name exists.
-    Written = Data.define(:names, :file, :line, :own_class, :parent, :outer, :reason, :associations)
+    # counts only when a factory of that name exists. `traits` holds the
+    # names of each trait's associations.
+    Written = Data.define(:names, :file, :line, :own_class, :parent, :outer, :reason, :associations, :traits)
 
     # Calls in a factory block that define something other than an attribute.
     DEFINITIONS = %i[factory trait transient sequence after before callback traits_for_enum initialize_with to_create skip_create].freeze
@@ -33,10 +35,24 @@ module JitCatch
       by_name = written.flat_map { |item| item.names.map { |name| [name, item] } }.to_h
       written.flat_map do |item|
         class_name, reason = settle(item, by_name, [])
-        builds = built_with(item, by_name, [item]).filter_map { |other| settle(other, by_name, [])[0] }.uniq.sort
+        builds = classes_built(built_with(item, by_name, [item]), by_name)
+        trait_builds = traits_of(item, by_name, [item]).transform_values { |names|
+          classes_built(names.filter_map { |name| by_name[name] }.flat_map { |other| [other, *built_with(other, by_name, [other])] }, by_name)
+        }
         names = item.names.empty? ? [nil] : item.names
-        names.map { |name| Factory.new(name: name, class_name: class_name, file: item.file, line: item.line, reason: reason, builds: builds) }
+        names.map { |name| Factory.new(name: name, class_name: class_name, file: item.file, line: item.line, reason: reason, builds: builds, trait_builds: trait_builds) }
       end
+    end
+
+    def classes_built(items, by_name)
+      items.filter_map { |other| settle(other, by_name, [])[0] }.uniq.sort
+    end
+
+    # A factory can use the traits of its parent and of the factory it
+    # nests in, and its own trait of the same name wins.
+    def traits_of(item, by_name, seen)
+      inherited = [item.outer, item.parent && by_name[item.parent]].compact.reject { |other| seen.include?(other) }
+      inherited.reverse.map { |other| traits_of(other, by_name, [*seen, other]) }.reduce({}, :merge).merge(item.traits).sort.to_h
     end
 
     def collect(node, file, outer)
@@ -61,7 +77,15 @@ module JitCatch
       reason ||= "parent: is not a symbol or a string" if options.key?("parent") && parent.nil?
       aliases = options["aliases"].is_a?(Prism::ArrayNode) ? options["aliases"].elements.filter_map { |element| literal(element) } : []
       Written.new(names: [name, *aliases].compact, file: file, line: node.location.start_line, own_class: own_class, parent: parent, outer: outer, reason: reason,
-        associations: associations_in(node.block))
+        associations: associations_in(node.block), traits: traits_in(node.block))
+    end
+
+    def traits_in(block)
+      statements = block.is_a?(Prism::BlockNode) && block.body.is_a?(Prism::StatementsNode) ? block.body.body : []
+      statements.grep(Prism::CallNode).select { |call| call.receiver.nil? && call.name == :trait }.filter_map { |call|
+        name = literal(call.arguments&.arguments&.first)
+        [name, associations_in(call.block)] if name
+      }.to_h
     end
 
     # The statements of the factory's own block. A trait runs only when a

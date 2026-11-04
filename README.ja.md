@@ -286,7 +286,11 @@ Concern の `included do`、`prepended do`、`class_methods do` ブロックの�
 ファクトリーは、その関連が作るクラスにも数える。
 関連とは、ファクトリーの名前と同じ素の `borrower`、`association :borrower`（`factory: :user` も）、`association` を呼ぶ属性ブロックで、そのファクトリーか継承元に書いたもののことで、関連の関連もたどる。
 そのため `create(:loan)` は `Borrower` も保存する。
-trait の中の関連はたどらない。
+trait の中の関連は、その trait を名指しする呼び出しにだけ数える。
+`:loan` の trait `:cosigned` が cosigner を作るなら、`create(:loan)` ではなく `create(:loan, :cosigned)` と `build(:loan, :cosigned)` が加わる。
+`create(:loan, :cosigned, amount_cents: 5)` と書いたテストは、`create(:loan)` と `create(:loan, :cosigned)` の両方を挙げる。
+ファクトリーは親と入れ子の外側のファクトリーの trait も使う。
+ファクトリーの外で定義した trait と、別の trait を含む trait はたどらない。
 ソースからクラスが決まらないファクトリーはたどらず、理由と一緒に `factories_skipped:` に出す。
 実行時に計算する `class:`、そこで読んだファクトリーにない親、どのファイルも定義しないクラスがこれに当たり、最後のものはアプリが設定する活用（`ApiKey` と `APIKey`）で起こりうる。
 Active Record のモデルのクラス本体がコールバックかバリデーション（`after_save :count_save`、`validate :check`、またはそのどちらかの `if:` や `unless:`。`validates :amount, presence: true, if: :checked?` もこれに当たる）で名前を挙げるメソッドには `run_by:` が出る。
