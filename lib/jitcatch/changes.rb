@@ -136,6 +136,7 @@ module JitCatch
       superclasses = []
       calls = []
       private_constants = []
+      hidden_new = []
       errors = []
       sources = {}
       indexes = {}
@@ -157,9 +158,10 @@ module JitCatch
         superclasses.concat(index.superclasses)
         calls.concat(index.calls)
         private_constants.concat(index.private_constants)
+        hidden_new.concat(index.hidden_new)
       end
       methods = SourceIndex.hide_private_constants(methods, private_constants.uniq)
-      { "methods" => methods, "constants" => constants, "namespaces" => namespaces, "superclasses" => superclasses, "calls" => calls, "errors" => errors, "sources" => sources, "indexes" => indexes }
+      { "methods" => methods, "constants" => constants, "namespaces" => namespaces, "superclasses" => superclasses, "calls" => calls, "hidden_new" => hidden_new, "errors" => errors, "sources" => sources, "indexes" => indexes }
     end
 
     def changed_methods(base_idx, head_idx, hunks)
@@ -601,13 +603,13 @@ module JitCatch
       classes.filter_map do |qualifier|
         next if qualifier.empty?
 
-        pool = public_methods_of(head_idx, qualifier)
-        pool = public_methods_of(base_idx, qualifier) if pool.empty?
+        side = public_methods_of(head_idx, qualifier).empty? ? base_idx : head_idx
+        pool = public_methods_of(side, qualifier)
         changed = methods.to_h { |method| [(method["new"] || method["old"]).qualified, method["change"]] }
         constructor = "#{qualifier}#initialize"
         names = pool.map(&:qualified) - [constructor]
         listed = names.map { |name| { "name" => name, "role" => changed[name] || "unchanged" } }
-        if [head_idx, base_idx].any? { |idx| idx["methods"].any? { |method| method.qualified == constructor } }
+        if [head_idx, base_idx].any? { |idx| idx["methods"].any? { |method| method.qualified == constructor } } && !side["hidden_new"].include?(qualifier)
           # A test builds the object with `.new`, which runs `initialize`.
           listed << { "name" => "#{qualifier}.new", "role" => changed[constructor] || "unchanged" }
         end

@@ -558,6 +558,27 @@ class TestChangesGraph < Minitest::Test
     end
   end
 
+  def test_entrypoints_leave_out_a_new_the_class_made_private
+    with_repo do |repo|
+      model = "class Model\n  private_class_method :new\n\n  def self.plain = new(1)\n\n  def initialize(n) = @n = n\n\n  def value = BODY\nend\n"
+      single = "class Single\n  class << self\n    private :new\n  end\n\n  def initialize = nil\n\n  def run = BODY\nend\n"
+      again = "class Again\n  private_class_method :new\n  public_class_method :new\n\n  def initialize = nil\n\n  def run = BODY\nend\n"
+      { "model" => model, "single" => single, "again" => again }.each { |name, text| repo.write("lib/#{name}.rb", text.sub("BODY", "1")) }
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      { "model" => model, "single" => single, "again" => again }.each { |name, text| repo.write("lib/#{name}.rb", text.sub("BODY", "2")) }
+      repo.commit("Change each body.", date: "2026-02-12T00:00:00Z")
+
+      doc = JitCatch::Changes.between(repo.dir, "base", "HEAD")
+
+      assert_equal({
+        "Again" => [["Again#run", "modified"], ["Again.new", "unchanged"]],
+        "Model" => [["Model#value", "modified"], ["Model.plain", "unchanged"]],
+        "Single" => [["Single#run", "modified"]]
+      }, doc["entrypoints"].to_h { |entry| [entry["class"], entry["methods"].map { |method| method.values_at("name", "role") }] })
+    end
+  end
+
   def test_the_entrypoint_cap_keeps_the_callers_of_a_changed_method
     with_repo do |repo|
       source = ["module Support", *("a".."n").map { |name| "  def self.#{name} = 0" }, "  def self.outcomes = text(1)", "  def self.text(n) = BODY", "  private_class_method :text", "end", ""].join("\n")

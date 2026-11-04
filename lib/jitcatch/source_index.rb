@@ -135,6 +135,12 @@ module JitCatch
 
     attr_reader :methods, :constants, :namespaces, :superclasses, :callbacks, :calls, :private_constants, :parse_error
 
+    # The classes whose `new` the file made private, so no test builds them
+    # with it. `new` is inherited, never defined, so no Method carries it.
+    def hidden_new
+      @new_visibility.filter_map { |qualifier, visibility| qualifier unless visibility == "public" }
+    end
+
     def self.parse(source, file:)
       new(source, file).parse
     end
@@ -173,6 +179,7 @@ module JitCatch
       @callbacks = []
       @module_functions = []
       @private_constants = []
+      @new_visibility = {}
       @calls = []
       @references = Hash.new { |hash, key| hash[key] = [] }
       @ivar_classes = Hash.new { |hash, key| hash[key] = [] }
@@ -669,6 +676,7 @@ module JitCatch
 
     def mark_visibility(qualifier, bare, visibility, singleton)
       kind = singleton ? "singleton" : "instance"
+      @new_visibility[qualifier.to_s] = visibility.to_s if singleton && bare == "new"
       @methods.map! do |method|
         if method.qualifier == qualifier.to_s && method.bare_name == bare && method.kind == kind
           method.with(visibility: visibility.to_s)

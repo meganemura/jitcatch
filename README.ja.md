@@ -328,6 +328,7 @@ Concern の中のコールバックの行、親クラスが宣言するもの、
 変更メソッドが先に変更の種類つきで並び、残りは `unchanged` として続き、最大 12 件である。
 `unchanged` のうち変更メソッドに届くものが先に並び、入らなかったメソッドの数を `(+N more)` と出す。
 どちらかの側で `initialize` を定義するクラスは、その代わりに `Owner.new` を `Owner#initialize` の変更の種類つきで出す。
+ただし、クラスが `new` を private にしている（`private_class_method :new`、または `class << self` の中の `private :new`）ときは出さない。
 これはテストが呼べるメソッドであり、`run` はその名前も言及として数える。
 
 `run` はリビジョンごとに git worktree を作り、スクラッチディレクトリをその worktree の `.jitcatch/` へコピーし、ファイルごとに 1 プロセスで実行する。
