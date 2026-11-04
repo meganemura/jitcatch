@@ -123,14 +123,38 @@ module JitCatch
       end
     end
 
-    # A `require_relative` with one string literal, written at the top of
-    # the file or in a class body: [path, line].
+    # One `require_relative` call with one argument. `path` is nil when the
+    # source does not settle it: only a string literal, or File.join of
+    # string literals, does.
     RelativeRequire = Data.define(:path, :line)
 
-    attr_reader :methods, :constants, :namespaces, :superclasses, :callbacks, :calls, :private_constants, :relative_requires, :parse_error
+    attr_reader :methods, :constants, :namespaces, :superclasses, :callbacks, :calls, :private_constants, :parse_error
 
     def self.parse(source, file:)
       new(source, file).parse
+    end
+
+    # Every require_relative of a source, wherever it is written. Only a
+    # run reads these, for its few candidate files, so the parse of every
+    # repository file does not pay for the walk.
+    def self.relative_requires(source)
+      found = []
+      pending = [Prism.parse(source.to_s).value]
+      while (node = pending.pop)
+        if node.is_a?(Prism::CallNode) && node.receiver.nil? && node.name == :require_relative && node.arguments&.arguments&.size == 1
+          found << RelativeRequire.new(path: settled_path(node.arguments.arguments.first), line: node.location.start_line)
+        end
+        pending.concat(node.compact_child_nodes)
+      end
+      found.sort_by(&:line)
+    end
+
+    def self.settled_path(node)
+      return node.unescaped if node.is_a?(Prism::StringNode)
+      return nil unless node.is_a?(Prism::CallNode) && node.name == :join && node.receiver.is_a?(Prism::ConstantReadNode) && node.receiver.name == :File
+
+      parts = Array(node.arguments&.arguments)
+      parts.all?(Prism::StringNode) && !parts.empty? ? File.join(*parts.map(&:unescaped)) : nil
     end
 
     def initialize(source, file)
@@ -144,7 +168,6 @@ module JitCatch
       @callbacks = []
       @module_functions = []
       @private_constants = []
-      @relative_requires = []
       @calls = []
       @references = Hash.new { |hash, key| hash[key] = [] }
       @ivar_classes = Hash.new { |hash, key| hash[key] = [] }
@@ -411,7 +434,6 @@ module JitCatch
 
         return handle_module_function(stmt, qualifier, visibility) if stmt.receiver.nil? && stmt.name == :module_function
 
-        record_relative_require(stmt) if stmt.receiver.nil? && stmt.name == :require_relative
         record_private_constants(stmt, qualifier) if stmt.name == :private_constant && (stmt.receiver.nil? || stmt.receiver.is_a?(Prism::SelfNode))
 
         if stmt.receiver.nil? && CONCERN_BLOCKS.key?(stmt.name) && stmt.block.is_a?(Prism::BlockNode)
@@ -428,13 +450,6 @@ module JitCatch
       else
         visibility
       end
-    end
-
-    def record_relative_require(stmt)
-      args = stmt.arguments&.arguments || []
-      return unless args.size == 1 && args.first.is_a?(Prism::StringNode)
-
-      @relative_requires << RelativeRequire.new(path: args.first.unescaped, line: stmt.location.start_line)
     end
 
     def visibility_modifier?(node)

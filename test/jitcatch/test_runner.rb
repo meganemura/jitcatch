@@ -361,7 +361,7 @@ class TestRunner < Minitest::Test
       repo.branch("base")
       repo.write("lib/a.rb", "module A; def self.f = 2; end\n")
       repo.commit("Return 2.", date: "2026-02-12T00:00:00Z")
-      source = { "a_test.rb" => %(require "minitest/autorun"\nrequire_relative "../lib/a"\nrequire_relative "helper"\n\nclass ATest < Minitest::Test\n  def test_f = assert_equal(1, A.f)\nend\n), "helper.rb" => "" }
+      source = { "a_test.rb" => %(require "minitest/autorun"\nrequire_relative "../lib/a"\nrequire_relative "helper"\n\nclass ATest < Minitest::Test\n  def setup = require_relative(File.join(__dir__, "helper"))\n  def test_f = assert_equal(1, A.f)\nend\n), "helper.rb" => "" }
       Dir.mktmpdir("jitcatch-outside-") do |outside|
         tests = File.join(outside, "catch")
         write_tests(tests, source)
@@ -374,7 +374,8 @@ class TestRunner < Minitest::Test
 
         from_root = Pathname(File.realpath(outside)).relative_path_from(Pathname(File.realpath(repo.dir))).to_s
         warning = "a_test.rb:2 require_relative \"../lib/a\" loads lib/a.rb in the run but #{from_root}/lib/a.rb from the rerun line, so that line may not reproduce the row. Load the repository's code with `require` and the rerun line's -I, or put TESTS_DIR directly under the repository root."
-        assert_equal [warning], doc["warnings"]
+        unsettled = "a_test.rb:6 require_relative names a path the source does not settle, so jitcatch cannot tell whether the run and the rerun line load the same file. Load the repository's code with `require` and the rerun line's -I, or put TESTS_DIR directly under the repository root."
+        assert_equal [warning, unsettled], doc["warnings"]
         assert_includes JitCatch::Render.run_text(doc), "warning: #{warning}\n"
         assert_equal [], inside["warnings"]
         assert_equal "fail", doc["tests"].fetch(0)["head"]["status"]

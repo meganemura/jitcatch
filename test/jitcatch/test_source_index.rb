@@ -364,25 +364,37 @@ class TestSourceIndex < Minitest::Test
     assert_includes JitCatch::SourceIndex.parse("create(:loan)\n", file: "spec/top_spec.rb").referenced_names(""), "create(:loan)"
   end
 
-  # A path the source computes, or a call of another name, names no file
-  # the run can compare.
-  def test_relative_requires_are_the_literal_paths_with_their_lines
-    source = <<~'RUBY'
-      require "minitest/autorun"
-      require_relative "../lib/a"
-      load_fixture "../fixtures/b"
-      require_relative File.join("..", "lib", "c")
-      require_relative "d", "e"
+# Every require_relative counts, in a method or a block too. A path the
+# source does not settle comes back as nil, so the run can say it could
+# not check that line; a call of another name, or one with two paths,
+# loads nothing to compare.
+def test_relative_requires_are_every_require_relative_with_its_path
+  source = <<~'SOURCE'
+    require "minitest/autorun"
+    require_relative "../lib/a"
+    load_fixture "../fixtures/b"
+    require_relative File.join("..", "lib", "c")
+    require_relative "d", "e"
+    require_relative File.join(__dir__, "f")
 
-      class ATest
-        require_relative "helper"
-      end
-    RUBY
+    class ATest
+      require_relative "helper"
 
-    found = JitCatch::SourceIndex.parse(source, file: "a_test.rb").relative_requires.map(&:to_h)
+      def setup = require_relative("../lib/g")
+    end
 
-    assert_equal [{ path: "../lib/a", line: 2 }, { path: "helper", line: 8 }], found
-  end
+    RSpec.describe "A" do
+      before { require_relative "support/#{kind}" }
+    end
+  SOURCE
+
+  found = JitCatch::SourceIndex.relative_requires(source).map(&:to_h)
+
+  assert_equal [
+    { path: "../lib/a", line: 2 }, { path: "../lib/c", line: 4 }, { path: nil, line: 6 },
+    { path: "helper", line: 9 }, { path: "../lib/g", line: 11 }, { path: nil, line: 15 }
+  ], found
+end
 
   def test_names_sent_only_to_constants_follow_the_scope_of_the_mentions
     source = <<~'RUBY'

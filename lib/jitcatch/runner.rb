@@ -541,9 +541,17 @@ module JitCatch
     def require_warnings(files)
       root = Pathname(File.realpath(@git.dir))
       tests = File.realpath(@tests_dir)
+      # From a directory directly under the root, a path that stays in
+      # TESTS_DIR and one that leaves it each name one file either way.
+      one_level = !tests_from_root.include?("/") && !tests_from_root.start_with?(".")
       files.flat_map do |relative|
-        index = SourceIndex.parse(read_candidate(relative), file: relative)
-        index.relative_requires.filter_map do |required|
+        SourceIndex.relative_requires(read_candidate(relative)).filter_map do |required|
+          if required.path.nil?
+            next if one_level
+
+            next "#{relative}:#{required.line} require_relative names a path the source does not settle, so jitcatch cannot tell whether the run and the rerun line load the same file. Load the repository's code with `require` and the rerun line's -I, or put TESTS_DIR directly under the repository root."
+          end
+
           path = required.path.end_with?(".rb") ? required.path : "#{required.path}.rb"
           in_run = Pathname(File.expand_path(path, File.dirname(File.join("/.jitcatch", relative)))).relative_path_from(Pathname("/")).to_s
           in_rerun = Pathname(File.expand_path(path, File.dirname(File.join(tests, relative)))).relative_path_from(root).to_s

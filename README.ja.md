@@ -428,6 +428,8 @@ Ruby 自身の prefix は `{ruby}/` と書く。
 `run` は各チェックアウトのルートに置いた `TESTS_DIR` の写しから候補を読み込む。
 そのため、`TESTS_DIR` の外へ出る `require_relative` は、実行ではチェックアウトのファイルを指し、この行からは `TESTS_DIR` の隣のファイルを指す。
 `TESTS_DIR` がルートの直下にない限り二つは食い違うので、そのとき `run` はその行と二つのファイルを `warning:` に出す（`a_test.rb:2 require_relative "../lib/a" loads lib/a.rb in the run but ../base/lib/a.rb from the rerun line`）。
+メソッドやブロックの中の `require_relative` も数え、文字列リテラルの `File.join` はそれがつなぐパスとして読む。
+`File.join(__dir__, "helper")` や式展開を含む文字列のように、ソースからパスが決まらないものは、`TESTS_DIR` がルートの直下にない限り、二つが同じファイルを読み込むかを jitcatch が確かめられないと `warning:` に出す。
 リポジトリのコードは `require` とこの行の `-I` で読み込む。
 この行はシェルで実行し、`--env` で渡した変数はそのシェルから来ているので、この行にも届く。
 行には値を書かない。
