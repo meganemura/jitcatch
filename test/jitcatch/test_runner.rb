@@ -1532,7 +1532,9 @@ class TestRunner < Minitest::Test
       assert_equal "load", err.doc["stage"]
       assert_equal [%w[base base], %w[head HEAD]].map { |side, ref| [side, repo.git("rev-parse", ref).strip] }, err.doc["setup_failed"].map { |failure| failure.values_at("side", "commit") }
       assert_equal ["ruby -Ilib -I. {tests}/a_test.rb"] * 2, err.doc["setup_failed"].map { |failure| failure["command"] }
-      assert_equal [["{worktree}/.jitcatch/support.rb:1:in '<top (required)>': connection to server at 127.0.0.1 port 1 failed (IOError)"]] * 2, err.doc["setup_failed"].map { |failure| failure["stderr"] }
+      # Ruby 3.3 quotes the frame label with a backtick, Ruby 3.4 and later with '.
+      quote = RUBY_VERSION < "3.4" ? "`" : "'"
+      assert_equal [["{worktree}/.jitcatch/support.rb:1:in #{quote}<top (required)>': connection to server at 127.0.0.1 port 1 failed (IOError)"]] * 2, err.doc["setup_failed"].map { |failure| failure["stderr"] }
       assert_includes JitCatch::Render.setup_failed_text(err.doc), "jitcatch: every candidate file failed to load on both sides, so no row can tell base from head\n"
       assert_includes JitCatch::Render.setup_failed_text(err.doc), "is not in the checkouts jitcatch makes; pass its value with --env, such as RAILS_MASTER_KEY.\n"
 
