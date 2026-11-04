@@ -218,7 +218,7 @@ bin/jitcatch assess --json run.json
 | 区分 | 意味 |
 | --- | --- |
 | `no_signal` | base でも head でも通った。 |
-| `fail_on_base` | 親がそのテストを満たさなかった。新しい機能だけを書いていることが多い。 |
+| `fail_on_base` | 親がそのテストを満たさなかった。新しい機能だけを書いていることが多い。テキストの報告は、その行の下に base で起きたことを `base: error NoMethodError undefined method 'apply_coupon' for an instance of Shop::Cart` のように出す。 |
 | `flaky` | base で通り head で落ちたあと、再実行が同じ落ち方をしなかった。捨てる。 |
 | `discarded` | base で通り head で落ちたあと、ルールが除いた。`assess:` には残る。 |
 | `reported` | base で通り head で落ち、ルールは除かなかった。この行を判断する。 |

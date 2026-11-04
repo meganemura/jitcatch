@@ -67,6 +67,7 @@ module JitCatch
           lines << "  #{test_line(test)}"
           lines.concat(rerun_lines(test)) if test["disposition"] == "flaky"
           lines.concat(timeout_lines(test, doc["timeout_s"]))
+          lines.concat(base_failure_lines(test))
         end
       end
       lines << counts_line(doc["counts"])
@@ -240,6 +241,17 @@ module JitCatch
         outcome = [rerun["status"], rerun["error_class"], moved || rerun["message_first_line"]].reject { |part| part.to_s.empty? }
         "    rerun #{index + 1}: #{outcome.join(" ")}"
       end
+    end
+
+    # A row that failed on base is no candidate, so nothing else in the
+    # text says what went wrong there.
+    def base_failure_lines(test)
+      base = test["base"]
+      return [] unless test["disposition"] == "fail_on_base" && base && base["status"] != "timeout"
+
+      first, *rest = message_lines(base)
+      outcome = [base["status"], base["error_class"], first || base["message_first_line"]].reject { |part| part.to_s.empty? }
+      ["    base: #{outcome.join(" ")}", *rest.map { |line| "      #{line}" }]
     end
 
     def timeout_lines(test, seconds)

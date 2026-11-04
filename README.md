@@ -157,7 +157,7 @@ bin/jitcatch assess --json run.json
 | Bucket | Meaning |
 | --- | --- |
 | `no_signal` | Passed on base and on head. |
-| `fail_on_base` | The parent did not satisfy the test. Often the test only describes a new feature. |
+| `fail_on_base` | The parent did not satisfy the test. Often the test only describes a new feature. The text report prints what base did under the row, as `base: error NoMethodError undefined method 'apply_coupon' for an instance of Shop::Cart`. |
 | `flaky` | Passed on base, failed on head, then a rerun did not fail the same way. Dropped. |
 | `discarded` | Passed on base and failed on head, then a rule removed it. Still listed under `assess:`. |
 | `reported` | Passed on base and failed on head, and no rule removed it. Judge this row. |

@@ -25,9 +25,15 @@ class TestShopDemo < Minitest::Test
           "run", "--repo", repo, "base", ref, File.join(recorded, "tests")
         )
         assert_equal 0, run_status, run_err
-        assert_equal File.read(File.join(recorded, "run.txt")), run
+        assert_equal File.read(File.join(recorded, "run.txt")), ruby_34_quotes(run)
       end
     end
+  end
+
+  # The record quotes a name in an error message as Ruby 3.4 does; Ruby 3.3
+  # writes `apply_coupon' with a backtick.
+  def ruby_34_quotes(text)
+    text.gsub(/`(\w+)'/, "'\\1'")
   end
 
   def cli(*args)

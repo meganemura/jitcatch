@@ -185,6 +185,8 @@ class TestRender < Minitest::Test
     TEXT
   end
 
+  # A test that failed on base says why, so its author can tell a new
+  # feature from a test that does not run.
   def test_run_text_prints_reruns_under_a_flaky_row_and_a_hint_under_a_timeout
     fail_line = { "status" => "fail", "error_class" => "Minitest::Assertion", "message_first_line" => "Expected: 1" }
     doc = JitCatch::Assessor.apply({
@@ -194,7 +196,13 @@ class TestRender < Minitest::Test
         { "id" => "t02", "file" => "b_test.rb", "name" => "b_test.rb#timeout", "classification" => "fail_on_base",
           "base" => { "status" => "timeout" }, "head" => { "status" => "timeout" } },
         { "id" => "t03", "file" => "c_test.rb", "name" => "C#test_c", "classification" => "no_signal",
-          "base" => { "status" => "pass" }, "head" => { "status" => "pass" }, "reruns" => [fail_line] }
+          "base" => { "status" => "pass" }, "head" => { "status" => "pass" }, "reruns" => [fail_line] },
+        { "id" => "t04", "file" => "d_test.rb", "name" => "D#test_d", "classification" => "fail_on_base",
+          "base" => { "status" => "error", "error_class" => "NoMethodError", "message" => "undefined method 'coupon' for an instance of Cart\n  more", "message_first_line" => "undefined method 'coupon' for an instance of Cart" },
+          "head" => { "status" => "pass" } },
+        { "id" => "t05", "file" => "e_test.rb", "name" => "E#test_e", "classification" => "fail_on_base",
+          "base" => { "status" => "fail", "error_class" => "Minitest::Assertion", "message" => "Expected: 1\n  Actual: 2", "message_first_line" => "Expected: 1" },
+          "head" => { "status" => "pass" } }
       ]
     })
     assert_includes JitCatch::Render.run_text(doc), <<~TEXT.chomp
@@ -206,7 +214,12 @@ class TestRender < Minitest::Test
           hint: base timed out after 7s; raise --timeout if the file needs longer
           hint: head timed out after 7s; raise --timeout if the file needs longer
         t03 no_signal C#test_c c_test.rb
-      counts generated=3
+        t04 fail_on_base D#test_d d_test.rb
+          base: error NoMethodError undefined method 'coupon' for an instance of Cart
+        t05 fail_on_base E#test_e e_test.rb
+          base: fail Minitest::Assertion Expected: 1
+            Actual: 2
+      counts generated=5
     TEXT
   end
 
