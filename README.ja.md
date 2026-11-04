@@ -196,6 +196,7 @@ jitcatch run --repo DIR BASE HEAD TESTS_DIR
 RSpec は元のエラーを自分で出力する。
 Minitest は出力しないので、jitcatch は Minitest の候補の各プロセスに `-r` で `lib/jitcatch/minitest_cause.rb` を読み込み、Minitest のエラーの文に元のエラーを足す。
 `rerun:` の行はこれを読み込まない。
+行の 1 行が 300 文字を超えると、`FrozenError` に出た凍結 Array 全体のような行もそこで切り、`... (+N more; the whole message is in --json)` で終える。
 `--json` はメッセージ全体を残す。
 
 ```sh

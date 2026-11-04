@@ -101,6 +101,16 @@ class TestRender < Minitest::Test
     assert_match(/\^ column/, pair.call(big + [1], big[0..-2] + [0]).last)
   end
 
+  def test_a_row_cuts_a_very_long_message_line_and_says_how_much_it_left_out
+    long = "can't modify frozen Array: [#{(1..5000).to_a.join(", ")}]"
+    lines = JitCatch::Render.message_lines({ "message" => long })
+
+    assert_equal ["#{long[0, 300]}... (+#{long.length - 300} more; the whole message is in --json)"], lines
+    assert_equal ["x" * 300], JitCatch::Render.message_lines({ "message" => "x" * 300 })
+    assert_equal ["Expected: 1", "Actual: #{"y" * 292}... (+1 more; the whole message is in --json)"],
+      JitCatch::Render.message_lines({ "message" => "Expected: 1\n  Actual: #{"y" * 293}" })
+  end
+
   # Minitest's first removed and first added lines are a pair only when the
   # added line replaces the removed one; otherwise a column says nothing.
   def test_two_diff_lines_that_do_not_replace_each_other_get_no_column

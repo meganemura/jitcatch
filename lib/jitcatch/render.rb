@@ -284,8 +284,17 @@ module JitCatch
       cause && [cause["error_class"], Failure.first_line(cause["message"])].reject(&:empty?).join(": ")
     end
 
+    # A row keeps each line to this many characters; one Array printed
+    # whole can fill tens of kilobytes.
+    MESSAGE_LINE = 300
+
     def message_lines(head)
       return [] if head.nil?
+
+      failure_lines(head).map { |line| line.length > MESSAGE_LINE ? "#{line[0, MESSAGE_LINE]}... (+#{line.length - MESSAGE_LINE} more; the whole message is in --json)" : line }
+    end
+
+    def failure_lines(head)
 
       lines = head["message"].to_s.lines.map(&:strip).reject(&:empty?)
       if lines[1]&.match?(/\AActual:/)
