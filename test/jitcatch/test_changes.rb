@@ -763,4 +763,27 @@ class TestChanges < Minitest::Test
       assert_includes text, "    run_by: #{saving.join(", ")} (after_save :count_save)\n    tests: spec/models/create_spec.rb via Loan.create!; "
     end
   end
+
+  # A save the repository's own code makes runs the callback as a test's
+  # save does, so the method that makes it, and that method's callers,
+  # reach the callback.
+  def test_a_repository_method_that_saves_reaches_the_callback
+    with_repo do |repo|
+      callback_history(repo)
+      repo.write("lib/loan_desk.rb", <<~RUBY)
+        class LoanDesk
+          def self.open(amount) = Loan.create!(amount: amount)
+
+          def self.open_two = [open(1), open(2)]
+        end
+      RUBY
+      repo.write("lib/teller.rb", "class Teller\n  def renew(loan)\n    loan.save!\n  end\n\n  def close = Loan.new.destroy\nend\n")
+      repo.commit("desk", date: "2026-02-13T00:00:00Z")
+
+      by_name = JitCatch::Changes.between(repo.dir, "base", "HEAD")["methods"].to_h { |method| [method["name"], method] }
+
+      assert_equal %w[LoanDesk.open LoanDesk.open_two], by_name["Loan#count_save"]["reachable_from"]
+      assert_equal %w[Loan#archive Teller#close], by_name["Loan#archived_mark"]["reachable_from"]
+    end
+  end
 end

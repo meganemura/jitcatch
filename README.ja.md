@@ -287,6 +287,8 @@ save のコールバックには `Loan.create`、`Loan.create!`、`Loan#save`、
 バリデーションにはさらに `Loan#valid?`、`Loan#invalid?`、`Loan#validate`、`Loan#validate!` が出る。
 destroy のコールバックには `Loan#destroy` と `Loan#destroy!` が出る。
 そのようなコールバックから届くメソッド（`reachable_from`）にも同じ行が出る。
+テスト以外のメソッドがソースに書いた形でその呼び出しをするとき（`LoanDesk.open` の中の `Loan.create!` や、`Loan` のメソッドの中の `update!`）、そのメソッドとその呼び出し元が `reachable_from` に加わる。
+そのため `LoanDesk.open` を呼ぶテストはそのコールバックを指す。
 その `tests:` には、grep の結果に加えて、そのどれかを呼ぶテストファイルが出る（`spec/models/loan_spec.rb via Loan.create!`）。
 `run` はその呼び出しをそのメソッドへの言及として数える。
 `Loan#save` は、テストのソースからレコードのクラスが決まるとき（`loan = Loan.new`）に数える。

@@ -49,7 +49,7 @@ module JitCatch
       decorate_dynamic_callers(methods, head_idx, base_idx)
       factories = factories_of(head_idx)
       builders = builders_for(methods, head_idx, factories)
-      decorate_callbacks(methods, base_idx, head_idx, factories)
+      decorate_callbacks(methods, base_idx, head_idx, factories, head_edges, base_edges)
       decorate_tests(methods, base_idx, head_idx, builders)
       entrypoints = entrypoints_for(methods, head_idx, base_idx)
 
@@ -471,7 +471,7 @@ module JitCatch
     # validation (`after_save :count_save`). A factory of the model counts
     # where `.create` does: `create(:loan)` saves, though a test that only
     # writes `build(:loan)` is read as the same mention.
-    def decorate_callbacks(methods, base_idx, head_idx, factories)
+    def decorate_callbacks(methods, base_idx, head_idx, factories, head_edges, base_edges)
       base_callbacks = record_callbacks(base_idx)
       head_callbacks = record_callbacks(head_idx)
       methods.each do |method|
@@ -480,6 +480,38 @@ module JitCatch
         found = [node.qualified, *method["reachable_from"]].flat_map { |name| callbacks.fetch(name, []) }
         method["callbacks"] = found.map(&:declared).uniq.sort
         method["run_by"] = found.flat_map { |callback| callback_calls(callback, factories) }.uniq.sort
+        idx, edges = method["change"] == "removed" ? [base_idx, base_edges] : [head_idx, head_edges]
+        savers = savers_of(method["run_by"], idx) - [node.qualified]
+        next if savers.empty?
+
+        reached = savers + savers.flat_map { |name| upstream(name, edges) }
+        method["reachable_from"] = (method["reachable_from"] | reached).reject { |name| name == node.qualified }.first(REACHABLE_CAP).sort
+      end
+    end
+
+    # The methods outside the tests that make one of the calls, as the
+    # repository's code writes it: `Loan.create!` in `LoanDesk.open`, or
+    # `update!` inside a method of `Loan`.
+    def savers_of(calls, idx)
+      return [] if calls.empty?
+
+      qualifiers = lookups(idx)[2]
+      idx["calls"].filter_map { |call|
+        next if call.enclosing.nil? || test_file?(call.file)
+
+        written = written_call(call, qualifiers)
+        call.enclosing if written && calls.any? { |run_by| SourceIndex.names_call?(written, run_by) }
+      }.uniq.sort
+    end
+
+    def written_call(call, qualifiers)
+      qualifier, sep, _bare = SourceIndex.split_qualified(call.enclosing)
+      receiver = call.receiver
+      case receiver.kind
+      when "self" then "#{qualifier}#{sep}#{call.bare_name}"
+      when "singleton", "instance"
+        owner = resolve_constant(receiver.const, qualifier, qualifiers) || receiver.const
+        "#{owner}#{receiver.kind == "singleton" ? "." : "#"}#{call.bare_name}"
       end
     end
 
