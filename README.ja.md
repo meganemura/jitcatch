@@ -254,6 +254,9 @@ gem の中から始まったエラーには `touches:changed_method` を付け�
 この選択は、diff が追加したメソッドより base にあったメソッドを選ぶ。
 ただし、追加したメソッドの呼び出しを足しただけの編集（`--json` の `forwards_to_added`）は、その追加したメソッドより下に置く。
 `net - volume` が `net - volume - coupon(n)` になる編集がその例で、新しい値は追加したメソッドから来る。
+テストが変更されていない呼び出し元を通してだけ届くメソッドの中では、テストが名指しする入口から最も多くの呼び出しを下ったメソッドを選ぶ。
+たとえば、リクエストスペックが 1 回下の `LoansController#officer` と 5 回下の `Borrower#approved_cents` に届くときは `Borrower#approved_cents` を選ぶ。
+`--json` の `caller_depths` がその回数を持つ。
 `related:dynamic` は、関連する変更メソッドはないが、テストが `dynamic_callers:` のメソッドを呼んでいる。
 その行の次の行が `related: none, Emit.looked_up sends render to a receiver the source does not name` のようにそれを言う。
 
@@ -536,6 +539,7 @@ CLI を使わない場合は、`skills/jitcatch` をエージェントの skills
   `reachable_from` は 4 回の呼び出しまで呼び出し元をたどり、`new` から `initialize` へ入る一歩はその 4 回に数えない。
   残すのは近い順に 8 個までである。
   `--json` の `reached_by` は、深さも個数も限らず、すべての呼び出し元を持つ。
+  `caller_depths` は、その呼び出し元それぞれから最も少ない呼び出しの回数を持つ。
   `run` は言及と関連 id にこちらを読むので、上から入るテストも、5 回以上の呼び出しの先にある変更メソッドを名指しできる。
   たとえばコントローラとサービスを通るリクエストスペックや、`CLI.start` を呼ぶ CLI のテストである。
   そうしたテストはたいていの変更メソッドに届くので、その行はふつう `related:guess` になり、そのメソッドが一覧に入る。

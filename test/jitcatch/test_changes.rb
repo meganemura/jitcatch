@@ -785,6 +785,7 @@ class TestChanges < Minitest::Test
       by_name = JitCatch::Changes.between(repo.dir, "base", "HEAD")["methods"].to_h { |method| [method["name"], method] }
 
       assert_equal %w[Branch#renew_all LoanDesk.open LoanDesk.open_two Teller#renew], by_name["Loan#count_save"]["reachable_from"]
+      assert_equal({ "Branch#renew_all" => 2, "LoanDesk.open" => 1, "LoanDesk.open_two" => 2, "Teller#renew" => 1 }, by_name["Loan#count_save"]["caller_depths"])
       assert_equal %w[Loan#archive Teller#close], by_name["Loan#archived_mark"]["reachable_from"]
     end
   end

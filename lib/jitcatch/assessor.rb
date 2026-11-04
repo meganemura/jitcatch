@@ -254,7 +254,7 @@ module JitCatch
       sent = via_caller.select { |item| reached_by(item).any? { |name| sent_to?(name, mentions) } }
       via_caller = sent unless sent.empty?
       pool = via_caller.empty? ? constructors : via_caller
-      [best_guess(pool), pool]
+      [best_guess(pool, depth_below_entry(pool, mentions)), pool]
     end
 
     # A test that names the class it sends a method to (`Index.parse`,
@@ -353,12 +353,28 @@ module JitCatch
     # it. Between two that no changed method links, the one
     # above more changed code is the likelier: a test that names a setup call
     # and the call it checks reaches the change through the second.
-    def best_guess(items)
+    #
+    # A test that enters high, as a request spec or a CLI test does,
+    # reaches the plumbing next to its entry point as well as the code its
+    # assertion checks further down. On a CLI test of this repository and
+    # a request spec of a Rails app, the method farthest from the entry
+    # point the test calls was the one the failure came from in both, and
+    # the lowest id in one, so depth ranks before the count below.
+    def best_guess(items, depths = {})
       items.min_by do |item|
         others = items.reject { |other| other["id"] == item["id"] }
         covered = others.count { |other| reached_by(item).include?(other["name"]) }
         below = @methods.count { |other| reached_by(other).include?(item["name"]) }
-        [preference(item), -covered, -below, item["id"].to_s]
+        [preference(item), -covered, -depths.fetch(item["id"], 0), -below, item["id"].to_s]
+      end
+    end
+
+    # The fewest calls between each item and an entry point the test
+    # names. A run file from before `caller_depths` existed has none.
+    def depth_below_entry(items, mentions)
+      items.to_h do |item|
+        depths = Hash(item["caller_depths"]).filter_map { |name, depth| depth if mentions.include?(bare(name)) }
+        [item["id"], depths.min || 0]
       end
     end
 

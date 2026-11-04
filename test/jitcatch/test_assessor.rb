@@ -278,6 +278,25 @@ class TestAssessor < Minitest::Test
     assert_equal %w[m02], JitCatch::Assessor.apply(old)["tests"].fetch(0)["method_ids"]
   end
 
+  # A test that enters high reaches the plumbing near its entry point and
+  # the code its assertion checks further down, so the pick is the method
+  # farthest from the entry point the test calls.
+  def test_a_guess_picks_the_method_farthest_from_the_entry_point
+    near = method("m01", "modified", "same", "officer", ["Desk#update"], 1).merge("caller_depths" => { "Desk#update" => 1 })
+    deep = method("m02", "modified", "same", "approved_cents", ["Desk#update", "Gate#check"], 10).merge("caller_depths" => { "Desk#update" => 4, "Gate#check" => 1 })
+    doc = {
+      "methods" => [near, deep],
+      "constants" => [],
+      "tests_dir" => "candidates",
+      "tests" => [candidate("t01", "DeskTest#test_update", %w[update], failure("Expected: 422\n  Actual: 200"))]
+    }
+
+    row = JitCatch::Assessor.apply(doc)["tests"].fetch(0)
+    assert_equal ["m02", %w[m01 m02], true], [row["method_id"], row["method_ids"], row["tags"].include?("related:guess")]
+    old = doc.merge("methods" => [near.except("caller_depths"), deep.except("caller_depths")])
+    assert_equal "m01", JitCatch::Assessor.apply(old)["tests"].fetch(0)["method_id"], "a run file without depths keeps the lowest id"
+  end
+
   def test_candidate_ids_follow_test_ids_and_other_rows_carry_nulls
     stale = { "method_id" => "m09", "tags" => ["report"], "disposition" => "reported", "candidate_id" => "c09" }
     doc = {

@@ -391,6 +391,7 @@ class TestChangesGraph < Minitest::Test
 
       assert_equal ["app/models/loan.rb:7 Loan#approve", "app/models/loan.rb:10 Loan#cosigned"], method["callsites"].map { |site| "#{site["file"]}:#{site["line"]} #{site["enclosing"]}" }
       assert_equal %w[Approvals::Gate#check Desk#approve_each Loan#approve Loan#cosigned], method["reachable_from"]
+      assert_equal({ "Approvals::Gate#check" => 2, "Desk#approve_each" => 2, "Loan#approve" => 1, "Loan#cosigned" => 1 }, method["caller_depths"])
       assert_equal [%w[Desk#mixed approve], %w[Desk#through approve], %w[Loan#owned approved_cents]], method["dynamic_callers"].map { |caller| caller.values_at("from", "name") }
     end
   end

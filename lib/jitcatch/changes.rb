@@ -327,7 +327,11 @@ module JitCatch
         }
         method["callsites_omitted"] = [direct.size - CALLSITE_CAP, 0].max
         method["reachable_from"] = upstream(node.qualified, edges)
-        method["reached_by"] = reached_by(node.qualified, edges)
+        # Every method that reaches this one, at any depth and with no cap,
+        # with the fewest calls between them. A test that enters high, as a
+        # request spec or a CLI test does, calls a method above the callers
+        # `upstream` keeps, so the assessor reads this set instead.
+        method["caller_depths"] = callers_by_depth(node.qualified, edges, nil)
       end
     end
 
@@ -498,7 +502,11 @@ module JitCatch
         savers = calls.filter_map { |written, from| from if method["run_by"].any? { |run_by| SourceIndex.names_call?(written, run_by) } }.uniq.sort
         reached = savers + savers.flat_map { |name| upstream(name, edges) }
         method["reachable_from"] = (method["reachable_from"] | reached).reject { |name| name == node.qualified }.first(REACHABLE_CAP).sort
-        method["reached_by"] = (method["reached_by"] | savers | savers.flat_map { |name| reached_by(name, edges) }).reject { |name| name == node.qualified }.sort
+        through_saves = savers.flat_map { |name| [[name, 1], *callers_by_depth(name, edges, nil).map { |caller, depth| [caller, depth + 1] }] }
+        depths = method["caller_depths"]
+        through_saves.each { |name, depth| depths[name] = [depths.fetch(name, depth), depth].min unless name == node.qualified }
+        method["caller_depths"] = depths.sort.to_h
+        method["reached_by"] = method["caller_depths"].keys
       end
     end
 
@@ -723,14 +731,6 @@ module JitCatch
       callers_by_depth(qualified, edges, UPSTREAM_DEPTH).sort_by { |name, depth| [depth, name] }.first(REACHABLE_CAP).map(&:first).sort
     end
 
-    # Every method that reaches this one, at any depth and with no cap. A
-    # test that enters high, as a request spec or a CLI test does, calls a
-    # method above the callers `upstream` keeps, so the assessor and the
-    # names a test can mention read this set instead.
-    def reached_by(qualified, edges)
-      callers_by_depth(qualified, edges, nil).keys.sort
-    end
-
     def callers_by_depth(qualified, edges, limit)
       reverse = callers_index(edges)
       depths = {}
@@ -789,6 +789,7 @@ module JitCatch
         "callsites_omitted" => item["callsites_omitted"],
         "reachable_from" => item["reachable_from"],
         "reached_by" => item["reached_by"],
+        "caller_depths" => item["caller_depths"],
         "dynamic_callers" => item["dynamic_callers"],
         "builders" => item["builders"],
         "callbacks" => item["callbacks"],
