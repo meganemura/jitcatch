@@ -128,6 +128,8 @@ class TestMinitestParser < Minitest::Test
     result = JitCatch::MinitestParser.parse(stdout, "")["tests"].fetch("GTest#test_g")
 
     assert_equal ["outer\ntwo", { "error_class" => "KeyError", "message" => "inner\nk" }, [{ "file" => "lib/a.rb", "line" => 1 }]], result.values_at("message", "cause", "backtrace")
+    plain = JitCatch::MinitestParser.parse(stdout.sub(/--- Caused by: ---\nKeyError: inner\nk\n/, ""), "")["tests"].fetch("GTest#test_g")
+    assert_equal ["outer\ntwo", nil], plain.values_at("message", "cause")
   end
 
   def test_a_message_line_shaped_like_a_frame_stays_in_the_message
