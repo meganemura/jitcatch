@@ -486,9 +486,7 @@ module JitCatch
         method["callbacks"] = found.map(&:declared).uniq.sort
         method["run_by"] = found.flat_map { |callback| callback_calls(callback, factories) }.uniq.sort
         idx, edges = method["change"] == "removed" ? [base_idx, base_edges] : [head_idx, head_edges]
-        savers = savers_of(method["run_by"], idx) - [node.qualified]
-        next if savers.empty?
-
+        savers = savers_of(method["run_by"], idx)
         reached = savers + savers.flat_map { |name| upstream(name, edges) }
         method["reachable_from"] = (method["reachable_from"] | reached).reject { |name| name == node.qualified }.first(REACHABLE_CAP).sort
       end
@@ -496,27 +494,24 @@ module JitCatch
 
     # The methods outside the tests that make one of the calls, as the
     # repository's code writes it: `Loan.create!` in `LoanDesk.open`, or
-    # `update!` inside a method of `Loan`.
+    # `update!` inside a method of `Loan`. A written `Loan` names
+    # `Shop::Loan` as it does in a test.
     def savers_of(calls, idx)
-      return [] if calls.empty?
-
-      qualifiers = lookups(idx)[2]
       idx["calls"].filter_map { |call|
         next if call.enclosing.nil? || test_file?(call.file)
 
-        written = written_call(call, qualifiers)
+        written = written_call(call)
         call.enclosing if written && calls.any? { |run_by| SourceIndex.names_call?(written, run_by) }
       }.uniq.sort
     end
 
-    def written_call(call, qualifiers)
+    def written_call(call)
       qualifier, sep, _bare = SourceIndex.split_qualified(call.enclosing)
       receiver = call.receiver
       case receiver.kind
       when "self" then "#{qualifier}#{sep}#{call.bare_name}"
-      when "singleton", "instance"
-        owner = resolve_constant(receiver.const, qualifier, qualifiers) || receiver.const
-        "#{owner}#{receiver.kind == "singleton" ? "." : "#"}#{call.bare_name}"
+      when "singleton" then "#{receiver.const}.#{call.bare_name}"
+      when "instance" then "#{receiver.const}##{call.bare_name}"
       end
     end
 
