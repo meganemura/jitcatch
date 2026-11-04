@@ -216,7 +216,7 @@ module JitCatch
       # Almost every test builds its object with `.new`, so a changed
       # constructor is the related method only when nothing else points.
       constructors, named = mentioned.partition { |item| mention(item).end_with?(".new") }
-      return [most_downstream(named), named] if named.any?
+      return [best_guess(named), named] if named.any?
 
       via_caller = @methods.select { |item|
         upstream = Array(item["reachable_from"]).map { |name| bare(name) }
@@ -225,7 +225,7 @@ module JitCatch
       sent = via_caller.select { |item| Array(item["reachable_from"]).any? { |name| sent_to?(name, mentions) } }
       via_caller = sent unless sent.empty?
       pool = via_caller.empty? ? constructors : via_caller
-      [most_downstream(pool), pool]
+      [best_guess(pool), pool]
     end
 
     # A test that names the class it sends a method to (`Index.parse`,
@@ -316,12 +316,15 @@ module JitCatch
     # A catching test passed on the old code, so a method that already existed
     # outranks one the diff only added. Among those, the method furthest
     # downstream (the one other changed methods call into) is the usual source
-    # of the new value.
-    def most_downstream(items)
+    # of the new value. Between two that no changed method links, the one
+    # above more changed code is the likelier: a test that names a setup call
+    # and the call it checks reaches the change through the second.
+    def best_guess(items)
       items.min_by do |item|
         others = items.reject { |other| other["id"] == item["id"] }
         covered = others.count { |other| Array(item["reachable_from"]).include?(other["name"]) }
-        [preference(item), -covered, item["id"].to_s]
+        below = @methods.count { |other| Array(other["reachable_from"]).include?(item["name"]) }
+        [preference(item), -covered, -below, item["id"].to_s]
       end
     end
 

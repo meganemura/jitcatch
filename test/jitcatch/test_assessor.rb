@@ -359,6 +359,28 @@ class TestAssessor < Minitest::Test
     assert_equal({ "dynamic_call" => nil }, JitCatch::Assessor.apply(doc)["tests"].fetch(2).slice("dynamic_call"))
   end
 
+  # From quint_driver's history: a test names Quint.simulate, to make the
+  # traces, and Trace.replay, the call it checks. Only replay reaches the
+  # changed code below it.
+  def test_a_guess_between_named_methods_picks_the_one_above_more_changed_code
+    named = ->(id, bare) { method(id, "modified", "same", bare, [], 0).merge("name" => "Q.#{bare}") }
+    below = ->(id, change, bare, reachable) { method(id, change, "same", bare, reachable, 0).merge("name" => "A.#{bare}") }
+    doc = {
+      "methods" => [
+        below.call("m02", "modified", "drive", ["Q.replay"]),
+        below.call("m04", "added", "raised_in", ["A.drive", "Q.replay"]),
+        named.call("m05", "simulate"),
+        named.call("m06", "replay")
+      ],
+      "constants" => [],
+      "tests" => [candidate("t01", "StepErrorTest#test_names_no_frame", ["Q.replay", "Q.simulate", "replay", "simulate"], failure("Expected: 1\n  Actual: 2"))]
+    }
+
+    row = JitCatch::Assessor.apply(doc)["tests"].fetch(0)
+
+    assert_equal ["m06", %w[m05 m06]], row.values_at("method_id", "method_ids")
+  end
+
   def method(id, change, signature, bare, reachable, start_line)
     {
       "id" => id,
