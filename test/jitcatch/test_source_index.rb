@@ -77,6 +77,14 @@ class TestSourceIndex < Minitest::Test
     assert_operator call.line, :>, 0
   end
 
+  # A test may hold a byte string that is not valid UTF-8; it names no path.
+  def test_a_string_of_invalid_bytes_is_not_a_path
+    source = "class T\n  def test_bytes\n    run(\"bin/x\", \"\\xFF/\\xFE\")\n  end\nend\n"
+    index = JitCatch::SourceIndex.parse(source, file: "test/t.rb")
+
+    assert_equal ["bin/x"], index.paths_named("T#test_bytes", nil)
+  end
+
   def test_calls_name_the_enclosing_method_in_each_singleton_context
     source = <<~RUBY
       module Shop

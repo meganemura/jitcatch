@@ -675,7 +675,7 @@ def record_generated(arg, qualifier, bare, visibility, singleton, macro, source)
         refer(enclosing, node.unescaped)
       when Prism::StringNode
         text = node.unescaped
-        @paths[enclosing] << text if text.match?(PATH_LIKE)
+        @paths[enclosing] << text if text.valid_encoding? && text.match?(PATH_LIKE)
       when Prism::LocalVariableWriteNode
         built = built_constants(node.value).uniq
         @local_classes[[enclosing, node.name.to_s]] << (built.size == 1 ? built.first : nil)
