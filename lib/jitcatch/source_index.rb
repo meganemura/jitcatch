@@ -550,7 +550,7 @@ module JitCatch
     # so it narrows nothing.
     def callback_contexts(value)
       values = value.is_a?(Prism::ArrayNode) ? value.elements : [value]
-      return nil if value.nil? || values.empty? || !values.all?(Prism::SymbolNode)
+      return nil if values.empty? || !values.all?(Prism::SymbolNode)
 
       values.map(&:unescaped)
     end

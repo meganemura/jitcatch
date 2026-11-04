@@ -757,4 +757,24 @@ class TestSourceIndexExamples < Minitest::Test
       ["Loan", "after_commit", "log", "after_commit :log"]
     ], index.callbacks.map { |callback| callback.to_h.values_at(:qualifier, :macro, :method, :declared) }
   end
+
+  # An `on:` that names no context as a symbol could be any context, so it
+  # narrows nothing and the line does not show it.
+  def test_an_on_that_names_no_symbol_narrows_nothing
+    source = <<~RUBY
+      class Loan < ApplicationRecord
+        validate :named, on: KINDS
+        validate :listed, on: [:create, kind]
+        validate :empty, on: []
+        validate :created, on: :create
+      end
+    RUBY
+
+    callbacks = JitCatch::SourceIndex.parse(source, file: "app/models/loan.rb").callbacks
+
+    all = JitCatch::SourceIndex::RECORD_CALLBACKS.fetch(:validate)
+    assert_equal [[nil, "validate :named", all], [nil, "validate :listed", all], [nil, "validate :empty", all]],
+      callbacks.first(3).map { |callback| [callback.contexts, callback.declared, callback.calls] }
+    assert_equal [["create"], %w[#invalid? #save #save! #valid? #validate #validate! .create .create!]], [callbacks.last.contexts, callbacks.last.calls.sort]
+  end
 end
