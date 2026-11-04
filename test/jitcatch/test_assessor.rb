@@ -24,6 +24,26 @@ class TestAssessor < Minitest::Test
       out["tests"].map { |test| [test["disposition"], test["tags"].find { |tag| tag.start_with?("discard:", "report") }] }
   end
 
+  # A row that timed out or found no database on either side compared
+  # nothing; a fail_on_base row whose base could not reach its database is one.
+  def test_counts_the_rows_that_did_not_run_to_a_result_on_both_sides
+    no_database = error("ActiveRecord::NoDatabaseError", "Database not found: loans_test1.")
+    doc = {
+      "methods" => [method("m01", "modified", "same", "approve!", [], 1)], "constants" => [], "tests_dir" => "candidates",
+      "tests" => [
+        candidate("t01", "Loan#approve! approves", ["approve!"], timeout_result),
+        { "id" => "t02", "name" => "Loan#approve! opens", "file" => "candidates/loan_test.rb", "classification" => "fail_on_base",
+          "base" => no_database.merge("status" => "error"), "head" => { "status" => "pass" } },
+        candidate("t03", "Loan#approve! reaches", ["approve!"], error("ActiveRecord::ConnectionNotEstablished", "connection to server failed"))
+      ]
+    }
+
+    assert_equal 3, JitCatch::Assessor.apply(doc)["untested"]
+    doc["tests"] << candidate("t04", "Loan#approve! refuses", ["approve!"], error("ActiveRecord::RecordInvalid", "Validation failed"))
+    assert_equal 3, JitCatch::Assessor.apply(doc)["untested"]
+    assert_equal 0, JitCatch::Assessor.apply(doc.merge("tests" => []))["untested"]
+  end
+
   # A base that timed out might have passed with more time, so its row
   # says nothing about the change, whatever head did.
   def test_discards_a_row_whose_base_timed_out

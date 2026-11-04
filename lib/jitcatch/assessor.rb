@@ -55,8 +55,25 @@ module JitCatch
       assign_candidate_ids(tests)
       @doc.merge(
         "tests" => tests,
-        "counts" => counts(tests)
+        "counts" => counts(tests),
+        "untested" => tests.count { |test| self.class.untested?(test) }
       )
+    end
+
+    # A row whose side timed out or found no database says nothing about
+    # the change, whatever its classification.
+    def self.untested?(test)
+      %w[base head].any? { |side|
+        result = test[side] || {}
+        result["status"] == "timeout" || result["error_class"] == "Timeout" || NO_DATABASE.include?(result["error_class"])
+      }
+    end
+
+    # Rows that each say nothing about the change are a run that tested
+    # nothing, which must not read like a change with no finding.
+    def self.untested_run?(doc)
+      generated = Array(doc["tests"]).size
+      generated.positive? && doc["untested"] == generated
     end
 
     private

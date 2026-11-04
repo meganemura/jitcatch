@@ -211,7 +211,7 @@ bin/jitcatch assess --json run.json
 | 0 | コマンドは完了した。候補が見つかっても 0 のまま。 |
 | 1 | 使い方の誤り。 |
 | 2 | git の失敗。 |
-| 3 | `run` は行を出さずに止まった。ある側がセットアップの確認に失敗したか、どちらの側でも候補ファイルが 1 つも読み込めなかった。 |
+| 3 | `run` は何もテストしなかった。ある側がセットアップの確認に失敗したか、どちらの側でも候補ファイルが 1 つも読み込めなかったか、すべての行がある側でタイムアウトしたかデータベースが見つからなかった。 |
 
 ### 結果
 
@@ -366,6 +366,13 @@ Run that command in a checkout of that side, fix what it says (often `bundle ins
 `assess` はこの文書を受け付けない。
 プロセスに渡す環境変数は、決まった一覧と `--env` で名前を挙げたものだけである。
 失敗した側は、今の環境にあって `--env` で渡していない Bundler の設定（`BUNDLE_WITHOUT`、`BUNDLE_PATH` などの `BUNDLE_` で始まる変数）を `not passed:` の行（`--json` では `not_passed`）で名指しする。
+
+どの行も変更について何も言えないまま、行を出して終わる `run` もある。
+すべての行が、ある側でタイムアウトしたか、ある側でデータベースが見つからなかった（base か head での `NoDatabaseError`、`ConnectionNotEstablished`、`DatabaseConnectionError`）場合である。
+このような `run` は何もテストしていないので、やはり終了コード 3 で終わり、指摘の無い変更のようには読めない。
+テキストは `jitcatch: no row ran to a result on both sides (6 of 6 timed out or found no database), so this run cannot tell base from head` の行で始まり、そのあとにいつもの報告が続くので、各行のヒントも残る。
+`--json` はいつもの run の文書を出し、その `untested` は、どの run でもそのような行の数を数える。
+終了コード 3 は、`untested` が行の数と等しいことを意味する。
 
 実行されるのは `*_test.rb`、`test_*.rb`、`*_spec.rb` である。
 その名前が 1 つも無いときは、すべての `.rb` を実行する。

@@ -52,6 +52,7 @@ module JitCatch
 
     def run_text(doc)
       lines = []
+      lines << untested_line(doc) if Assessor.untested_run?(doc)
       lines << "jitcatch run"
       lines << "version #{doc["version"]}"
       lines << "base #{doc["base"]}"
@@ -261,6 +262,10 @@ module JitCatch
       first, *rest = message_lines(base)
       outcome = [base["status"], base["error_class"], first].reject { |part| part.to_s.empty? }
       ["    base: #{outcome.join(" ")}", *rest.map { |line| "      #{line}" }]
+    end
+
+    def untested_line(doc)
+      "jitcatch: no row ran to a result on both sides (#{doc["untested"]} of #{doc["tests"].size} timed out or found no database), so this run cannot tell base from head"
     end
 
     def timeout_lines(test, seconds)

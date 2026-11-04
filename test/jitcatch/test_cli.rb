@@ -154,6 +154,33 @@ class TestCLI < Minitest::Test
     end
   end
 
+  # A run whose every file timed out compared nothing, so it must not read
+  # like a clean change.
+  def test_run_exits_3_when_every_row_timed_out
+    with_repo do |repo|
+      repo.write("lib/flag.rb", %(module Flag\n  def self.ok = ENV.fetch("JITCATCH_SLOW_SERVICE", "") != ""\nend\n))
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("README.md", "head\n")
+      repo.commit("Touch readme.", date: "2026-02-12T00:00:00Z")
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, { "slow_test.rb" => %(require "minitest/autorun"\nrequire "flag"\n\nclass SlowTest < Minitest::Test\n  def test_slow\n    sleep 60\n    assert Flag.ok\n  end\nend\n) })
+
+      out, err, status = with_parent_env("JITCATCH_SLOW_SERVICE" => "on", "HTTPS_PROXY" => "http://proxy.invalid:3128") do
+        cli("run", "--repo", repo.dir, "--timeout", "1", "base", "HEAD", tests)
+      end
+
+      assert_equal [3, ""], [status, err]
+      assert_equal "jitcatch: no row ran to a result on both sides (1 of 1 timed out or found no database), so this run cannot tell base from head\n", out.lines.first
+
+      json, _err, json_status = with_parent_env("JITCATCH_SLOW_SERVICE" => "on", "HTTPS_PROXY" => "http://proxy.invalid:3128") do
+        cli("run", "--json", "--repo", repo.dir, "--timeout", "1", "--env", "JITCATCH_SLOW_SERVICE", "base", "HEAD", tests)
+      end
+      doc = JSON.parse(json)
+      assert_equal [3, 1], [json_status, doc["untested"]]
+    end
+  end
+
   def test_assess_rejects_a_run_that_stopped_on_setup
     Dir.mktmpdir("jitcatch-assess-") do |dir|
       path = File.join(dir, "run.json")
@@ -201,6 +228,17 @@ class TestCLI < Minitest::Test
       assert_includes text, "  Lower n for the café.\n"
       assert_includes text, "# café ?\n"
     end
+  end
+
+  # Only the names under test, so the result does not depend on the
+  # proxy or certificate settings of the machine that runs the suite.
+  def with_parent_env(names)
+    saved = ENV.to_h
+    ENV.keys.grep(/proxy|\ASSL_CERT_|\ANODE_EXTRA_CA_CERTS\z/i).each { |key| ENV.delete(key) }
+    names.each { |key, value| ENV[key] = value }
+    yield
+  ensure
+    ENV.replace(saved)
   end
 
   def cli(*args)

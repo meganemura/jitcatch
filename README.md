@@ -150,7 +150,7 @@ bin/jitcatch assess --json run.json
 | 0 | The command finished. A run that found candidates still exits 0. |
 | 1 | Usage error. |
 | 2 | Git error. |
-| 3 | `run` stopped with no rows: a side failed its setup check, or no candidate file loaded on either side. |
+| 3 | `run` tested nothing: a side failed its setup check, no candidate file loaded on either side, or every row timed out or found no database on a side. |
 
 ### Results
 
@@ -195,6 +195,8 @@ Run that command in a checkout of that side, fix what it says (often `bundle ins
 A side can pass that check and still fail to boot what every candidate requires, such as a Rails app whose test database does not exist. When every file is a `<file>#load` row that errored on both sides, no row can tell base from head, so `run` stops with exit status 3 too. The first line is then `jitcatch: every candidate file failed to load on both sides, so no row can tell base from head`, and each side has a `load base failed:` line with the first file's rerun command and the error under it.
 
 The text goes to stderr. With `--json`, stdout holds `{"command": "run", "error": "setup_failed", "stage", "base", "head", "setup_failed": [{"side", "commit", "command", "stderr", "not_passed"}]}` instead, where `stage` is `setup` or `load`. `assess` refuses that document. The process keeps only a fixed list of environment variables and the ones named with `--env`. A failed side names each Bundler setting (`BUNDLE_WITHOUT`, `BUNDLE_PATH`, and other `BUNDLE_` variables) set in your environment that `--env` did not pass, on the `not passed:` line (`not_passed` in `--json`).
+
+A run can also finish with rows that each say nothing about the change: every row timed out on a side, or found no database there (`NoDatabaseError`, `ConnectionNotEstablished`, `DatabaseConnectionError` on base or head). Such a run tested nothing, so it exits 3 too and must not read as a change with no finding. Its text starts with `jitcatch: no row ran to a result on both sides (6 of 6 timed out or found no database), so this run cannot tell base from head`, followed by the usual report, so each row keeps its hint. `--json` prints the usual run document, and its `untested` field counts those rows in every run; exit 3 means `untested` equals the number of rows.
 
 Files named `*_test.rb`, `test_*.rb`, or `*_spec.rb` run. When none have those names, every `.rb` file runs. At most 40 files run. A test that passes on base and fails, errors, or times out on head is a candidate. So is one that times out on base and does not pass on head, since base might pass with more time; the timeout rule below discards it. `--reruns` repeats candidates on head. One disagreement makes the test `flaky`. The comparison reads the whole failure message. It masks the name directly under the temp directory, an object address (`#<Class:0x00007f...>`), and a time of day with its date (`created_at: "2026-11-04 19:02:03.212197000 +0000"`), so a `Dir.mktmpdir` path, a new anonymous class, or the time a record was saved in a message is not a disagreement. A date alone is not masked. The rerun line shows the first message line that moved. The text report prints each rerun under a `flaky` row, and the JSON row keeps them in `reruns`. A timeout is not rerun.
 
