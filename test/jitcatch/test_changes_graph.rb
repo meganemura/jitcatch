@@ -206,6 +206,16 @@ class TestChangesGraph < Minitest::Test
           def either(format)
             format == "plain" ? Plain : format
           end
+
+          def early(format, text)
+            returned(format).render(text)
+          end
+
+          def returned(format)
+            return Plain if format == "plain"
+
+            Fancy
+          end
         end
       SRC
       repo.write("lib/leaf.rb", leaf.sub("BODY", "text"))
@@ -218,6 +228,7 @@ class TestChangesGraph < Minitest::Test
       doc = JitCatch::Changes.between(repo.dir, "base", "HEAD")
 
       assert_equal [["Fancy.render", ["Emit.render"]]], doc["methods"].map { |method| method.values_at("name", "reachable_from") }
+      assert_equal %w[Emit.early Emit.looked_up Emit.mixed], doc["methods"].fetch(0)["dynamic_callers"].map { |caller| caller["from"] }
     end
   end
 

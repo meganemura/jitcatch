@@ -435,6 +435,19 @@ def test_a_named_receiver_names_its_class_and_a_let_names_no_method
   refute_includes index.example_references(8), "Index.parse"
 end
 
+  def test_only_a_let_or_subject_symbol_names_a_spec_helper
+    source = <<~SPEC
+      RSpec.describe Cart do
+        subject { described_class.new }
+
+        it("totals") { expect(subject).to respond_to(:total) }
+      end
+    SPEC
+    index = JitCatch::SourceIndex.parse(source, file: "cart_spec.rb")
+
+    assert_includes index.example_references(4), "total"
+  end
+
   def test_a_line_with_no_example_reads_nothing
     assert_nil index.example_references(3)
     assert_nil index.example_references(13)

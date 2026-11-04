@@ -334,6 +334,31 @@ class TestAssessor < Minitest::Test
     assert_equal %w[discarded discarded discarded reported reported reported], out
   end
 
+  # A call the test sends to a named class reaches only what that class's
+  # method reaches, and a changed method it names is not its own caller.
+  def test_a_named_receiver_picks_the_callees_of_its_class_s_method
+    doc = {
+      "methods" => [
+        method("m01", "modified", "same", "loud", ["Emit.render"], 1).merge("name" => "Fancy.loud"),
+        method("m02", "modified", "same", "plain", ["Plain.render"], 10).merge("name" => "Plain.plain"),
+        method("m03", "modified", "same", "render", [], 20).merge("name" => "Index.render")
+      ],
+      "constants" => [],
+      "tests" => [
+        candidate("t01", "EmitTest#test_render", %w[Emit.render render], failure("x")),
+        candidate("t02", "IndexTest#test_render", %w[Index.render render], failure("x")),
+        { "id" => "t03", "file" => "ok_test.rb", "name" => "OkTest#test_ok", "mentions" => %w[Emit.render render], "classification" => "no_signal",
+          "base" => pass_result, "head" => pass_result }
+      ]
+    }
+
+    rows = JitCatch::Assessor.apply(doc)["tests"].to_h { |test| [test["id"], test.values_at("method_id", "method_ids", "tags")] }
+
+    assert_equal ["m01", %w[m01], %w[assertion report touches:unchanged_caller]], rows["t01"]
+    assert_equal ["m03", %w[m03], %w[assertion report touches:changed_method]], rows["t02"]
+    assert_equal({ "dynamic_call" => nil }, JitCatch::Assessor.apply(doc)["tests"].fetch(2).slice("dynamic_call"))
+  end
+
   def method(id, change, signature, bare, reachable, start_line)
     {
       "id" => id,

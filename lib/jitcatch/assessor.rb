@@ -237,8 +237,6 @@ module JitCatch
     def sent_to_named_receivers(items, mentions)
       items.group_by { |item| bare(item["name"]) }.flat_map do |_name, group|
         receivers = receivers_of(group.first["name"].to_s, mentions)
-        next group if receivers.empty?
-
         hits = group.select { |item| sent_to?(item["name"].to_s, mentions) }
         hits.empty? && @callers.none? { |name| on_receiver?(name, receivers) } ? group : hits
       end

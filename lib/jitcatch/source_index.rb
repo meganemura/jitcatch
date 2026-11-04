@@ -91,7 +91,6 @@ module JitCatch
       @spec_blocks = []
       @defined = Hash.new { |hash, key| hash[key] = [] }
       @described = []
-      @spec_helpers = []
       @returned = {}
     end
 
