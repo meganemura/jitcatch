@@ -14,6 +14,7 @@ class TestFactories < Minitest::Test
           factory :inner
         end
         factory "admin/api_key", class: :"billing/plan"
+        factory :lost, parent: :nowhere
       end
     RUBY
 
@@ -24,7 +25,8 @@ class TestFactories < Minitest::Test
       ["child", nil, 3, "parent: is not a symbol or a string"],
       ["nested", nil, 4, "class: is not a constant, a string, or a symbol"],
       ["inner", nil, 5, "class: is not a constant, a string, or a symbol"],
-      ["admin/api_key", "Billing::Plan", 7, nil]
+      ["admin/api_key", "Billing::Plan", 7, nil],
+      ["lost", nil, 8, "its parent :nowhere is not a factory read here"]
     ], found
   end
 

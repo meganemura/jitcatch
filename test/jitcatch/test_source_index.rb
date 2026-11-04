@@ -346,7 +346,7 @@ class TestSourceIndex < Minitest::Test
         let(:loan) { create(:loan, :approved) }
 
         it("lists") { FactoryBot.build_list("ledger", 2) && build_stubbed(:debt) }
-        it("names") { create(kind) && attributes_for(:credit) && Other.create(:loan) }
+        it("names") { create(kind) && attributes_for(:credit) && Other.create(:credit) && Other::Deep.create(:other) }
       end
     RUBY
     own = <<~'RUBY'
@@ -360,6 +360,26 @@ class TestSourceIndex < Minitest::Test
     assert_equal %w[factory(:debt) factory(:ledger) factory(:loan)], index.example_references(4).grep(/\Afactory\(/)
     assert_equal ["factory(:loan)"], index.example_references(5).grep(/\Afactory\(/)
     assert_equal [], JitCatch::SourceIndex.parse(own, file: "test/own_test.rb").referenced_names("OwnTest#test_own").grep(/\Afactory\(/)
+    assert_includes JitCatch::SourceIndex.parse("create(:loan)\n", file: "spec/top_spec.rb").referenced_names(""), "factory(:loan)"
+  end
+
+  def test_names_sent_only_to_constants_follow_the_scope_of_the_mentions
+    source = <<~'RUBY'
+      class WriteTest
+        def test_file = File.write(path, 1) && Cart.new.total
+        def test_writer = writer.write(1) && File.write(path, 1)
+      end
+
+      RSpec.describe Cart do
+        it("reads") { Dir.mktmpdir }
+      end
+    RUBY
+    index = JitCatch::SourceIndex.parse(source, file: "test/write_test.rb")
+
+    assert_equal({ "new" => ["Cart"], "write" => ["File"] }, index.names_sent_only_to_constants("WriteTest#test_file", nil))
+    assert_equal({}, index.names_sent_only_to_constants("WriteTest#test_writer", nil))
+    assert_equal({ "mktmpdir" => ["Dir"] }, index.names_sent_only_to_constants("", 7))
+    assert_equal({ "mktmpdir" => ["Dir"], "new" => ["Cart"] }, index.names_sent_only_to_constants("WriteTest#test_missing", nil))
   end
 
   def test_a_hash_key_symbol_is_not_a_mention_and_a_reflective_call_is
