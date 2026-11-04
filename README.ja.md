@@ -432,6 +432,7 @@ Ruby 自身の prefix は `{ruby}/` と書く。
 候補のパスは、リポジトリのルートから届く形で書く。
 `TESTS_DIR` がリポジトリの外にあっても、ルートからのパス（`../catch/tests/cart_test.rb`）になる。
 そのため、出たとおりに実行でき、この行はどの手元のディレクトリも含まない。
+ただし、ホームディレクトリの奥のチェックアウトから `/tmp` の下のディレクトリへのように、ルートからのパスが絶対パスより長くなるときは、この行と `require_relative` の警告は絶対パス（`/tmp/catch/cart_test.rb`）を出す。
 `run` は各チェックアウトのルートに置いた `TESTS_DIR` の写しから候補を読み込む。
 そのため、`TESTS_DIR` の外へ出る `require_relative` は、実行ではチェックアウトのファイルを指し、この行からは `TESTS_DIR` の隣のファイルを指す。
 `TESTS_DIR` がルートの直下にない限り二つは食い違うので、そのとき `run` はその行と二つのファイルを `warning:` に出す（`a_test.rb:2 require_relative "../lib/a" loads lib/a.rb in the run but ../base/lib/a.rb from the rerun line`）。

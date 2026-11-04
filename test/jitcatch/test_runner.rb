@@ -419,6 +419,41 @@ class TestRunner < Minitest::Test
     end
   end
 
+  # When the path from the root climbs further than the absolute path is
+  # long, as from a checkout deep in a home directory to a scratch
+  # directory under /tmp, the rerun line and the warnings name the
+  # absolute path instead.
+  def test_a_tests_directory_far_from_the_root_is_named_by_its_absolute_path
+    with_repo do |repo|
+      repo.write("lib/a.rb", "module A; def self.f = 1; end\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/a.rb", "module A; def self.f = 2; end\n")
+      repo.commit("Return 2.", date: "2026-02-12T00:00:00Z")
+      source = { "a_test.rb" => candidate_source("ATest", "test_f", "assert_equal 1, A.f").sub('require "calc"', 'require_relative "../lib/a"') }
+      Dir.mktmpdir("jitcatch-deep-") do |deep|
+        clone = File.join(deep, "a", "b", "c", "d", "app")
+        repo.git("clone", "--quiet", repo.dir, clone)
+        repo.git("-C", clone, "branch", "--quiet", "base", "origin/base")
+        Dir.mktmpdir("jc-") do |outside|
+          tests = File.join(outside, "catch")
+          write_tests(tests, source)
+          FileUtils.mkdir_p(File.join(outside, "lib"))
+          File.write(File.join(outside, "lib", "a.rb"), "module A; def self.f = 2; end\n")
+          absolute = File.realpath(outside)
+
+          doc = JitCatch::Assessor.apply(JitCatch::Runner.run(clone, "base", "HEAD", tests, reruns: 0))
+
+          assert_equal "ruby -Ilib -I. #{absolute}/catch/a_test.rb -n ATest#test_f", doc["tests"].fetch(0)["rerun"]
+          assert_equal "#{absolute}/catch", doc["tests_dir"]
+          assert_includes doc["warnings"].fetch(0), "loads lib/a.rb in the run but #{absolute}/lib/a.rb from the rerun line"
+          output, status = Open3.capture2e(*Shellwords.split(doc["tests"].fetch(0)["rerun"]), chdir: clone)
+          refute status.success?, output
+        end
+      end
+    end
+  end
+
   def test_a_removed_method_that_unchanged_code_still_calls_is_reported
     with_repo do |repo|
       inherited_history(repo)

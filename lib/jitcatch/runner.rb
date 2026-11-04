@@ -558,7 +558,6 @@ module JitCatch
 # and the rerun line from TESTS_DIR, so a require_relative that leaves
 # TESTS_DIR resolves to two files unless TESTS_DIR sits at the root.
     def require_warnings(files)
-      root = Pathname(File.realpath(@git.dir))
       tests = File.realpath(@tests_dir)
       # From a directory directly under the root, a path that stays in
       # TESTS_DIR and one that leaves it each name one file either way.
@@ -573,7 +572,7 @@ module JitCatch
 
           path = required.path.end_with?(".rb") ? required.path : "#{required.path}.rb"
           in_run = Pathname(File.expand_path(path, File.dirname(File.join("/.jitcatch", relative)))).relative_path_from(Pathname("/")).to_s
-          in_rerun = Pathname(File.expand_path(path, File.dirname(File.join(tests, relative)))).relative_path_from(root).to_s
+          in_rerun = from_root(File.expand_path(path, File.dirname(File.join(tests, relative))))
           next if in_run.start_with?(".jitcatch/") || in_run == in_rerun
 
           "#{relative}:#{required.line} require_relative #{required.path.inspect} loads #{in_run} in the run but #{in_rerun} from the rerun line, so that line may not reproduce the row. Load the repository's code with `require` and the rerun line's -I, or put TESTS_DIR directly under the repository root."
@@ -593,7 +592,16 @@ module JitCatch
     # is named by its path from there, outside the repository too: a quoted
     # line then names no directory of one machine.
     def tests_from_root
-      @tests_from_root ||= Pathname(File.realpath(@tests_dir)).relative_path_from(Pathname(File.realpath(@git.dir))).to_s
+      @tests_from_root ||= from_root(File.realpath(@tests_dir))
+    end
+
+    # A path outside the repository is named from the root while that is
+    # shorter than its absolute path, as `../catch` beside the checkout is.
+    # A climb out of a checkout deep in a home directory to a directory
+    # under /tmp is longer than the absolute path, and says less.
+    def from_root(full)
+      relative = Pathname(full).relative_path_from(Pathname(File.realpath(@git.dir))).to_s
+      relative.start_with?("../") && full.length < relative.length ? full : relative
     end
 
     def assign_test_ids(rows)
