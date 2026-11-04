@@ -298,6 +298,8 @@ destroy のコールバックには `Loan#destroy` と `Loan#destroy!` が出る
 そのようなコールバックから届くメソッド（`reachable_from`）にも同じ行が出る。
 テスト以外のメソッドがソースに書いた形でその呼び出しをするとき（`LoanDesk.open` の中の `Loan.create!` や、`Loan` のメソッドの中の `update!`）、そのメソッドとその呼び出し元が `reachable_from` に加わる。
 そのため `LoanDesk.open` を呼ぶテストはそのコールバックを指す。
+引数のように、ソースが型を決めないローカル変数への呼び出しは、Rails がその名前から決めるモデルへの呼び出しとして読む。
+そのため `Teller#renew(loan)` の中の `loan.save!` は `Loan` の save のコールバックに届き、`record.save!` はどれにも届かない。
 その `tests:` には、grep の結果に加えて、そのどれかを呼ぶテストファイルが出る（`spec/models/loan_spec.rb via Loan.create!`）。
 `run` はその呼び出しをそのメソッドへの言及として数える。
 `Loan#save` は、テストのソースからレコードのクラスが決まるとき（`loan = Loan.new`）に数える。

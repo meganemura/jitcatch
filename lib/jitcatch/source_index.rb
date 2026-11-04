@@ -666,7 +666,7 @@ module JitCatch
 
         built = @local_classes[[call.enclosing, call.receiver.const]].uniq
         typed = built.size == 1 && built.first
-        call.with(receiver: typed ? Receiver.new(kind: "instance", const: typed) : UNKNOWN_RECEIVER)
+        typed ? call.with(receiver: Receiver.new(kind: "instance", const: typed)) : call
       end
     end
 

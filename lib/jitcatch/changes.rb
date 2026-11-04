@@ -10,6 +10,8 @@ module JitCatch
     ENTRY_CAP = 12
     UPSTREAM_DEPTH = 4
     RECORD_BUILDERS = %w[create create! build].freeze
+    # A local keeps its name when the source does not type it.
+    UNTYPED_RECEIVERS = %w[unknown local].freeze
 
     # The classes and modules head defines, after `build`.
     attr_reader :head_constants
@@ -364,7 +366,7 @@ module JitCatch
         idx = method["change"] == "removed" ? base_idx : head_idx
         names = [node.qualified, *method["reachable_from"]].to_h { |name| [SourceIndex.split_qualified(name).last, name] }
         callers = idx["calls"].filter_map do |call|
-          next unless call.receiver.kind == "unknown" && names.key?(call.bare_name) && call.enclosing && !test_file?(call.file)
+          next unless UNTYPED_RECEIVERS.include?(call.receiver.kind) && names.key?(call.bare_name) && call.enclosing && !test_file?(call.file)
           next if call.enclosing == node.qualified || method["reachable_from"].include?(call.enclosing)
 
           { "from" => call.enclosing, "name" => call.bare_name }
@@ -497,7 +499,10 @@ module JitCatch
     # Each call outside the tests as the repository's code writes it, with
     # the method that makes it: `Loan.create!` in `LoanDesk.open`, or
     # `Loan#update!` for `update!` inside a method of `Loan`. A written
-    # `Loan` names `Shop::Loan` as it does in a test.
+    # `Loan` names `Shop::Loan` as it does in a test. A local the source
+    # does not type, such as a parameter, is read as the model Rails names
+    # it after: `loan.save!` as `Loan#save!`. Only a save reads it, since a
+    # record call has no meaning on another class.
     def app_calls(idx)
       idx["calls"].filter_map { |call|
         next if call.enclosing.nil? || test_file?(call.file)
@@ -514,6 +519,7 @@ module JitCatch
       when "self" then "#{qualifier}#{sep}#{call.bare_name}"
       when "singleton" then "#{receiver.const}.#{call.bare_name}"
       when "instance" then "#{receiver.const}##{call.bare_name}"
+      when "local" then "#{receiver.const.split("_").map(&:capitalize).join}##{call.bare_name}"
       end
     end
 

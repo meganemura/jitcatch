@@ -766,7 +766,8 @@ class TestChanges < Minitest::Test
 
   # A save the repository's own code makes runs the callback as a test's
   # save does, so the method that makes it, and that method's callers,
-  # reach the callback.
+  # reach the callback. A local the source does not type, such as a
+  # parameter, is read as the model Rails names it after (`loan` as Loan).
   def test_a_repository_method_that_saves_reaches_the_callback
     with_repo do |repo|
       callback_history(repo)
@@ -777,12 +778,13 @@ class TestChanges < Minitest::Test
           def self.open_two = [open(1), open(2)]
         end
       RUBY
-      repo.write("lib/teller.rb", "class Teller\n  def renew(loan)\n    loan.save!\n  end\n\n  def close = Loan.new.destroy\nend\n")
+      repo.write("lib/teller.rb", "class Teller\n  def renew(loan)\n    loan.save!\n  end\n\n  def file(record) = record.save!\n\n  def close = Loan.new.destroy\nend\n")
+      repo.write("lib/branch.rb", "class Branch\n  def renew_all(loans) = loans.each { |loan| Teller.new.renew(loan) }\nend\n")
       repo.commit("desk", date: "2026-02-13T00:00:00Z")
 
       by_name = JitCatch::Changes.between(repo.dir, "base", "HEAD")["methods"].to_h { |method| [method["name"], method] }
 
-      assert_equal %w[LoanDesk.open LoanDesk.open_two], by_name["Loan#count_save"]["reachable_from"]
+      assert_equal %w[Branch#renew_all LoanDesk.open LoanDesk.open_two Teller#renew], by_name["Loan#count_save"]["reachable_from"]
       assert_equal %w[Loan#archive Teller#close], by_name["Loan#archived_mark"]["reachable_from"]
     end
   end
