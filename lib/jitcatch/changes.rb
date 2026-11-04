@@ -378,7 +378,7 @@ module JitCatch
       entry_points.each do |name|
         qualifier, _sep, bare = SourceIndex.split_qualified(name)
         owner = qualifier.split("::").last
-        call = /\.#{Regexp.escape(bare)}\b/
+        call = /\.#{called(bare)}/
         named = owner && /\b#{Regexp.escape(owner)}\b(?!::)/
         test_sources.each do |file, source|
           found[file] << name if source.match?(call) && (named.nil? || source.match?(named))
@@ -403,12 +403,18 @@ module JitCatch
     def grep_hits(test_sources, bare)
       return [] if bare.nil? || bare.length < 3
 
-      pattern = /\b#{Regexp.escape(bare)}\b/
+      pattern = /\b#{called(bare)}/
       test_sources.filter_map { |file, source|
         next unless source.match?(pattern)
 
         { "file" => file, "via" => "grep" }
       }.sort_by { |hit| hit["file"] }.first(TEST_CAP)
+    end
+
+    # A method name can end in `!` or `?`, where `\b` cannot follow, and
+    # `save` is not a call of `save!`.
+    def called(bare)
+      "#{Regexp.escape(bare)}(?![\\w?!])"
     end
 
     def test_sources_for(base_idx, head_idx)

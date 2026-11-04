@@ -246,6 +246,48 @@ class TestChanges < Minitest::Test
     end
   end
 
+  # Rails models name their state changes `approve!` and their questions
+  # `approved?`; a word boundary after `!` or `?` never matches.
+  def test_a_bang_or_predicate_method_finds_the_tests_that_call_it
+    with_repo do |repo|
+      loan = <<~RUBY
+        class Loan
+          def approve!
+            approved? ? :again : save!
+          end
+
+          def approved?
+            false
+          end
+
+          def save!
+            :saved
+          end
+
+          def review
+            approve!
+          end
+        end
+      RUBY
+      repo.write("app/models/loan.rb", loan)
+      repo.write("spec/models/loan_spec.rb", "loan = create(:loan)\nloan.approve!\nexpect(loan.approved?).to be true\n")
+      repo.write("spec/models/review_spec.rb", "Loan.new.review\n")
+      repo.write("spec/models/approve_spec.rb", "approve = :symbol_only\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("app/models/loan.rb", loan.sub(":saved", ":stored").sub("approved? ? :again", "approved? ? :twice").sub("    false\n", "    nil\n"))
+      repo.commit("Store loans.", date: "2026-02-12T00:00:00Z")
+
+      by_name = JitCatch::Changes.between(repo.dir, "base", "HEAD")["methods"].to_h { |method| [method["name"], method] }
+
+      assert_equal ["spec/models/loan_spec.rb"], by_name.fetch("Loan#approve!")["existing_tests"].map { |test| test["file"] }
+      assert_equal ["spec/models/loan_spec.rb"], by_name.fetch("Loan#approved?")["existing_tests"].map { |test| test["file"] }
+      save = by_name.fetch("Loan#save!")
+      assert_equal [], save["existing_tests"]
+      assert_equal [{ "file" => "spec/models/review_spec.rb", "entry_points" => ["Loan#review"] }], save["entry_point_tests"]
+    end
+  end
+
   def test_method_edit_includes_old_and_new_source_and_callsites
     with_repo do |repo|
       repo.write("lib/calc.rb", <<~RUBY)
