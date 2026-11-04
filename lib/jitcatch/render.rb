@@ -57,11 +57,7 @@ module JitCatch
       lines << "serial" if doc["serial"]
       lines << "env #{doc["env"].join(" ")}" unless doc["env"].to_a.empty?
       lines << "env_unset #{doc["env_unset"].join(" ")}" unless doc["env_unset"].to_a.empty?
-      doc.fetch("bundle", {}).each do |side, bundle|
-        next if bundle["status"] == "none"
-
-        lines << (bundle["message"].empty? ? "bundle #{side} #{bundle["status"]}" : "bundle #{side} #{bundle["status"]}: #{bundle["message"]}")
-      end
+      doc.fetch("bundle", {}).each { |side, bundle| lines << "bundle #{side} #{bundle}" unless bundle == "none" }
       lines << "test_files_omitted #{doc["test_files_omitted"]}" unless doc["test_files_omitted"].to_i.zero?
       lines << "tests:"
       if doc["tests"].empty?
@@ -80,6 +76,20 @@ module JitCatch
 
     def run_json(doc)
       doc
+    end
+
+    def setup_failed_text(doc)
+      lines = ["jitcatch: setup failed, so no test ran; a test cannot pass or fail on a side that cannot load"]
+      lines << "base #{doc["base"]}"
+      lines << "head #{doc["head"]}"
+      doc["setup_failed"].each do |failure|
+        lines << "setup #{failure["side"]} failed: #{failure["command"]}"
+        failure["stderr"].each { |line| lines << "  #{line}" }
+        names = failure["not_passed"]
+        lines << "  not passed: #{names.join(" ")} (add #{names.map { |name| "--env #{name}" }.join(" ")})" unless names.empty?
+      end
+      lines << "Run that command in a checkout of that side, fix what it says (often `bundle install` there), and run jitcatch again."
+      finish(lines)
     end
 
     def assess_text(doc)

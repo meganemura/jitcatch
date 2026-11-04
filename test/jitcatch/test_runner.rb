@@ -1390,7 +1390,7 @@ class TestRunner < Minitest::Test
       end
       assert_equal %w[pass pass pass], doc["tests"].map { |test| test["base"]["status"] }, doc["tests"].map { |test| test["base"]["message"] }.join("\n")
       assert_equal [%w[JITCATCH_PASS JITCATCH_UNSET], %w[JITCATCH_UNSET]], doc.values_at("env", "env_unset")
-      assert_equal({ "base" => { "status" => "none", "message" => "" }, "head" => { "status" => "none", "message" => "" } }, doc["bundle"])
+      assert_equal({ "base" => "none", "head" => "none" }, doc["bundle"])
     end
   end
 
@@ -1420,14 +1420,14 @@ class TestRunner < Minitest::Test
 
       doc = execute(repo, tests)
 
-      assert_equal({ "base" => { "status" => "ok", "message" => "" }, "head" => { "status" => "ok", "message" => "" } }, doc["bundle"])
+      assert_equal({ "base" => "ok", "head" => "ok" }, doc["bundle"])
       row = doc["tests"].fetch(0)
       assert_equal ["reported", "pass", "fail"], [row["disposition"], row["base"]["status"], row["head"]["status"]], row["head"]["message"]
       assert_includes JitCatch::Render.run_text(doc), "timeout_s 10\nbundle base ok\nbundle head ok\ntests:\n"
     end
   end
 
-  def test_reports_a_side_whose_locked_gems_are_not_installed
+  def test_stops_when_only_head_cannot_load_its_locked_gems
     with_repo do |repo|
       repo.write("lib/flag.rb", "module Flag; end\n")
       repo.commit("base", date: "2026-02-11T00:00:00Z")
@@ -1437,11 +1437,52 @@ class TestRunner < Minitest::Test
       tests = File.join(repo.dir, "candidates")
       write_tests(tests, { "flag_test.rb" => candidate_source("FlagTest", "test_flag", "assert true").sub('require "calc"', 'require "flag"') })
 
-      doc = without_bundler_settings { execute(repo, tests) }
+      # Run on, base passes and head cannot load, so the row read as a regression.
+      failures = without_bundler_settings { setup_failures(repo, tests) }
 
-      message = "Could not find gem 'jitcatch_absent_gem (= 9.9.9)' in locally installed gems."
-      assert_equal({ "base" => { "status" => "none", "message" => "" }, "head" => { "status" => "failed", "message" => message } }, doc["bundle"])
-      assert_includes JitCatch::Render.run_text(doc), "timeout_s 10\nbundle head failed: #{message}\ntests:\n"
+      assert_equal({ "head" => [["Could not find gem 'jitcatch_absent_gem (= 9.9.9)' in locally installed gems."], []] }, failures)
+    end
+  end
+
+  def test_stops_when_only_base_cannot_load_its_locked_gems
+    with_repo do |repo|
+      repo.write("lib/flag.rb", "module Flag; end\n")
+      repo.write("Gemfile", %(source "https://rubygems.org"\ngem "jitcatch_absent_gem", "9.9.9"\n))
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.git("rm", "-q", "Gemfile")
+      repo.commit("Drop the Gemfile.", date: "2026-02-12T00:00:00Z")
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, { "flag_test.rb" => candidate_source("FlagTest", "test_flag", "assert true").sub('require "calc"', 'require "flag"') })
+
+      failures = without_bundler_settings { setup_failures(repo, tests) }
+
+      assert_equal({ "base" => [["Could not find gem 'jitcatch_absent_gem (= 9.9.9)' in locally installed gems."], []] }, failures)
+    end
+  end
+
+  def test_stops_when_a_side_with_no_gemfile_cannot_load_the_frameworks
+    with_repo do |repo|
+      repo.write("lib/flag.rb", "module Flag\n  ON = true\nend\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/flag.rb", "module Flag\n  ON = false\nend\n")
+      repo.commit("Turn the flag off.", date: "2026-02-12T00:00:00Z")
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, {
+        "flag_spec.rb" => %(require "flag"\nRSpec.describe(Flag) { it("is on") { expect(Flag::ON).to be(true) } }\n),
+        "flag_test.rb" => candidate_source("FlagTest", "test_flag", "assert Flag::ON").sub('require "calc"', 'require "flag"')
+      })
+      gems = File.join(repo.dir, "no-gems")
+      FileUtils.mkdir_p(gems)
+
+      err = with_env("GEM_HOME" => gems, "GEM_PATH" => gems) {
+        assert_raises(JitCatch::EnvironmentError) { JitCatch::Runner.run(repo.dir, "base", "HEAD", tests, reruns: 0) }
+      }
+
+      stderr = ["rspec-core is not installed for this Ruby: gem install rspec-core", "minitest is not installed for this Ruby: gem install minitest"]
+      expected = ->(side, ref) { { "side" => side, "commit" => repo.git("rev-parse", ref).strip, "command" => %(ruby -e 'require "rspec/core"; require "minitest"'), "stderr" => stderr, "not_passed" => [] } }
+      assert_equal [expected.("base", "base"), expected.("head", "HEAD")], err.doc["setup_failed"]
     end
   end
 
@@ -1458,13 +1499,13 @@ class TestRunner < Minitest::Test
 
       failed, passed = without_bundler_settings do
         with_env("BUNDLE_WITHOUT" => "db", "BUNDLE_SILENCE_ROOT_WARNING" => "1") do
-          [execute(repo, tests, env: %w[BUNDLE_SILENCE_ROOT_WARNING]), execute(repo, tests, env: %w[BUNDLE_WITHOUT])].map { |doc| doc["bundle"]["head"]["message"] }
+          [setup_failures(repo, tests, env: %w[BUNDLE_SILENCE_ROOT_WARNING]), setup_failures(repo, tests, env: %w[BUNDLE_WITHOUT])].map { |failures| failures.fetch("head") }
         end
       end
 
-      assert_equal "Could not find jitcatch_absent_gem-9.9.9 in locally installed gems; not passed: BUNDLE_WITHOUT (add --env BUNDLE_WITHOUT)", failed
+      assert_equal [["Could not find jitcatch_absent_gem-9.9.9 in locally installed gems"], %w[BUNDLE_WITHOUT]], failed
       # Passed, the setting skips the absent gem, and the next check speaks.
-      assert_equal 'minitest is not in the bundle: add gem "minitest" to the Gemfile; not passed: BUNDLE_SILENCE_ROOT_WARNING (add --env BUNDLE_SILENCE_ROOT_WARNING)', passed
+      assert_equal [['minitest is not in the bundle: add gem "minitest" to the Gemfile'], %w[BUNDLE_SILENCE_ROOT_WARNING]], passed
     end
   end
 
@@ -1484,14 +1525,14 @@ class TestRunner < Minitest::Test
       tests = File.join(repo.dir, "candidates")
       write_tests(tests, { "flag_test.rb" => candidate_source("FlagTest", "test_flag", "assert true").sub('require "calc"', 'require "flag"') })
 
-      doc = without_bundler_settings { execute(repo, tests) }
+      failures = without_bundler_settings { setup_failures(repo, tests) }
 
       # The vendored gem loads and the db group is skipped, so the next check speaks.
-      assert_equal 'minitest is not in the bundle: add gem "minitest" to the Gemfile', doc["bundle"]["head"]["message"]
+      assert_equal [['minitest is not in the bundle: add gem "minitest" to the Gemfile'], []], failures.fetch("head")
     end
   end
 
-  def test_reports_a_bundle_that_does_not_list_minitest
+  def test_stops_on_a_bundle_that_does_not_list_minitest
     with_repo do |repo|
       repo.write("lib/flag.rb", "module Flag; end\n")
       repo.write("Gemfile", %(source "https://rubygems.org"\n))
@@ -1502,11 +1543,10 @@ class TestRunner < Minitest::Test
       tests = File.join(repo.dir, "candidates")
       write_tests(tests, { "flag_test.rb" => candidate_source("FlagTest", "test_flag", "assert true").sub('require "calc"', 'require "flag"') })
 
-      doc = without_bundler_settings { execute(repo, tests) }
+      failures = without_bundler_settings { setup_failures(repo, tests) }
 
-      missing = { "status" => "failed", "message" => 'minitest is not in the bundle: add gem "minitest" to the Gemfile' }
-      assert_equal({ "base" => missing, "head" => missing }, doc["bundle"])
-      assert_equal "LoadError", doc["tests"].fetch(0)["head"]["error_class"]
+      missing = [['minitest is not in the bundle: add gem "minitest" to the Gemfile'], []]
+      assert_equal({ "base" => missing, "head" => missing }, failures)
     end
   end
 

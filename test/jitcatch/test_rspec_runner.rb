@@ -271,7 +271,7 @@ class TestRSpecRunner < Minitest::Test
 
       doc = execute(repo, tests)
 
-      assert_equal({ "base" => { "status" => "ok", "message" => "" }, "head" => { "status" => "ok", "message" => "" } }, doc["bundle"])
+      assert_equal({ "base" => "ok", "head" => "ok" }, doc["bundle"])
       row = doc["tests"].fetch(0)
       assert_equal ["Flag is on", "reported", "bundle exec #{JitCatch::Framework::RSpec.rerun("flag_spec.rb", nil, 4)}"], row.values_at("name", "disposition", "rerun"), row["head"]["message"]
     end
@@ -288,10 +288,10 @@ class TestRSpecRunner < Minitest::Test
       tests = File.join(repo.dir, "candidates")
       write_tests(tests, { "flag_spec.rb" => %(require "flag"\nRSpec.describe(Flag) { it("loads") { expect(Flag).to be_a(Module) } }\n) })
 
-      doc = without_bundler_settings { execute(repo, tests) }
+      failures = without_bundler_settings { setup_failures(repo, tests) }
 
-      missing = { "status" => "failed", "message" => 'rspec-core is not in the bundle: add gem "rspec" to the Gemfile' }
-      assert_equal({ "base" => missing, "head" => missing }, doc["bundle"])
+      missing = [['rspec-core is not in the bundle: add gem "rspec" to the Gemfile'], []]
+      assert_equal({ "base" => missing, "head" => missing }, failures)
     end
   end
 

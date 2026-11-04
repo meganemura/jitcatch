@@ -23,6 +23,18 @@ module JitCatch
   class UsageError < Error; end
   class GitError < Error; end
 
+  # A side whose setup check failed would turn every candidate into a load
+  # error, which reads like a test finding, so the run stops instead.
+  # `doc` is the document the CLI prints.
+  class EnvironmentError < Error
+    attr_reader :doc
+
+    def initialize(doc)
+      @doc = doc
+      super("setup failed on #{doc["setup_failed"].map { |failure| failure["side"] }.join(" and ")}")
+    end
+  end
+
   module Text
     module_function
 

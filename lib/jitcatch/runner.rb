@@ -14,6 +14,7 @@ module JitCatch
     RESERVED_ENV = (FIXED_ENV.keys + ["BUNDLE_GEMFILE"]).freeze
     # Rescuing in the child keeps Bundler's own message and drops its backtrace.
     BUNDLE_SETUP = 'begin; require "bundler/setup"; rescue Exception => e; $stderr.puts e.message; exit 1; end'
+    SETUP_STDERR_LINES = 10
     # `lines` maps an RSpec example's name to the line it starts on.
     Result = Data.define(:tests, :lines, :file_error, :timed_out, :exit_code)
     # One worker's two checkouts. A worker runs one file at a time in them.
@@ -55,9 +56,13 @@ module JitCatch
         normalizer = build_normalizer([*pairs.flat_map { |pair| [pair.base, pair.head] }, @git.dir])
         first = pairs.first
         frameworks = @frameworks.values.uniq
-        base_bundle = Thread.new { bundle_status(first.base, normalizer, frameworks) }
-        head_bundle = bundle_status(first.head, normalizer, frameworks)
-        bundle = { "base" => base_bundle.value, "head" => head_bundle }
+        base_setup = Thread.new { setup_status("base", change["base"], first.base, normalizer, frameworks) }
+        head_setup = setup_status("head", change["head"], first.head, normalizer, frameworks)
+        setups = [base_setup.value, head_setup]
+        failed = setups.filter_map { |setup| setup["failure"] }
+        raise EnvironmentError, setup_failed_doc(change, failed) unless failed.empty?
+
+        bundle = { "base" => setups[0]["bundle"], "head" => setups[1]["bundle"] }
         rows = classify_files(files, pairs, normalizer, mention_names(change))
         bundled = gemfile?(first.head)
         spec_root = File.exist?(File.join(first.head, "spec"))
@@ -309,31 +314,53 @@ module JitCatch
       File.file?(File.join(worktree, "Gemfile"))
     end
 
-    # One check per side, so a missing locked gem is said once instead of as a
+    # One check per side, so a side that cannot load its bundle or a
+    # framework is said once, as the setup failure it is, instead of as a
     # load error on every candidate file.
-    def bundle_status(worktree, normalizer, frameworks)
-      return { "status" => "none", "message" => "" } unless gemfile?(worktree)
-
-      check = [BUNDLE_SETUP, *frameworks.map(&:bundle_check)].join("; ")
+    def setup_status(side, commit, worktree, normalizer, frameworks)
+      bundled = gemfile?(worktree)
+      bundle = bundled ? "ok" : "none"
+      # Every framework is tried, so one run names all that are missing.
+      checks = frameworks.map { |framework|
+        "begin; require #{framework::LIBRARY.inspect}; rescue LoadError; $stderr.puts #{framework.missing(bundled).inspect}; missing = true; end"
+      }
       status, _stdout, stderr, timed_out = run_process(
-        [RbConfig.ruby, "-e", check],
+        [RbConfig.ruby, "-e", [*(BUNDLE_SETUP if bundled), "missing = false", *checks, "exit 1 if missing"].join("; ")],
         chdir: worktree,
         stdout_path: File.join(worktree, ".jitcatch-stdout"),
         stderr_path: File.join(worktree, ".jitcatch-stderr"),
         env: child_env(worktree)
       )
-      return { "status" => "ok", "message" => "" } if !timed_out && status&.success?
+      return { "bundle" => bundle, "failure" => nil } if !timed_out && status&.success?
 
-      message = timed_out ? "timeout" : normalizer.call(stderr).lines.map(&:strip).reject(&:empty?).first.to_s
-      { "status" => "failed", "message" => [message, unpassed_bundler_settings].compact.join("; ") }
+      requires = [*("bundler/setup" if bundled), *frameworks.map { |framework| framework::LIBRARY }]
+      tail = Text.message_lines(normalizer.call(stderr)).last(SETUP_STDERR_LINES)
+      failure = {
+        "side" => side,
+        "commit" => commit,
+        "command" => "ruby -e #{Framework::Minitest.quote(requires.map { |library| %(require "#{library}") }.join("; "))}",
+        "stderr" => timed_out ? ["timed out after #{@timeout}s"] : tail,
+        "not_passed" => bundled ? unpassed_bundler_settings : []
+      }
+      { "bundle" => bundle, "failure" => failure }
+    end
+
+    def setup_failed_doc(change, failed)
+      {
+        "version" => VERSION,
+        "command" => "run",
+        "error" => "setup_failed",
+        "base" => change["base"],
+        "head" => change["head"],
+        "setup_failed" => failed
+      }
     end
 
     # Bundler reads settings such as BUNDLE_WITHOUT from the environment,
     # and the child gets only the names --env passes. `bundle exec` sets the
     # Gemfile and lockfile names for jitcatch's own bundle, not the checkout's.
     def unpassed_bundler_settings
-      names = ENV.keys.grep(/\ABUNDLE_/).sort - %w[BUNDLE_BIN_PATH BUNDLE_GEMFILE BUNDLE_LOCKFILE] - @env_names
-      names.empty? ? nil : "not passed: #{names.join(" ")} (add #{names.map { |name| "--env #{name}" }.join(" ")})"
+      ENV.keys.grep(/\ABUNDLE_/).sort - %w[BUNDLE_BIN_PATH BUNDLE_GEMFILE BUNDLE_LOCKFILE] - @env_names
     end
 
     # `bundle config set --local` writes .bundle/config, which git does not

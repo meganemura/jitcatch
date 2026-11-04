@@ -62,6 +62,10 @@ module JitCatch
       doc = Assessor.apply(raw)
       $stdout.write(opts[:json] ? Render.dump(Render.run_json(doc)) : Render.run_text(doc))
       0
+    rescue EnvironmentError => err
+      # --json keeps stdout a document an agent can parse; text is an error message.
+      opts[:json] ? $stdout.write(Render.dump(err.doc)) : $stderr.write(Render.setup_failed_text(err.doc))
+      3
     end
 
     def command_assess(argv)
@@ -74,6 +78,7 @@ module JitCatch
 
       raw = JSON.parse(File.read(path))
       raise UsageError, "run json must be an object" unless raw.is_a?(Hash)
+      raise UsageError, "run json is a run that stopped on a setup failure, so it has no tests to assess" if raw["error"] == "setup_failed"
 
       doc = Assessor.apply(raw)
       $stdout.write(opts[:json] ? Render.dump(Render.assess_json(doc)) : Render.assess_text(doc))
@@ -158,7 +163,7 @@ module JitCatch
         run       Run each candidate file on base and head. Keep pass/fail, drop flakes.
         assess    Re-apply the rule assessor to a run JSON file.
 
-        Exit status: 0 success, 1 usage error, 2 git error.
+        Exit status: 0 success, 1 usage error, 2 git error, 3 setup failed (run).
       HELP
     end
   end

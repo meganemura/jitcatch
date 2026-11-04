@@ -114,6 +114,53 @@ class TestCLI < Minitest::Test
     end
   end
 
+  def test_run_stops_when_neither_side_can_load_its_bundle
+    with_repo do |repo|
+      repo.write("Gemfile", %(source "https://rubygems.org"\ngem "jitcatch_absent_gem", "9.9.9"\n))
+      repo.write("lib/flag.rb", "module Flag\n  ON = true\nend\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/flag.rb", "module Flag\n  ON = false\nend\n")
+      repo.commit("Turn the flag off.", date: "2026-02-12T00:00:00Z")
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, { "flag_test.rb" => %(require "minitest/autorun"\nrequire "flag"\n\nclass FlagTest < Minitest::Test\n  def test_on = assert(Flag::ON)\nend\n) })
+      base, head = %w[base HEAD].map { |ref| repo.git("rev-parse", ref).strip }
+      command = %(ruby -e 'require "bundler/setup"; require "minitest"')
+      missing = "Could not find gem 'jitcatch_absent_gem (= 9.9.9)' in locally installed gems."
+
+      (text_out, text_err, text_status), (json_out, json_err, json_status) = without_bundler_settings do
+        [cli("run", "--repo", repo.dir, "base", "HEAD", tests), cli("run", "--json", "--repo", repo.dir, "base", "HEAD", tests)]
+      end
+
+      assert_equal [3, ""], [text_status, text_out]
+      assert_equal <<~TEXT, text_err
+        jitcatch: setup failed, so no test ran; a test cannot pass or fail on a side that cannot load
+        base #{base}
+        head #{head}
+        setup base failed: #{command}
+          #{missing}
+        setup head failed: #{command}
+          #{missing}
+        Run that command in a checkout of that side, fix what it says (often `bundle install` there), and run jitcatch again.
+      TEXT
+      assert_equal [3, ""], [json_status, json_err]
+      side = ->(name, sha) { { "side" => name, "commit" => sha, "command" => command, "stderr" => [missing], "not_passed" => [] } }
+      assert_equal(
+        { "version" => JitCatch::VERSION, "command" => "run", "error" => "setup_failed", "base" => base, "head" => head,
+          "setup_failed" => [side.("base", base), side.("head", head)] },
+        JSON.parse(json_out)
+      )
+    end
+  end
+
+  def test_assess_rejects_a_run_that_stopped_on_setup
+    Dir.mktmpdir("jitcatch-assess-") do |dir|
+      path = File.join(dir, "run.json")
+      File.write(path, JSON.generate({ "command" => "run", "error" => "setup_failed", "setup_failed" => [] }))
+      assert_equal ["", "jitcatch: run json is a run that stopped on a setup failure, so it has no tests to assess\n", 1], cli("assess", path)
+    end
+  end
+
   def test_assess_rejects_a_file_that_is_not_a_run_object
     Dir.mktmpdir("jitcatch-assess-") do |dir|
       list = File.join(dir, "list.json")

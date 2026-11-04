@@ -38,10 +38,12 @@ module JitCatch
         MinitestParser.parse(stdout, stderr, normalizer: normalizer)
       end
 
+      LIBRARY = "minitest"
+
       # Minitest is a bundled gem, so under Bundler only a Gemfile that lists
       # it can load it.
-      def bundle_check
-        'begin; require "minitest"; rescue LoadError; $stderr.puts %(minitest is not in the bundle: add gem "minitest" to the Gemfile); exit 1; end'
+      def missing(bundled)
+        bundled ? 'minitest is not in the bundle: add gem "minitest" to the Gemfile' : "minitest is not installed for this Ruby: gem install minitest"
       end
 
       def rerun(file, name, _line, pin_root: true)
@@ -85,8 +87,10 @@ module JitCatch
         RSpecParser.parse(report, stdout, stderr, normalizer: normalizer)
       end
 
-      def bundle_check
-        'begin; require "rspec/core"; rescue LoadError; $stderr.puts %(rspec-core is not in the bundle: add gem "rspec" to the Gemfile); exit 1; end'
+      LIBRARY = "rspec/core"
+
+      def missing(bundled)
+        bundled ? 'rspec-core is not in the bundle: add gem "rspec" to the Gemfile' : "rspec-core is not installed for this Ruby: gem install rspec-core"
       end
 
       # The same Ruby flags and launch as the run, so the rerun loads what

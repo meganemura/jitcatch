@@ -13,12 +13,10 @@ class TestFramework < Minitest::Test
     assert_equal [true, true, true, false, false], %w[a/test_cart.rb cart_test.rb cart_spec.rb cart.rb spec_helper.rb].map { |path| JitCatch::Framework.named?(path) }
   end
 
-  def test_each_framework_runs_the_file_it_is_given_and_checks_its_own_gem
+  def test_each_framework_runs_the_file_it_is_given
     assert_equal ["-r#{File.expand_path("../../lib/jitcatch/minitest_cause.rb", __dir__)}", ".jitcatch/a_test.rb", "-v", "--seed", "1"], JitCatch::Framework::Minitest.arguments(".jitcatch/a_test.rb")
     assert_equal ".jitcatch/a_spec.rb", JitCatch::Framework::RSpec.arguments(".jitcatch/a_spec.rb").last
     assert_includes JitCatch::Framework::RSpec.arguments("x"), JitCatch::Framework::REPORT
-    assert_includes JitCatch::Framework::Minitest.bundle_check, 'require "minitest"'
-    assert_includes JitCatch::Framework::RSpec.bundle_check, 'require "rspec/core"'
   end
 
   def test_a_rerun_names_one_test_or_the_whole_file

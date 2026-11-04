@@ -116,6 +116,13 @@ module JitCatch
       with_env(ENV.keys.grep(/\ABUNDLE_/).to_h { |name| [name, nil] }, &block)
     end
 
+    # Each side the run stopped on, mapped to its stderr tail and the
+    # Bundler settings it did not get.
+    def setup_failures(repo, tests, env: [])
+      err = assert_raises(JitCatch::EnvironmentError) { JitCatch::Runner.run(repo.dir, "base", "HEAD", tests, reruns: 0, env: env) }
+      err.doc["setup_failed"].to_h { |failure| [failure["side"], failure.values_at("stderr", "not_passed")] }
+    end
+
     def write_tests(dir, files)
       FileUtils.mkdir_p(dir)
       files.each do |name, body|

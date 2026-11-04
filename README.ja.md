@@ -211,6 +211,7 @@ bin/jitcatch assess --json run.json
 | 0 | コマンドは完了した。候補が見つかっても 0 のまま。 |
 | 1 | 使い方の誤り。 |
 | 2 | git の失敗。 |
+| 3 | `run` は、ある側がセットアップの確認に失敗したので止まった。テストは 1 つも実行していない。 |
 
 ### 結果
 
@@ -300,11 +301,27 @@ RSpec がファイルを読む途中のエラーは、Minitest と同じく `<fi
 そのため、それぞれの側は自分のロックファイルにある gem を読む。
 それぞれの側には、git が追跡しないチェックアウトの `.bundle/config`（`bundle config set --local` が書く `BUNDLE_WITHOUT` などの設定）も写す。
 相対パスの `BUNDLE_PATH` は、チェックアウトのディレクトリを指したままにする。
-`run` は側ごとに 1 回 bundle を確かめ、`bundle base ok` や `bundle head failed: <メッセージ>` を出す。
-たとえばロックした gem がインストールされていないときや、bundle に `minitest`（Minitest の候補のとき）や `rspec-core`（RSpec の候補のとき）が無いときである。
+`run` はテストを実行する前に、側ごとに 1 回、その側が bundle とテストフレームワーク（Minitest の候補なら `minitest`、RSpec の候補なら `rspec-core`）を読めるかを確かめる。
+`Gemfile` が無い側では、jitcatch を動かす Ruby にフレームワークがあるかを確かめる。
+成功した実行は、`Gemfile` がある側ごとに `bundle base ok` を出す。
+ある側が確認に失敗すると（たとえばロックした gem がインストールされていないとき）、その側ではすべての候補が読み込みに失敗し、`fail_on_base` や回帰のように見えてしまう。
+そのため `run` は終了コード 3 で止まり、失敗した側、失敗したコマンド、その stderr の最後の行を出す。
+
+```text
+jitcatch: setup failed, so no test ran; a test cannot pass or fail on a side that cannot load
+base <sha>
+head <sha>
+setup head failed: ruby -e 'require "bundler/setup"; require "minitest"'
+  Could not find gem 'jitcatch_absent_gem (= 9.9.9)' in locally installed gems.
+  not passed: BUNDLE_WITHOUT (add --env BUNDLE_WITHOUT)
+Run that command in a checkout of that side, fix what it says (often `bundle install` there), and run jitcatch again.
+```
+
+この文は stderr に出る。
+`--json` のときは、代わりに stdout に `{"command": "run", "error": "setup_failed", "base", "head", "setup_failed": [{"side", "commit", "command", "stderr", "not_passed"}]}` を出す。
+`assess` はこの文書を受け付けない。
 プロセスに渡す環境変数は、決まった一覧と `--env` で名前を挙げたものだけである。
-失敗した側は、今の環境にあって `--env` で渡していない Bundler の設定（`BUNDLE_WITHOUT`、`BUNDLE_PATH` などの `BUNDLE_` で始まる変数）を名指しする。
-たとえば `bundle head failed: <message>; not passed: BUNDLE_WITHOUT (add --env BUNDLE_WITHOUT)` である。
+失敗した側は、今の環境にあって `--env` で渡していない Bundler の設定（`BUNDLE_WITHOUT`、`BUNDLE_PATH` などの `BUNDLE_` で始まる変数）を `not passed:` の行（`--json` では `not_passed`）で名指しする。
 
 実行されるのは `*_test.rb`、`test_*.rb`、`*_spec.rb` である。
 その名前が 1 つも無いときは、すべての `.rb` を実行する。

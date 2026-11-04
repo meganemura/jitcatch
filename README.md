@@ -150,6 +150,7 @@ bin/jitcatch assess --json run.json
 | 0 | The command finished. A run that found candidates still exits 0. |
 | 1 | Usage error. |
 | 2 | Git error. |
+| 3 | `run` stopped because a side failed its setup check. No test ran. |
 
 ### Results
 
@@ -179,7 +180,19 @@ ruby -Ilib -I. -e 'require "rspec/core"; exit(RSpec::Core::Runner.run(ARGV))' --
 
 A file named `*_spec.rb` runs with RSpec, unless it requires `minitest` (a minitest/spec file). RSpec reads the worktree's `.rspec`, so `--require spec_helper` there still loads, and puts `spec/` on the load path. The formatter given on the command line replaces the ones `.rspec` names. One example is one row, named by its full description (`Cart#total sums the prices`), and the text report shows its line (`cart_spec.rb:11`). An expectation failure is `fail`, any other error is `error`, and `pending` is `skip`. An error while RSpec loads the file is one `<file>#load` row, as for Minitest.
 
-When a revision has a `Gemfile`, its files run with `-rbundler/setup` and `BUNDLE_GEMFILE` set to that `Gemfile`, so each side loads the gems its own lock names. Each side also gets the checkout's `.bundle/config` (the settings `bundle config set --local` writes, such as `BUNDLE_WITHOUT`), which git does not track; a relative `BUNDLE_PATH` keeps naming the checkout's directory. `run` checks the bundle once per side and prints `bundle base ok` or `bundle head failed: <message>`, for example when a locked gem is not installed, or the bundle has no `minitest` (for a Minitest candidate) or no `rspec-core` (for an RSpec candidate). The process keeps only a fixed list of environment variables and the ones named with `--env`. A failed side names each Bundler setting (`BUNDLE_WITHOUT`, `BUNDLE_PATH`, and other `BUNDLE_` variables) set in your environment that `--env` did not pass, as in `bundle head failed: <message>; not passed: BUNDLE_WITHOUT (add --env BUNDLE_WITHOUT)`.
+When a revision has a `Gemfile`, its files run with `-rbundler/setup` and `BUNDLE_GEMFILE` set to that `Gemfile`, so each side loads the gems its own lock names. Each side also gets the checkout's `.bundle/config` (the settings `bundle config set --local` writes, such as `BUNDLE_WITHOUT`), which git does not track; a relative `BUNDLE_PATH` keeps naming the checkout's directory. Before any test runs, `run` checks once per side that the side can load its bundle and the test framework (`minitest` for a Minitest candidate, `rspec-core` for an RSpec candidate). Without a `Gemfile`, the check asks the Ruby that runs jitcatch for the framework. A successful run prints `bundle base ok` for each side that has a `Gemfile`. When a side fails the check, for example because a locked gem is not installed, every candidate would fail to load there and read as `fail_on_base` or as a regression. So `run` stops with exit status 3 and names each failed side, the command that failed, and the last lines of its stderr:
+
+```text
+jitcatch: setup failed, so no test ran; a test cannot pass or fail on a side that cannot load
+base <sha>
+head <sha>
+setup head failed: ruby -e 'require "bundler/setup"; require "minitest"'
+  Could not find gem 'jitcatch_absent_gem (= 9.9.9)' in locally installed gems.
+  not passed: BUNDLE_WITHOUT (add --env BUNDLE_WITHOUT)
+Run that command in a checkout of that side, fix what it says (often `bundle install` there), and run jitcatch again.
+```
+
+The text goes to stderr. With `--json`, stdout holds `{"command": "run", "error": "setup_failed", "base", "head", "setup_failed": [{"side", "commit", "command", "stderr", "not_passed"}]}` instead. `assess` refuses that document. The process keeps only a fixed list of environment variables and the ones named with `--env`. A failed side names each Bundler setting (`BUNDLE_WITHOUT`, `BUNDLE_PATH`, and other `BUNDLE_` variables) set in your environment that `--env` did not pass, on the `not passed:` line (`not_passed` in `--json`).
 
 Files named `*_test.rb`, `test_*.rb`, or `*_spec.rb` run. When none have those names, every `.rb` file runs. At most 40 files run. A test that passes on base and fails, errors, or times out on head is a candidate. `--reruns` repeats candidates on head. One disagreement makes the test `flaky`. The comparison reads the whole failure message. It masks the name directly under the temp directory and an object address (`#<Class:0x00007f...>`), so a `Dir.mktmpdir` path or a new anonymous class in a message is not a disagreement. The rerun line shows the first message line that moved. The text report prints each rerun under a `flaky` row, and the JSON row keeps them in `reruns`. A timeout is not rerun.
 
