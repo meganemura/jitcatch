@@ -87,6 +87,19 @@ class TestRender < Minitest::Test
     assert_equal diffs.values, JitCatch::Render.assess_json(doc)["candidates"].map { |row| row["message"] }
   end
 
+  # Minitest's first removed and first added lines are a pair only when the
+  # added line replaces the removed one; otherwise a column says nothing.
+  def test_two_diff_lines_that_do_not_replace_each_other_get_no_column
+    long = "a" * 150
+    message = "--- expected\n+++ actual\n@@ -1,3 +1,3 @@\n-\"x#{long}\n \"same\n+y#{long}\"\n"
+
+    assert_equal ["-\"x#{"a" * 59}...", "+y#{"a" * 60}..."], JitCatch::Render.message_lines({ "message" => message })
+    added_first = "--- expected\n+++ actual\n@@ -1,2 +1,2 @@\n+y#{long}\n-\"x#{long}\n"
+    assert_equal ["-\"x#{"a" * 59}...", "+y#{"a" * 60}..."], JitCatch::Render.message_lines({ "message" => added_first })
+    replaced = "--- expected\n+++ actual\n@@ -1,3 +1,3 @@\n-\"x#{long}\n-q\n+\"y#{long}\"\n"
+    assert_equal "^ column 2", JitCatch::Render.message_lines({ "message" => replaced }).last.strip
+  end
+
   # From a run on jitcatch itself: the two sides held a Minitest diff of
   # their own, so its lines came back as context lines.
   def test_a_context_line_that_starts_with_a_sign_is_not_a_change

@@ -300,9 +300,14 @@ module JitCatch
         # long; its header says nothing, so show the first removed and added line.
         # A context line starts with a space, which strip would take away.
         changed = head["message"].to_s.lines.map(&:rstrip).reject(&:empty?).drop(2)
-        removed = changed.find { |line| line.start_with?("-") }
-        added = changed.find { |line| line.start_with?("+") }
-        removed && added ? changed_pair(removed[1..], added[1..]) : [removed, added].compact
+        removed = changed.index { |line| line.start_with?("-") }
+        added = changed.index { |line| line.start_with?("+") }
+        if removed && added && removed < added && changed[removed...added].all? { |line| line.start_with?("-") }
+          changed_pair(changed[removed][1..], changed[added][1..])
+        else
+          # Lines that do not replace each other share no column.
+          [removed, added].compact.map { |index| "#{changed[index][0]}#{shortened(changed[index][1..])}" }
+        end
       else
         lines.first(1)
       end
@@ -315,6 +320,10 @@ module JitCatch
       return ["-#{expected}", "+#{actual}"] if [expected, actual].all? { |text| text.length <= LONG_LINE }
 
       hash_entry_lines(expected, actual) || column_lines(expected, actual)
+    end
+
+    def shortened(line)
+      line.length > LONG_LINE ? "#{line[0, (2 * WINDOW) + 1]}..." : line
     end
 
     def hash_entry_lines(expected, actual)
