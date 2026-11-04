@@ -141,7 +141,8 @@ module JitCatch
       else
         lines = ["constants:"]
         constants.each do |const|
-          lines << "  [#{const["id"]}] #{const["change"]} #{const["name"]} #{const["file"]}:#{const["start_line"]}"
+          moved = const["moved_from"] ? " moved_from=#{const["moved_from"]}" : ""
+          lines << "  [#{const["id"]}] #{const["change"]} #{const["name"]} #{const["file"]}:#{const["start_line"]}#{moved}"
           lines << "    old: #{const["old_source"] || "(none)"}"
           lines << "    new: #{const["new_source"] || "(none)"}"
           readers = const["readers"].empty? ? "(none)" : const["readers"].join(", ")

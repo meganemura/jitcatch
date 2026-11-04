@@ -185,7 +185,7 @@ module JitCatch
           "via_constant" => nil
         }
       end
-      mark_moves(found, head_idx, hunks)
+      mark_moves(found, head_idx["methods"], hunks) { "moved" }
     end
 
     # A method that leaves one file while head defines the same name in
@@ -193,16 +193,17 @@ module JitCatch
     # is read from every file, test files too, since a test double can move
     # into test/, where no change of its own is listed. A file the diff
     # touched is the likelier destination than an older copy elsewhere.
-    def mark_moves(found, head_idx, hunks)
-      by_name = head_idx["methods"].group_by(&:qualified)
-      found.select { |item| item["change"] == "removed" }.each do |item|
+    # The block names the change a move is, from the old and the new node.
+    def mark_moves(found, head_nodes, hunks)
+      by_name = head_nodes.group_by(&:qualified)
+      found.select { |item| item["change"] == "removed" && !item["namespace"] }.each do |item|
         old_m = item["old"]
         dest = Array(by_name[old_m.qualified]).reject { |node| node.file == old_m.file }
           .min_by { |node| [hunks.key?(node.file) ? 0 : 1, node.file] }
         next unless dest
 
         found.reject! { |other| other["change"] == "added" && identity(other["new"]) == identity(dest) }
-        item.merge!("change" => "moved", "new" => dest, "moved_from" => old_m.file)
+        item.merge!("change" => yield(old_m, dest), "new" => dest, "moved_from" => old_m.file)
       end
       found
     end
@@ -234,7 +235,14 @@ module JitCatch
 
         found << { "change" => change, "old" => old_c, "new" => new_c, "readers" => [] }
       end
+      # A constant that keeps its value in its new file is moved, and its
+      # readers see nothing new; one whose value changed on the way is modified.
+      mark_moves(found, head_idx["constants"], hunks) { |old_c, new_c| norm(value_of(old_c)) == norm(value_of(new_c)) ? "moved" : "modified" }
       found + changed_namespaces(base_idx, head_idx, hunks)
+    end
+
+    def value_of(const)
+      const.source.sub(/A[^=]*=/, "").strip
     end
 
     # A class or module counts only when the other side defines it nowhere,
@@ -258,7 +266,7 @@ module JitCatch
 
       known = methods.to_h { |item| [identity(item["new"] || item["old"]), item] }
       constants.each do |const|
-        next if const["namespace"]
+        next if const["namespace"] || const["change"] == "moved"
 
         bare = (const["new"] || const["old"]).bare_name
         pattern = /\b#{Regexp.escape(bare)}\b/
@@ -618,7 +626,8 @@ module JitCatch
         "end_line" => node.end_line,
         "old_source" => item["old"]&.source,
         "new_source" => item["new"]&.source,
-        "readers" => item["readers"]
+        "readers" => item["readers"],
+        "moved_from" => item["moved_from"]
       }
     end
 

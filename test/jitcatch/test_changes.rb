@@ -336,6 +336,27 @@ class TestChanges < Minitest::Test
     end
   end
 
+  # A constant that keeps its value in its new file changes nothing a
+  # reader sees; one that takes a new value on the way still changes it.
+  def test_a_constant_moved_to_another_file_is_moved_and_affects_no_reader
+    with_repo do |repo|
+      shop = "module Shop\n  VERSION = \"1.0\"\n  LIMIT = 10\n\n  def self.banner = \"Shop \#{VERSION}\"\n  def self.cap = LIMIT\nend\n"
+      repo.write("lib/shop.rb", shop)
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/shop.rb", shop.sub("  VERSION = \"1.0\"\n  LIMIT = 10\n", "  require_relative \"shop/version\"\n"))
+      repo.write("lib/shop/version.rb", "module Shop\n  VERSION = \"1.0\"\n  LIMIT = 5\nend\n")
+      repo.commit("Move the constants to their own file.", date: "2026-02-12T00:00:00Z")
+
+      doc = JitCatch::Changes.between(repo.dir, "base", "HEAD")
+
+      assert_equal [["k01", "modified", "Shop::LIMIT", "lib/shop/version.rb", "lib/shop.rb", ["m01"]], ["k02", "moved", "Shop::VERSION", "lib/shop/version.rb", "lib/shop.rb", []]],
+        doc["constants"].map { |const| const.values_at("id", "change", "name", "file", "moved_from", "readers") }
+      assert_equal [["Shop.cap", "affected", "k01"]], doc["methods"].map { |method| method.values_at("name", "change", "via_constant") }
+      assert_includes JitCatch::Render.context_text(doc), "  [k02] moved Shop::VERSION lib/shop/version.rb:2 moved_from=lib/shop.rb\n"
+    end
+  end
+
   def test_a_class_or_module_that_only_one_side_defines_is_a_constant
     with_repo do |repo|
       repo.write("lib/model.rb", <<~RUBY)

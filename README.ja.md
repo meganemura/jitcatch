@@ -262,6 +262,8 @@ gem の中から始まったエラーには `touches:changed_method` を付け�
 あるファイルから消えたメソッドを、head が別のファイル（テストファイルも含む）で同じ名前で定義していれば、それは `moved` になる。
 新しい場所で出し、`moved_from=` が元のファイルを示す。
 複数のファイルが定義しているときは、diff が触ったファイルを先に選ぶ。
+定数も同じで、別のファイルへ移って値が同じなら `moved` になり、`moved_from=` が付き、その定数を読むメソッドは `affected` にならない。
+移るときに値も変わった定数は、`moved_from=` 付きの `modified` になる。
 `attr_reader`、`attr_writer`、`attr_accessor`、`Struct.new` や `Data.define` のメンバーが定義する読み書きのメソッドもメソッドとして数え、ソースには名前一つの形（`attr_reader :seed`）が出る。
 そのため、その行から外した名前は `removed` になり、行に残った名前は変わらない。
 `*FIELDS` の形で渡したリストも、同じファイルがその前に `FIELDS = %i[x y].freeze` のようにシンボルのリストを入れていれば数える。
