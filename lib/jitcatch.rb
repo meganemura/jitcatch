@@ -72,6 +72,13 @@ module JitCatch
       text.gsub(/\b0x\h{6,}\b/, "0x{address}")
     end
 
+    # A record prints the time it was saved (`created_at: "2026-11-04
+    # 19:02:03.212197000 +0000"`), which is new on every run. A date alone
+    # stays: a test can claim one.
+    def mask_times(text)
+      text.gsub(/(?<!\d)\d{4}-\d\d-\d\d[ T]\d\d:\d\d:\d\d(?:\.\d+)?(?: ?(?:[+-]\d\d:?\d\d|UTC)|Z)?/, "{time}")
+    end
+
     def message_lines(message)
       message.to_s.lines.map(&:strip).reject(&:empty?)
     end

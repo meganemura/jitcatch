@@ -68,6 +68,18 @@ class TestTextProperty < Minitest::Test
     end
   end
 
+  def test_mask_times_forgets_which_time_a_record_was_saved_at
+    Hegel.test do |tc|
+      prefix = tc.draw(from_regex('\A[a-z: "]{0,8}\z'))
+      zone = tc.draw(sampled_from(["", " UTC", " +0000", " -09:30", "Z"]))
+      first, second = tc.draw(arrays(from_regex('\A20[0-9]{2}-[01][0-9]-[0-3][0-9][ T][0-2][0-9]:[0-5][0-9]:[0-5][0-9](\.[0-9]{1,9})?\z'), min_size: 2, max_size: 2))
+      masked = JitCatch::Text.mask_times(%(#{prefix}#{first}#{zone}"))
+      assert_equal masked, JitCatch::Text.mask_times(%(#{prefix}#{second}#{zone}"))
+      assert_equal masked, JitCatch::Text.mask_times(masked)
+      refute_match(/[0-9]{2}:[0-9]{2}/, masked)
+    end
+  end
+
   # The removed elements are named by their index in the old Array, and what
   # the old Array keeps without them is a longest common subsequence.
   def test_element_changes_keep_a_longest_common_subsequence

@@ -170,6 +170,38 @@ class TestRunner < Minitest::Test
     end
   end
 
+  # A record's inspect, as RSpec's have_attributes prints it, names the
+  # time it was saved, which is new on every run.
+  def test_a_saved_time_in_the_message_does_not_make_a_rerun_disagree
+    with_repo do |repo|
+      repo.write("lib/stamp.rb", "module Stamp\n  def self.state = \"pending\"\nend\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/stamp.rb", "module Stamp\n  def self.state = \"draft\"\nend\n")
+      repo.commit("Open as a draft.", date: "2026-02-12T00:00:00Z")
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, {
+        "stamp_test.rb" => <<~RUBY
+          require "minitest/autorun"
+          require "stamp"
+
+          class StampTest < Minitest::Test
+            def test_state
+              record = { state: Stamp.state, created_at: Time.now.utc.strftime("%Y-%m-%d %H:%M:%S.%N +0000") }
+              assert_equal "pending", record[:state], record.inspect
+            end
+          end
+        RUBY
+      })
+
+      doc = execute(repo, tests, reruns: 2)
+
+      row = doc["tests"].fetch(0)
+      assert_equal "reported", row["disposition"], row["reruns"].inspect
+      assert_match(/created_at: "\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\d+ \+0000"/, row["head"]["message"])
+    end
+  end
+
   def test_a_rerun_whose_actual_value_moves_is_flaky
     with_repo do |repo|
       repo.write("lib/flag.rb", "module Flag; def self.ok; true; end; end\n")

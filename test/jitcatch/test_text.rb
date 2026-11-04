@@ -32,6 +32,13 @@ class TestText < Minitest::Test
     assert_equal "/tmp/a/x", Text.mask_temp_names("/tmp/a/x", nil)
   end
 
+  def test_mask_times_replaces_a_time_of_day_and_keeps_a_date
+    record = %(#<Loan id: 1, created_at: "2026-11-04 19:02:03.212197000 +0000", updated_at: "2026-11-04 19:02:03.212197000 +0000">)
+    assert_equal %(#<Loan id: 1, created_at: "{time}", updated_at: "{time}">), Text.mask_times(record)
+    assert_equal "at {time} and {time} and {time}", Text.mask_times("at 2026-11-04 19:02:03 UTC and 2026-11-04T19:02:03.5Z and 2026-11-04 19:02:03 +09:00")
+    assert_equal "due 2026-11-04, 12:30", Text.mask_times("due 2026-11-04, 12:30")
+  end
+
   def test_indent_pads_each_line_and_names_empty_text
     assert_equal "  (none)", Text.indent(nil, 2)
     assert_equal "   (none)", Text.indent("", 3)
