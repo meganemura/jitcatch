@@ -686,4 +686,38 @@ class TestSourceIndexExamples < Minitest::Test
       ["Order#total", "public", 2]
     ], index.methods.map { |method| [method.qualified, method.visibility, method.start_line] }.sort
   end
+
+  # Only a symbol names a method: a string, a lambda, or a block runs code
+  # the line does not name. `validates` names attributes, and an option
+  # other than `if:` and `unless:` names no method. A line sent to another
+  # receiver, or to the singleton class, declares nothing for the class.
+  def test_a_callback_or_validation_line_names_the_methods_it_runs
+    source = <<~RUBY
+      class Loan < ApplicationRecord
+        self.before_save :stamp
+        Other.after_save :elsewhere
+        delegate :total, to: :ledger
+        validates :amount, presence: true, if: :checked?, unless: [:closed?, :frozen?], on: :create
+        validate :limit, if: -> { true }
+        before_save "noted", -> { 1 }
+        after_commit :notify, :log
+
+        class << self
+          after_save :count
+        end
+      end
+    RUBY
+
+    index = JitCatch::SourceIndex.parse(source, file: "app/models/loan.rb")
+
+    assert_equal [
+      ["Loan", "before_save", "stamp", "before_save :stamp"],
+      ["Loan", "validates", "checked?", "validates if: :checked?"],
+      ["Loan", "validates", "closed?", "validates unless: :closed?"],
+      ["Loan", "validates", "frozen?", "validates unless: :frozen?"],
+      ["Loan", "validate", "limit", "validate :limit"],
+      ["Loan", "after_commit", "notify", "after_commit :notify"],
+      ["Loan", "after_commit", "log", "after_commit :log"]
+    ], index.callbacks.map { |callback| callback.to_h.values_at(:qualifier, :macro, :method, :declared) }
+  end
 end

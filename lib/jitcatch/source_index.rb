@@ -173,7 +173,7 @@ module JitCatch
 
       owner, sep, bare = split_qualified(written)
       call_owner, call_sep, call_bare = split_qualified(call)
-      return false if owner.empty? || call_owner.empty? || sep != call_sep || bare != call_bare
+      return false if sep != call_sep || bare != call_bare
 
       call_owner.end_with?("::#{owner}") || owner.end_with?("::#{call_owner}")
     end
@@ -368,7 +368,7 @@ module JitCatch
         end
 
         handle_class_visibility(stmt, qualifier) if stmt.receiver.nil? && CLASS_VISIBILITY.key?(stmt.name)
-        record_callbacks(stmt, qualifier) if stmt.receiver.nil? && !singleton && RECORD_CALLBACKS.key?(stmt.name)
+        record_callbacks(stmt, qualifier) if (stmt.receiver.nil? || stmt.receiver.is_a?(Prism::SelfNode)) && !singleton && RECORD_CALLBACKS.key?(stmt.name)
         if stmt.receiver.nil? && ATTRIBUTE_MACROS.key?(stmt.name)
           record_attributes_as_methods(stmt, qualifier, visibility == :module_function ? :public : visibility, singleton)
         end

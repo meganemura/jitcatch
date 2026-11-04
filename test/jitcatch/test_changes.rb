@@ -711,6 +711,23 @@ class TestChanges < Minitest::Test
     end
   end
 
+  # A removed callback is read from base, where its line still names it.
+  def test_a_removed_callback_keeps_the_saves_that_ran_it
+    with_repo do |repo|
+      repo.write("lib/application_record.rb", "class ApplicationRecord < ActiveRecord::Base\nend\n")
+      repo.write("lib/loan.rb", "class Loan < ApplicationRecord\n  after_save :count_save\n\n  def count_save\n    1\n  end\nend\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/loan.rb", "class Loan < ApplicationRecord\nend\n")
+      repo.commit("Count no save.", date: "2026-02-12T00:00:00Z")
+
+      removed = JitCatch::Changes.between(repo.dir, "base", "HEAD")["methods"].fetch(0)
+
+      assert_equal ["Loan#count_save", "removed", ["after_save :count_save"], %w[Loan#save Loan#save! Loan#update Loan#update! Loan.create Loan.create!]],
+        removed.values_at("name", "change", "callbacks", "run_by")
+    end
+  end
+
   # A test reaches a callback through the call ActiveRecord runs it from,
   # never by its name. The table of which call runs which declaration is
   # Rails's; a class outside ActiveRecord gets none.

@@ -169,6 +169,28 @@ class TestAssessor < Minitest::Test
     out["tests"].each { |test| assert_equal %w[assertion report touches:changed_method], test["tags"] }
   end
 
+  # A save names a callback the change document lists under `run_by`,
+  # and a factory names the constructor it lists under `builders`; each
+  # call names only the method that lists it.
+  def test_a_listed_call_mentions_the_method_it_runs
+    saved = method("m01", "modified", "same", "count_save", [], 1).merge("run_by" => %w[Calc#save! Calc.create!])
+    built = method("m02", "modified", "same", "initialize", [], 10).merge("builders" => %w[factory(:calc)])
+    doc = {
+      "methods" => [saved, built],
+      "constants" => [],
+      "tests_dir" => "candidates",
+      "tests" => [
+        candidate("t01", "SaveTest#test_save", %w[Calc#save!], failure("Expected: 1\n  Actual: 2")),
+        candidate("t02", "CreateTest#test_create", %w[Shop::Calc.create!], failure("Expected: 1\n  Actual: 2")),
+        candidate("t03", "FactoryTest#test_factory", %w[factory(:calc)], failure("Expected: 1\n  Actual: 2"))
+      ]
+    }
+
+    rows = JitCatch::Assessor.apply(doc)["tests"].to_h { |test| [test["id"], test.values_at("method_id", "method_ids")] }
+
+    assert_equal({ "t01" => ["m01", %w[m01]], "t02" => ["m01", %w[m01]], "t03" => ["m02", %w[m02]] }, rows)
+  end
+
   def test_an_id_reached_only_through_unchanged_callers_is_marked_a_guess
     doc = {
       "methods" => [
