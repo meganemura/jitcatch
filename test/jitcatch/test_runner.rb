@@ -1200,11 +1200,34 @@ end
       tests = File.join(repo.dir, "candidates")
       write_tests(tests, { "flag_test.rb" => candidate_source("FlagTest", "test_flag", "assert true").sub('require "calc"', 'require "flag"') })
 
-      doc = execute(repo, tests)
+      doc = without_bundler_settings { execute(repo, tests) }
 
       message = "Could not find gem 'jitcatch_absent_gem (= 9.9.9)' in locally installed gems."
       assert_equal({ "base" => { "status" => "none", "message" => "" }, "head" => { "status" => "failed", "message" => message } }, doc["bundle"])
       assert_includes JitCatch::Render.run_text(doc), "timeout_s 10\nbundle head failed: #{message}\ntests:\n"
+    end
+  end
+
+  def test_a_failed_bundle_names_the_bundler_settings_it_did_not_get
+    with_repo do |repo|
+      repo.write("lib/flag.rb", "module Flag; end\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("Gemfile", %(source "https://rubygems.org"\ngroup :db do\n  gem "jitcatch_absent_gem", "9.9.9"\nend\n))
+      repo.write("Gemfile.lock", "GEM\n  remote: https://rubygems.org/\n  specs:\n    jitcatch_absent_gem (9.9.9)\n\nPLATFORMS\n  ruby\n\nDEPENDENCIES\n  jitcatch_absent_gem (= 9.9.9)\n")
+      repo.commit("Add a Gemfile.", date: "2026-02-12T00:00:00Z")
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, { "flag_test.rb" => candidate_source("FlagTest", "test_flag", "assert true").sub('require "calc"', 'require "flag"') })
+
+      failed, passed = without_bundler_settings do
+        with_env("BUNDLE_WITHOUT" => "db", "BUNDLE_SILENCE_ROOT_WARNING" => "1") do
+          [execute(repo, tests, env: %w[BUNDLE_SILENCE_ROOT_WARNING]), execute(repo, tests, env: %w[BUNDLE_WITHOUT])].map { |doc| doc["bundle"]["head"]["message"] }
+        end
+      end
+
+      assert_equal "Could not find jitcatch_absent_gem-9.9.9 in locally installed gems; not passed: BUNDLE_WITHOUT (add --env BUNDLE_WITHOUT)", failed
+      # Passed, the setting skips the absent gem, and the next check speaks.
+      assert_equal 'minitest is not in the bundle: add gem "minitest" to the Gemfile; not passed: BUNDLE_SILENCE_ROOT_WARNING (add --env BUNDLE_SILENCE_ROOT_WARNING)', passed
     end
   end
 
@@ -1219,7 +1242,7 @@ end
       tests = File.join(repo.dir, "candidates")
       write_tests(tests, { "flag_test.rb" => candidate_source("FlagTest", "test_flag", "assert true").sub('require "calc"', 'require "flag"') })
 
-      doc = execute(repo, tests)
+      doc = without_bundler_settings { execute(repo, tests) }
 
       missing = { "status" => "failed", "message" => 'minitest is not in the bundle: add gem "minitest" to the Gemfile' }
       assert_equal({ "base" => missing, "head" => missing }, doc["bundle"])

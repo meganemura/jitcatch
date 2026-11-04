@@ -310,7 +310,15 @@ module JitCatch
       return { "status" => "ok", "message" => "" } if !timed_out && status&.success?
 
       message = timed_out ? "timeout" : normalizer.call(stderr).lines.map(&:strip).reject(&:empty?).first.to_s
-      { "status" => "failed", "message" => message }
+      { "status" => "failed", "message" => [message, unpassed_bundler_settings].compact.join("; ") }
+    end
+
+    # Bundler reads settings such as BUNDLE_WITHOUT from the environment,
+    # and the child gets only the names --env passes. `bundle exec` sets the
+    # Gemfile and lockfile names for jitcatch's own bundle, not the checkout's.
+    def unpassed_bundler_settings
+      names = ENV.keys.grep(/\ABUNDLE_/).sort - %w[BUNDLE_BIN_PATH BUNDLE_GEMFILE BUNDLE_LOCKFILE] - @env_names
+      names.empty? ? nil : "not passed: #{names.join(" ")} (add #{names.map { |name| "--env #{name}" }.join(" ")})"
     end
 
     def install(worktree)

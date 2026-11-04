@@ -110,6 +110,12 @@ module JitCatch
       saved&.each { |key, value| ENV[key] = value }
     end
 
+    # A failed bundle names the BUNDLE_ settings the caller has and did not
+    # pass, so a test that reads that message starts with none.
+    def without_bundler_settings(&block)
+      with_env(ENV.keys.grep(/\ABUNDLE_/).to_h { |name| [name, nil] }, &block)
+    end
+
     def write_tests(dir, files)
       FileUtils.mkdir_p(dir)
       files.each do |name, body|

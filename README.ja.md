@@ -285,6 +285,8 @@ RSpec がファイルを読む途中のエラーは、Minitest と同じく `<fi
 `run` は側ごとに 1 回 bundle を確かめ、`bundle base ok` や `bundle head failed: <メッセージ>` を出す。
 たとえばロックした gem がインストールされていないときや、bundle に `minitest`（Minitest の候補のとき）や `rspec-core`（RSpec の候補のとき）が無いときである。
 プロセスに渡す環境変数は、決まった一覧と `--env` で名前を挙げたものだけである。
+失敗した側は、今の環境にあって `--env` で渡していない Bundler の設定（`BUNDLE_WITHOUT`、`BUNDLE_PATH` などの `BUNDLE_` で始まる変数）を名指しする。
+たとえば `bundle head failed: <message>; not passed: BUNDLE_WITHOUT (add --env BUNDLE_WITHOUT)` である。
 
 実行されるのは `*_test.rb`、`test_*.rb`、`*_spec.rb` である。
 その名前が 1 つも無いときは、すべての `.rb` を実行する。

@@ -283,7 +283,7 @@ class TestRSpecRunner < Minitest::Test
       tests = File.join(repo.dir, "candidates")
       write_tests(tests, { "flag_spec.rb" => %(require "flag"\nRSpec.describe(Flag) { it("loads") { expect(Flag).to be_a(Module) } }\n) })
 
-      doc = execute(repo, tests)
+      doc = without_bundler_settings { execute(repo, tests) }
 
       missing = { "status" => "failed", "message" => 'rspec-core is not in the bundle: add gem "rspec" to the Gemfile' }
       assert_equal({ "base" => missing, "head" => missing }, doc["bundle"])
