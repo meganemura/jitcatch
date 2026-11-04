@@ -507,6 +507,7 @@ class TestChangesGraph < Minitest::Test
       entry = JitCatch::Changes.between(repo.dir, "base", "HEAD")["entrypoints"].fetch(0)
 
       assert_equal [["Support.outcomes", "Support.a"], 3], [entry["methods"].first(2).map { |method| method["name"] }, entry["omitted"]]
+      assert_includes JitCatch::Render.context_text(JitCatch::Changes.between(repo.dir, "base", "HEAD")), "entrypoints Support:\n  Support.outcomes unchanged\n"
       assert_includes JitCatch::Render.context_text(JitCatch::Changes.between(repo.dir, "base", "HEAD")), "  Support.k unchanged\n  (+3 more)\n"
     end
   end
