@@ -211,7 +211,7 @@ bin/jitcatch assess --json run.json
 | 0 | コマンドは完了した。候補が見つかっても 0 のまま。 |
 | 1 | 使い方の誤り。 |
 | 2 | git の失敗。 |
-| 3 | `run` は、ある側がセットアップの確認に失敗したので止まった。テストは 1 つも実行していない。 |
+| 3 | `run` は行を出さずに止まった。ある側がセットアップの確認に失敗したか、どちらの側でも候補ファイルが 1 つも読み込めなかった。 |
 
 ### 結果
 
@@ -235,7 +235,7 @@ bin/jitcatch assess --json run.json
 `touches:changed_dependency` は、ロックしたバージョンが変わった gem の中からエラーが出た。
 gem の中から始まったエラーには `touches:changed_method` を付けない。
 `touches:unchanged_caller` は、diff が編集していない入口を通り、その入口から変更メソッドへ届いている。
-`discard:signature_change`、`discard:load_error`、`discard:timeout` は、候補を除いたルールの名前である。
+`discard:signature_change`、`discard:load_error`、`discard:timeout`、`discard:no_database` は、候補を除いたルールの名前である。
 `discard:signature_change` は、削除したメソッドや新しいシグネチャが壊した呼び出しを、テスト自身がしているときだけ使う。
 変更されていないコードがその呼び出しをしているときは、行を報告する。
 たとえば `class B < A` が、head で削除した `A#helper` をまだ呼んでいるときである。
@@ -317,8 +317,14 @@ setup head failed: ruby -e 'require "bundler/setup"; require "minitest"'
 Run that command in a checkout of that side, fix what it says (often `bundle install` there), and run jitcatch again.
 ```
 
+確認に通った側でも、すべての候補が読み込むものを起動できないことがある。
+たとえば、テスト用データベースが無い Rails アプリである。
+すべてのファイルが両方の側でエラーになった `<file>#load` の行なら、どの行も base と head を区別できないので、`run` はやはり終了コード 3 で止まる。
+そのときの最初の行は `jitcatch: every candidate file failed to load on both sides, so no row can tell base from head` で、側ごとに最初のファイルの再実行コマンドを示す `load base failed:` の行と、その下にエラーが出る。
+
 この文は stderr に出る。
-`--json` のときは、代わりに stdout に `{"command": "run", "error": "setup_failed", "base", "head", "setup_failed": [{"side", "commit", "command", "stderr", "not_passed"}]}` を出す。
+`--json` のときは、代わりに stdout に `{"command": "run", "error": "setup_failed", "stage", "base", "head", "setup_failed": [{"side", "commit", "command", "stderr", "not_passed"}]}` を出す。
+`stage` は `setup` か `load` である。
 `assess` はこの文書を受け付けない。
 プロセスに渡す環境変数は、決まった一覧と `--env` で名前を挙げたものだけである。
 失敗した側は、今の環境にあって `--env` で渡していない Bundler の設定（`BUNDLE_WITHOUT`、`BUNDLE_PATH` などの `BUNDLE_` で始まる変数）を `not passed:` の行（`--json` では `not_passed`）で名指しする。
@@ -335,8 +341,8 @@ base で通り、head で失敗、エラー、またはタイムアウトにな�
 テキストの報告は `flaky` の行の下に各再実行の結果を出し、JSON の行は `reruns` に持つ。
 タイムアウトは再実行しない。
 
-候補を `discarded` にするルールは 3 つある。
-head での `LoadError`、タイムアウト、そして diff が消したかシグネチャを書き換えた名前に対する `NameError`、`NoMethodError`、引数個数の `ArgumentError` である。
+候補を `discarded` にするルールは 4 つある。
+head での `LoadError`、タイムアウト、データベースが無いか届かないことを示す head での Active Record のエラー（`NoDatabaseError`、`ConnectionNotEstablished`、`DatabaseConnectionError`）、そして diff が消したかシグネチャを書き換えた名前に対する `NameError`、`NoMethodError`、引数個数の `ArgumentError` である。
 消えたクラスやモジュールも消えた名前に数える。
 引数個数の `ArgumentError` とは `wrong number of arguments`、`missing keyword`、`unknown keyword`、`struct size differs`（メンバーより多くの値を渡した `Struct`）のことで、`assert_raises` や RSpec の `raise_error` が受け取って失敗にしたときも同じに扱う。
 コードが意図して起こす `ArgumentError`（`qty must be > 0` のようなもの）は `reported` のまま残る。
@@ -358,6 +364,47 @@ RSpec の行がただの `rspec` でないのは、`rspec` が `spec/` を持つ
 Rails アプリのように head の根に `spec` があれば、RSpec はもともとその根を見つける。
 そのときこの行は、rspec-core の内部の状態を書き換えるただ一つの部分である固定（`RSpec::Core::RubyProject.instance_variable_set(:@project_root, Dir.pwd); `）を省く。
 また、RSpec が表示するオブジェクトを 200 文字で切る設定を外すので、`raise_error` の行は受け取ったエラーを最後まで示す。
+
+## Rails アプリ
+
+Rails アプリの候補は、アプリ自身の spec と同じく `require "rails_helper"` で始まる RSpec のファイルか、`require "test/test_helper"` で始まる Minitest のファイルである。
+候補はアプリのファクトリーとテスト用データベースを使える。
+
+base と head はアプリを同時に起動する。
+相対パスの SQLite（Rails の既定の `storage/test.sqlite3`）はワークツリーごとのファイルなので、2 つの側は出会わない。
+PostgreSQL や MySQL のようなデータベースサーバーでは、テスト用データベースの名前が両方の側で同じで、それぞれの側がもう一方の実行中に自分の `db/schema.rb` を読み込む。
+列を消す変更では、6 つの候補のうち 1 つから 6 つが、読み込みエラー（`bin/rails aborted!`）として `reported` になった。
+jitcatch はチェックアウトごとに `TEST_ENV_NUMBER` を設定する。
+これは parallel_tests が設定する変数である。
+最初のワーカーの base と head には `1` と `2`、2 番目のワーカーには `3` と `4` を渡し、以下同じように続ける。
+両方のリビジョンの `config/database.yml` がこの変数でテスト用データベースを名付けていれば、チェックアウトごとに別のデータベースを使い、同じ実行で `reported` は 0 になった。
+
+```yaml
+test:
+  <<: *default
+  database: app_test<%= ENV["TEST_ENV_NUMBER"] %>
+```
+
+最初の実行の前に、ワーカー 1 つにつき 2 つのデータベースを一度だけ作る。
+スキーマは、Rails が起動するときにそれぞれのリビジョンのものを読み込む。
+
+```sh
+for n in 1 2; do RAILS_ENV=test TEST_ENV_NUMBER=$n bin/rails db:create; done
+```
+
+head のデータベースが無いときは、その行は `discard:no_database` になる。
+`database.yml` がこの変数を使っていないときは `--serial` を渡し、一度に 1 つのプロセスだけを動かす。
+手元のサンプルアプリでは、6 つのファイルに `--serial` で 34 秒、番号付きのデータベースで 6 秒から 10 秒かかった。
+
+それぞれのチェックアウトには、git が追跡するファイルしか無い。
+認証情報を読むイニシャライザーは、`config/master.key` が無いのでそこで失敗する。
+鍵は `RAILS_MASTER_KEY=$(cat config/master.key) jitcatch run --env RAILS_MASTER_KEY BASE HEAD TESTS_DIR` のように渡す。
+
+ファイルごとに、それぞれの側でアプリを 1 回起動する。
+サンプルアプリ（4 CPU）では、example が 1 つずつの 6 ファイルに 9.8 秒、同じ 6 つの example を 1 ファイルにまとめると 1.9 秒かかった。
+bootsnap のキャッシュは、チェックアウトごとに空から始まる。
+1 ファイルでは bootsnap ありで 3.7 秒、`--env DISABLE_BOOTSNAP` で `DISABLE_BOOTSNAP=1` を渡すと 2.5 秒だった。
+6 ファイルでは bootsnap ありで 8.0 秒、なしで 9.8 秒だった。
 
 ## インストール
 
@@ -436,9 +483,9 @@ CLI を使わない場合は、`skills/jitcatch` をエージェントの skills
   そのブロックが一つのクラスを作るときは、`let(:cart) { Cart.new }` のように、`cart.total` は `Cart#total` として出る。
   暗黙の `subject`、共有 example グループ、`spec/support` のヘルパーは読まない。
   別のファイルで定義した共有グループの example は、候補ファイル全体を読む。
-- Rails 風の `rails_helper` はそれぞれのワークツリーで読み込めるが、base と head は同じ `config/database.yml` で同時に走る。
-  データベースに書く候補は、その書き込み先をもう一方の側と共有する。
-  ここで試したのは Rails プロジェクトの形だけで、Rails の gem は試していない。
+- データベースサーバーを使う Rails アプリの base と head は、両方のリビジョンの `config/database.yml` が `TEST_ENV_NUMBER` でテスト用データベースを名付けていない限り、1 つのテスト用データベースを共有する（Rails アプリの節を参照）。
+  テストスイートが試すのは Rails プロジェクトの形だけである。
+  Rails の手順は、PostgreSQL 16 と SQLite を使う Rails 8.1 のアプリで測った。
 - RSpec のすべての example の外で起きたエラー（`after(:suite)` フックの中など）は、example が 1 つも走らなかったときだけ報告する。
 
 ## 開発
