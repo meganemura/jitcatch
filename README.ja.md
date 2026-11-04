@@ -275,7 +275,8 @@ Concern の `included do`、`prepended do`、`class_methods do` ブロックの�
 各メソッドには、旧ソースと新ソース、ライブラリ内の呼び出し、そこへ届く入口（`reachable_from`）、それに言及している既存テストが出る。
 変更された `initialize` には `built_by:` も出る。
 これは `new` のほかにそれを走らせる呼び出しで、Active Record のモデルの `create`、`create!`、`build` と、そのクラスを作る FactoryBot のファクトリーごとの `factory(:loan)` である。
-その `tests:` には、grep の結果に加えて、そのどれかか `Owner.new` を呼ぶテストファイルが、呼んでいるもの（`spec/models/loan_spec.rb via factory(:loan)`）と一緒に出る。
+その `tests:` には、そのどれかか `Owner.new` を呼ぶテストファイルが、呼んでいるもの（`spec/models/loan_spec.rb via factory(:loan)`）と一緒に出る。
+テストが `initialize` をその名前で呼ぶことはないので、コンストラクタには grep の結果を出さない。
 ファクトリーは `spec/factories` と `test/factories` から、読み込まずにソースとして読む。
 クラスはまず `class:`（定数、文字列、シンボル）から、次に親（`parent:` か、入れ子の外側のファクトリー）から、最後に名前を camelize したものから決まり、`aliases:` の別名も同じクラスを作る。
 ソースからクラスが決まらないファクトリーはたどらず、理由と一緒に `factories_skipped:` に出す。

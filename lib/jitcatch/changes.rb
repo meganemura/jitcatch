@@ -381,8 +381,13 @@ module JitCatch
         method["existing_tests"] = if @coverage
           coverage_hits(method)
         else
-          builds = constructor?(node) ? builder_hits(test_sources.keys, node.qualifier, method["builders"], base_idx, head_idx) : []
-          merge_hits(builds, grep_hits(test_sources, node.bare_name))
+          # No test calls `initialize` by that name, so a file that writes
+          # the word only reads or names the method.
+          if constructor?(node)
+            merge_hits(builder_hits(test_sources.keys, node.qualifier, method["builders"], base_idx, head_idx), [])
+          else
+            grep_hits(test_sources, node.bare_name)
+          end
         end
         method["entry_point_tests"] = if @coverage || !method["existing_tests"].empty?
           []

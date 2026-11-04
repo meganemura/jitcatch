@@ -683,6 +683,7 @@ class TestChanges < Minitest::Test
       repo.write("spec/models/loan_spec.rb", "loan = create(:loan)\nexpect(loan.approved_by).to eq(\"nobody\")\n")
       repo.write("spec/models/desk_spec.rb", "Loan.create!(amount: 5)\n")
       repo.write("spec/models/new_spec.rb", "Loan.new\n")
+      repo.write("spec/models/reflect_spec.rb", "Loan.instance_method(:initialize)\n")
       repo.write("spec/models/ledger_spec.rb", "create(:ledger)\n")
       repo.write("spec/models/own_spec.rb", "def create(name) = name\ncreate(:loan)\n")
       record_history(repo, factories: factories)
