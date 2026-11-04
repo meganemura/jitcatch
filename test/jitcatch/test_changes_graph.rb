@@ -232,6 +232,20 @@ class TestChangesGraph < Minitest::Test
     end
   end
 
+  def test_a_block_pass_of_a_symbol_calls_that_name
+    with_repo do |repo|
+      repo.write("lib/order.rb", "class Line\nend\n\nclass Order\n  def initialize(lines) = @lines = lines\n  def total_cents = @lines.sum(&:total_cents)\nend\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/order.rb", "class Line\n  def total_cents = 1\nend\n\nclass Order\n  def initialize(lines) = @lines = lines\n  def total_cents = @lines.sum(&:total_cents)\nend\n")
+      repo.commit("Price a line.", date: "2026-02-12T00:00:00Z")
+
+      method = JitCatch::Changes.between(repo.dir, "base", "HEAD")["methods"].find { |item| item["name"] == "Line#total_cents" }
+
+      assert_equal [{ "from" => "Order#total_cents", "name" => "total_cents" }], method["dynamic_callers"]
+    end
+  end
+
   def test_an_instance_variable_built_from_one_class_is_that_class
     with_repo do |repo|
       leaf = "class Repo\n  def read\n    BODY\n  end\nend\n\nclass Other\n  def read\n    0\n  end\nend\n"

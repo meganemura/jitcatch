@@ -585,6 +585,12 @@ module JitCatch
             enclosing: enclosing,
             receiver: receiver_of(node.receiver)
           )
+          # `lines.sum(&:total_cents)` sends total_cents to each element,
+          # whose class the source does not name.
+          if node.block.is_a?(Prism::BlockArgumentNode) && node.block.expression.is_a?(Prism::SymbolNode)
+            @calls << self.class::Call.new(file: @file, bare_name: node.block.expression.unescaped, line: node.location.start_line,
+              enclosing: enclosing, receiver: UNKNOWN_RECEIVER)
+          end
           refer(enclosing, node.name) unless spec_helper_call?(node)
           owner = constructor_owner(node) || described_owner(node)
           refer(enclosing, "#{owner.split("::").last}.new") if owner
