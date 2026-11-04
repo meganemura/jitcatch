@@ -1179,6 +1179,29 @@ class TestRunner < Minitest::Test
     end
   end
 
+  # A proxy setting is a likely reason for a wait only in an app that
+  # loads an HTTP client, as its Gemfile.lock lists, or starts a command
+  # that fetches, as `npx --yes` does.
+  def test_an_http_client_or_a_fetching_command_names_the_proxy_a_timed_out_child_did_not_get
+    { "Gemfile.lock" => "GEM\n  remote: https://rubygems.org/\n  specs:\n    faraday (2.12.0)\n", "lib/quint.rb" => %(QUINT = "npx --yes quint"\n), "lib/notes.rb" => %(NOTE = "npx"\n) }.each do |path, text|
+      with_repo do |repo|
+        repo.write("lib/flag.rb", "module Flag; def self.ok; true; end; end\n")
+        repo.commit("base", date: "2026-02-11T00:00:00Z")
+        repo.branch("base")
+        repo.write(path, text)
+        repo.commit("Add #{path}.", date: "2026-02-12T00:00:00Z")
+        tests = File.join(repo.dir, "candidates")
+        write_tests(tests, { "slow_test.rb" => "require \"minitest/autorun\"\nrequire \"flag\"\n\nclass SlowTest < Minitest::Test\n  def test_slow\n    #{block_until_killed(repo.dir)}\n    assert Flag.ok\n  end\nend\n" })
+
+        names = with_env("HTTPS_PROXY" => "http://proxy.invalid:3128") do
+          execute(repo, tests, timeout: 1, finished_in_time: blocked_children_time_out(repo.dir))["env_not_passed"]
+        end
+
+        assert_equal path != "lib/notes.rb", names.include?("HTTPS_PROXY"), path
+      end
+    end
+  end
+
   def test_a_minitest_spec_file_runs_as_minitest_and_keeps_its_spaced_names
     with_repo do |repo|
       repo.write("lib/calc.rb", BASE_CALC)

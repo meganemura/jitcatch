@@ -18,6 +18,15 @@ module JitCatch
     NETWORK_ENV = /\A(?:(?:HTTPS?|NO|ALL)_PROXY|SSL_CERT_(?:FILE|DIR)|NODE_EXTRA_CA_CERTS)\z/i
     ENV_READ = /ENV(?:\.fetch\(\s*|\.key\?\(\s*|\[\s*)["']([A-Za-z_][A-Za-z0-9_]*)["']/
     ENV_READ_GREP = %q{ENV(\.fetch\(|\.key\?\(|\[) *["'][A-Za-z_][A-Za-z0-9_]*["']}
+    # What reads a proxy or CA setting: an HTTP client, by the name a file
+    # requires or a Gemfile.lock lists, and a command a file starts that
+    # fetches, such as `npx --yes`. A spec of a local SQLite app uses none,
+    # so the host's proxy settings are noise there.
+    NETWORK_REQUIRES = %w[net/http net/https open-uri faraday httparty excon http httpx httpclient rest-client typhoeus].freeze
+    NETWORK_GEMS = %w[net-http faraday httparty excon http httpx httpclient rest-client typhoeus].freeze
+    NETWORK_COMMANDS = %w[npx npm curl wget].freeze
+    NETWORK_USE_GREP = "require *\\(? *[\"'](#{NETWORK_REQUIRES.join("|")})[\"']|[\"'](#{NETWORK_COMMANDS.join("|")}) "
+    NETWORK_USE = Regexp.new(NETWORK_USE_GREP)
     # Rescuing in the child keeps Bundler's own message and drops its backtrace.
     BUNDLE_SETUP = 'begin; require "bundler/setup"; rescue Exception => e; $stderr.puts e.message; exit 1; end'
     SETUP_STDERR_LINES = 10
@@ -417,13 +426,19 @@ module JitCatch
     # and the child gets only the names --env passes. `bundle exec` sets the
     # Gemfile and lockfile names for jitcatch's own bundle, not the checkout's.
     # Names the parent has and the child does not get that a child often
-    # waits on: network settings, and names the head's Ruby source or a
-    # candidate reads from ENV.
+    # waits on: names the head's Ruby source or a candidate reads from ENV,
+    # and network settings when either loads an HTTP client.
     def env_not_passed(head, files)
-      sources = [@git.ruby_matches(head, ENV_READ_GREP), *files.map { |relative| read_candidate(relative) }]
-      read = sources.flat_map { |text| text.scan(ENV_READ).flatten }
+      candidates = files.map { |relative| read_candidate(relative) }
+      read = [@git.ruby_matches(head, ENV_READ_GREP), *candidates].flat_map { |text| text.scan(ENV_READ).flatten }
+      network = network_library?(head, candidates)
       passed = PASSED_ENV + RESERVED_ENV + @env_names
-      ENV.keys.select { |name| name.match?(NETWORK_ENV) || read.include?(name) }.reject { |name| passed.include?(name) }.sort
+      ENV.keys.select { |name| (network && name.match?(NETWORK_ENV)) || read.include?(name) }.reject { |name| passed.include?(name) }.sort
+    end
+
+    def network_library?(head, candidates)
+      locked = @git.show(head, "Gemfile.lock").to_s.scan(/^    (\S+) \(/).flatten
+      (locked & NETWORK_GEMS).any? || [@git.ruby_matches(head, NETWORK_USE_GREP), *candidates].any? { |text| text.match?(NETWORK_USE) }
     end
 
     def unpassed_bundler_settings
