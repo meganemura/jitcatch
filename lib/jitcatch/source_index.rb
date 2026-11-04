@@ -421,35 +421,35 @@ module JitCatch
       end
     end
 
-# The symbols a member list names, with `*FIELDS` read from a constant
-# this file set to a list of symbols before it, looked up from the
-# innermost namespace out. Each member keeps the line of its own symbol,
-# so a change to the list is a change to that member.
-def member_symbols(call, qualifier)
-  Array(call.arguments&.arguments).flat_map do |arg|
-    case arg
-    when Prism::SymbolNode
-      [arg]
-    when Prism::SplatNode
-      name = const_name(arg.expression)
-      parts = qualifier.to_s.split("::")
-      found = name && parts.size.downto(0).map { |n| [*parts.first(n), name].join("::") }.find { |full| @symbol_lists.key?(full) }
-      found ? @symbol_lists.fetch(found) : []
-    else
-      []
+    # The symbols a member list names, with `*FIELDS` read from a constant
+    # this file set to a list of symbols before it, looked up from the
+    # innermost namespace out. Each member keeps the line of its own symbol,
+    # so a change to the list is a change to that member.
+    def member_symbols(call, qualifier)
+      Array(call.arguments&.arguments).flat_map do |arg|
+        case arg
+        when Prism::SymbolNode
+          [arg]
+        when Prism::SplatNode
+          name = const_name(arg.expression)
+          parts = qualifier.to_s.split("::")
+          found = name && parts.size.downto(0).map { |n| [*parts.first(n), name].join("::") }.find { |full| @symbol_lists.key?(full) }
+          found ? @symbol_lists.fetch(found) : []
+        else
+          []
+        end
+      end
     end
-  end
-end
 
-# `[:a, :b]`, `%i[a b]`, and either with `.freeze`.
-def symbol_list(node)
-  node = node.receiver if node.is_a?(Prism::CallNode) && node.name == :freeze && node.arguments.nil?
-  return nil unless node.is_a?(Prism::ArrayNode) && node.elements.all?(Prism::SymbolNode)
+    # `[:a, :b]`, `%i[a b]`, and either with `.freeze`.
+    def symbol_list(node)
+      node = node.receiver if node.is_a?(Prism::CallNode) && node.name == :freeze && node.arguments.nil?
+      return nil unless node.is_a?(Prism::ArrayNode) && node.elements.all?(Prism::SymbolNode)
 
-  node.elements
-end
+      node.elements
+    end
 
-def record_generated(arg, qualifier, bare, visibility, singleton, macro, source)
+    def record_generated(arg, qualifier, bare, visibility, singleton, macro, source)
       @methods << self.class::Method.new(
         file: @file,
         bare_name: bare,

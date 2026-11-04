@@ -395,26 +395,26 @@ module JitCatch
       referenced.select { |name| known.include?(name) || known.include?(SourceIndex.split_qualified(name).last) || known.include?(Assessor.mention_of(name)) }
     end
 
-# A test that starts a script in another process (`IO.popen(["ruby",
-# "exe/tool"])`) reaches the code that script calls, which no call in
-# the test names. A path the test writes, read from the worktree root,
-# from the candidate's directory, or from the candidate file as
-# `File.expand_path` reads it, names such a script when it is a file of
-# head outside `.jitcatch/`; the names it refers to count as mentions.
-def script_names(paths, relative, head_dir)
-  candidate = File.join(head_dir, ".jitcatch", relative)
-  root = File.join(head_dir, "")
-  own = File.join(head_dir, ".jitcatch", "")
-  paths.flat_map { |path|
-    [head_dir, File.dirname(candidate), candidate].map { |dir| File.expand_path(path, dir) }
-      .select { |full| full.start_with?(root) && !full.start_with?(own) && File.file?(full) }
-  }.uniq.flat_map { |full|
-    script = SourceIndex.parse(read_text(full), file: full.delete_prefix(root))
-    script.parse_error ? [] : script.referenced_names("")
-  }
-end
+    # A test that starts a script in another process (`IO.popen(["ruby",
+    # "exe/tool"])`) reaches the code that script calls, which no call in
+    # the test names. A path the test writes, read from the worktree root,
+    # from the candidate's directory, or from the candidate file as
+    # `File.expand_path` reads it, names such a script when it is a file of
+    # head outside `.jitcatch/`; the names it refers to count as mentions.
+    def script_names(paths, relative, head_dir)
+      candidate = File.join(head_dir, ".jitcatch", relative)
+      root = File.join(head_dir, "")
+      own = File.join(head_dir, ".jitcatch", "")
+      paths.flat_map { |path|
+        [head_dir, File.dirname(candidate), candidate].map { |dir| File.expand_path(path, dir) }
+          .select { |full| full.start_with?(root) && !full.start_with?(own) && File.file?(full) }
+      }.uniq.flat_map { |full|
+        script = SourceIndex.parse(read_text(full), file: full.delete_prefix(root))
+        script.parse_error ? [] : script.referenced_names("")
+      }
+    end
 
-# A file-level row (`file#load`, `file#timeout`) reruns the whole file.
+    # A file-level row (`file#load`, `file#timeout`) reruns the whole file.
     def rerun_command(row, bundled, pin_root)
       file_level = row["line"].nil? && row["name"].start_with?("#{File.basename(row["file"])}#")
       name = file_level ? nil : row["name"]

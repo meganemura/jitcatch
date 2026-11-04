@@ -1158,36 +1158,36 @@ class TestRunner < Minitest::Test
     end
   end
 
-def test_the_receiver_class_picks_the_related_method_among_same_named_ones
-  with_repo do |repo|
-    same_named_history(repo)
-    tests = File.join(repo.dir, "candidates")
-    write_tests(tests, {
-      "parse_test.rb" => <<~TEST
-        require "minitest/autorun"
-        require "a"
+  def test_the_receiver_class_picks_the_related_method_among_same_named_ones
+    with_repo do |repo|
+      same_named_history(repo)
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, {
+        "parse_test.rb" => <<~TEST
+          require "minitest/autorun"
+          require "a"
 
-        class ParseTest < Minitest::Test
-          def test_index
-            result = Index.parse("x")
-            assert_equal "x", result
+          class ParseTest < Minitest::Test
+            def test_index
+              result = Index.parse("x")
+              assert_equal "x", result
+            end
+
+            def test_log
+              assert_equal "x", Log.parse("x")
+            end
           end
+        TEST
+      })
 
-          def test_log
-            assert_equal "x", Log.parse("x")
-          end
-        end
-      TEST
-    })
+      doc = execute(repo, tests)
+      ids = doc["methods"].to_h { |method| [method["name"], method["id"]] }
+      rows = doc["tests"].to_h { |test| [test["name"], test.values_at("method_id", "method_ids")] }
 
-    doc = execute(repo, tests)
-    ids = doc["methods"].to_h { |method| [method["name"], method["id"]] }
-    rows = doc["tests"].to_h { |test| [test["name"], test.values_at("method_id", "method_ids")] }
-
-    assert_equal [ids.fetch("Index.parse"), [ids.fetch("Index.parse")]], rows.fetch("ParseTest#test_index")
-    assert_equal [ids.fetch("Log.parse"), [ids.fetch("Log.parse")]], rows.fetch("ParseTest#test_log")
+      assert_equal [ids.fetch("Index.parse"), [ids.fetch("Index.parse")]], rows.fetch("ParseTest#test_index")
+      assert_equal [ids.fetch("Log.parse"), [ids.fetch("Log.parse")]], rows.fetch("ParseTest#test_log")
+    end
   end
-end
 
   def test_a_call_through_a_picked_constant_is_related_and_one_through_a_lookup_says_so
     with_repo do |repo|

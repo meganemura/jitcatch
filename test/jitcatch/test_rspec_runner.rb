@@ -350,15 +350,15 @@ class TestRSpecRunner < Minitest::Test
     end
   end
 
-# The example's group or its receiver names the class whose `parse` it calls.
-def test_the_described_class_picks_the_related_method_among_same_named_ones
-  with_repo do |repo|
-    same_named_history(repo)
-    tests = File.join(repo.dir, "candidates")
-    write_tests(tests, {
-      "index_spec.rb" => %(require "a"\n\nRSpec.describe Index do\n  let(:result) { described_class.parse("x") }\n\n  it("keeps the text") { expect(result).to eq("x") }\nend\n),
-      "log_spec.rb" => %(require "a"\n\nRSpec.describe "a log" do\n  it("keeps the text") { expect(Log.parse("x")).to eq("x") }\nend\n)
-    })
+  # The example's group or its receiver names the class whose `parse` it calls.
+  def test_the_described_class_picks_the_related_method_among_same_named_ones
+    with_repo do |repo|
+      same_named_history(repo)
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, {
+        "index_spec.rb" => %(require "a"\n\nRSpec.describe Index do\n  let(:result) { described_class.parse("x") }\n\n  it("keeps the text") { expect(result).to eq("x") }\nend\n),
+        "log_spec.rb" => %(require "a"\n\nRSpec.describe "a log" do\n  it("keeps the text") { expect(Log.parse("x")).to eq("x") }\nend\n)
+      })
 
       doc = execute(repo, tests)
       ids = doc["methods"].to_h { |method| [method["name"], method["id"]] }
