@@ -4,7 +4,7 @@ module JitCatch
   # Rule-based filter. It does not decide intended-versus-regression.
   # That judgment needs the change intent and belongs to the agent.
   class Assessor
-    ARITY = /wrong number of arguments|missing keywords?: |unknown keywords?: /
+    ARITY = /wrong number of arguments|missing keywords?: |unknown keywords?: |struct size differs/
 
     def self.apply(doc)
       new(doc).apply

@@ -601,6 +601,23 @@ class TestRunner < Minitest::Test
     end
   end
 
+  def test_a_struct_given_more_values_than_its_members_is_a_signature_change
+    with_repo do |repo|
+      repo.write("lib/geo.rb", "module Geo\n  Point = Struct.new(:x, :y)\nend\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/geo.rb", "module Geo\n  Point = Struct.new(:x)\nend\n")
+      repo.commit("Drop y.", date: "2026-02-12T00:00:00Z")
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, { "geo_test.rb" => candidate_source("GeoTest", "test_y", "assert_equal 2, Geo::Point.new(1, 2).y").sub('require "calc"', 'require "geo"') })
+
+      row = execute(repo, tests)["tests"].fetch(0)
+
+      assert_equal ["discarded", "struct size differs"], [row["disposition"], row.dig("head", "message")]
+      assert_includes row["tags"], "discard:signature_change"
+    end
+  end
+
   def test_reruns_judge_only_candidates_and_run_every_rerun
     with_repo do |repo|
       repo.write("lib/calc.rb", BASE_CALC)

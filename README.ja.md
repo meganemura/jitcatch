@@ -310,7 +310,7 @@ base で通り、head で失敗、エラー、またはタイムアウトにな�
 候補を `discarded` にするルールは 3 つある。
 head での `LoadError`、タイムアウト、そして diff が消したかシグネチャを書き換えた名前に対する `NameError`、`NoMethodError`、引数個数の `ArgumentError` である。
 消えたクラスやモジュールも消えた名前に数える。
-引数個数の `ArgumentError` とは `wrong number of arguments`、`missing keyword`、`unknown keyword` のことで、`assert_raises` や RSpec の `raise_error` が受け取って失敗にしたときも同じに扱う。
+引数個数の `ArgumentError` とは `wrong number of arguments`、`missing keyword`、`unknown keyword`、`struct size differs`（メンバーより多くの値を渡した `Struct`）のことで、`assert_raises` や RSpec の `raise_error` が受け取って失敗にしたときも同じに扱う。
 コードが意図して起こす `ArgumentError`（`qty must be > 0` のようなもの）は `reported` のまま残る。
 
 同じリポジトリと同じテストなら、出力は同じバイトになる。
