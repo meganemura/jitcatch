@@ -105,4 +105,22 @@ class TestParserProperty < Minitest::Test
   ensure
     repo&.destroy
   end
+
+  def test_a_minitest_message_line_of_any_shape_stays_in_the_message
+    Hegel.test do |tc|
+      lines = tc.draw(arrays(from_regex(LINE_OF_ANY_SHAPE, fullmatch: true), max_size: 8))
+      frames = Array.new(tc.draw(integers(min_value: 0, max_value: 3))) { [tc.draw(from_regex("lib/[a-z]{1,6}\\.rb", fullmatch: true)), tc.draw(integers(min_value: 1, max_value: 99))] }
+      kind = tc.draw(sampled_from(%w[Failure Error]))
+      # Only the indented frames that end an error are its backtrace, so an
+      # error message that ends on one would lose it.
+      lines << "end" if kind == "Error" && lines.last&.match?(/\A    .*:in /)
+      body = kind == "Error" ? ["KeyError: first", *lines, *frames.map { |file, line| "    #{file}:#{line}:in 'g'" }] : ["first", *lines]
+      stdout = ["  1) #{kind}:", "ATest#test_a#{" [a_test.rb:3]" if kind == "Failure"}:", *body, "", "1 runs, 1 assertions, 0 failures, 0 errors, 0 skips"].join("\n")
+
+      result = JitCatch::MinitestParser.parse(stdout, "")["tests"].fetch("ATest#test_a")
+
+      assert_equal ["first", *lines].join("\n").rstrip, result["message"]
+      assert_equal kind == "Error" ? frames : [["a_test.rb", 3]], result["backtrace"].map { |item| [item["file"], item["line"]] }
+    end
+  end
 end

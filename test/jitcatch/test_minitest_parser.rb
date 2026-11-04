@@ -108,4 +108,42 @@ class TestMinitestParser < Minitest::Test
     assert_equal %([KeyError] exception expected, not\nClass: <ArgumentError>\nMessage: <"wrapped k">), result["message"]
     assert_equal [{ "file" => ".jitcatch/ar_test.rb", "line" => 4 }, { "file" => "lib/a.rb", "line" => 2 }, { "file" => ".jitcatch/ar_test.rb", "line" => 4 }], result["backtrace"]
   end
+
+  def test_a_message_line_shaped_like_a_frame_stays_in_the_message
+    stdout = <<~OUT
+      GTest#test_boom = 0.00 s = E
+      GTest#test_line = 0.02 s = F
+
+        1) Error:
+      GTest#test_boom:
+      RuntimeError: x.rb:20:in 'y'
+          lib/q.rb:3:in 'z'
+      last
+          /w/lib/g.rb:3:in 'G.boom'
+          /w/.jitcatch/g_test.rb:5:in 'GTest#test_boom'
+
+        2) Failure:
+      GTest#test_line [/w/.jitcatch/g_test.rb:4]:
+      --- expected
+      +++ actual
+      @@ -1,4 +1,4 @@
+       # encoding: UTF-8
+       #    valid: true
+      -"a
+      +"x.rb:20:in 'y'
+       "
+
+
+      2 runs, 1 assertions, 1 failures, 1 errors, 0 skips
+    OUT
+
+    tests = JitCatch::MinitestParser.parse(stdout, "", normalizer: ->(text) { text.gsub("/w/", "{worktree}/") })["tests"]
+
+    error = tests.fetch("GTest#test_boom")
+    assert_equal ["RuntimeError", "x.rb:20:in 'y'\n    lib/q.rb:3:in 'z'\nlast"], error.values_at("error_class", "message")
+    assert_equal [{ "file" => "lib/g.rb", "line" => 3 }, { "file" => ".jitcatch/g_test.rb", "line" => 5 }], error["backtrace"]
+    failure = tests.fetch("GTest#test_line")
+    assert_equal %(-"a\n+"x.rb:20:in 'y'\n "), failure["message"].lines.last(3).join
+    assert_equal [{ "file" => ".jitcatch/g_test.rb", "line" => 4 }], failure["backtrace"]
+  end
 end

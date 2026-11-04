@@ -57,4 +57,19 @@ class TestRSpecProperty < Minitest::Test
       assert_equal ["ruby", "-Ilib", "-I.", "{tests}/#{file}", "-n", name], Shellwords.split(JitCatch::Framework::Minitest.rerun(file, name, nil))
     end
   end
+
+  def test_a_message_line_of_any_shape_stays_in_the_message
+    Hegel.test do |tc|
+      lines = tc.draw(arrays(from_regex(LINE_OF_ANY_SHAPE, fullmatch: true), max_size: 8))
+      quoted = Array.new(tc.draw(integers(min_value: 0, max_value: 3))) { [tc.draw(from_regex("lib/[a-z]{1,6}\\.rb", fullmatch: true)), tc.draw(integers(min_value: 1, max_value: 99))] }
+      header = quoted.empty? ? [] : ["got #<KeyError: k> with backtrace:"]
+      message = ["expected: 1", *lines, *header, *quoted.map { |file, line| "  # ./#{file}:#{line}:in 'g'" }].join("\n")
+      example = { "full_description" => "A g", "status" => "failed", "line_number" => 1, "exception" => { "class" => "RSpec::Expectations::ExpectationNotMetError", "message" => message, "backtrace" => ["./a_spec.rb:1:in 'b'"] } }
+
+      result = JitCatch::RSpecParser.parse(JSON.generate("examples" => [example], "summary" => {}), "", "")["tests"].fetch("A g")
+
+      assert_equal ["expected: 1", *lines, *("got #<KeyError: k>" unless quoted.empty?)].join("\n").rstrip, result["message"]
+      assert_equal [["a_spec.rb", 1], *quoted], result["backtrace"].map { |item| [item["file"], item["line"]] }
+    end
+  end
 end

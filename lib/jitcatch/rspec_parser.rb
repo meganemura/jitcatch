@@ -69,15 +69,24 @@ module JitCatch
 
       exception = example["exception"] || {}
       error_class = exception["class"].to_s
-      quoted, lines = @normalizer.call(exception["message"].to_s).lines.partition { |line| line.match?(QUOTED_FRAME) }
+      message, quoted = split_quoted(@normalizer.call(exception["message"].to_s).lines)
       backtrace = Array(exception["backtrace"]).map { |line| @normalizer.call(line.to_s) }
       at = backtrace.index(CAUSED_BY)
       own = frames(backtrace.take(at || backtrace.size))
       # The expectation's line comes first, then the frames of the error it
       # got, as Minitest prints an assert_raises failure.
-      message = quoted.empty? ? lines.join : lines.join.sub(QUOTED_HEADER, "")
       Failure.result(FAILURES.include?(error_class) ? "fail" : "error", error_class, message, [*own.first(1), *frames(quoted), *own.drop(1)],
         cause: at && cause(backtrace.drop(at + 1)))
+    end
+
+    # A diff line can look like a quoted frame, so only the frames that end
+    # the message right after the header are quoted.
+    def split_quoted(lines)
+      at = lines.size
+      at -= 1 while at.positive? && lines[at - 1].match?(QUOTED_FRAME)
+      return [lines.join, []] unless at.positive? && lines[at - 1].match?(QUOTED_HEADER)
+
+      [[*lines.take(at - 1), lines[at - 1].sub(QUOTED_HEADER, "")].join, lines.drop(at)]
     end
 
     def cause(lines)

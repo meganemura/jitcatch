@@ -145,4 +145,14 @@ class TestRSpecParser < Minitest::Test
 
     assert_equal ["RuntimeError", "something broke in a hook"], parsed["file_error"].values_at("error_class", "message")
   end
+
+  def test_a_diff_line_shaped_like_a_quoted_frame_stays_in_the_message
+    message = "expected: \"  # x.rb:20:in 'y'\\na\\n\"\n     got: \"  # x.rb:20:in 'y'\\nb\\n\"\n\n(compared using ==)\n\nDiff:\n@@ -1,2 +1,2 @@\n   # x.rb:20:in 'y'\n-a\n+b\n"
+    examples = [example("1:1", "H text", "failed", 3, exception: { "class" => "RSpec::Expectations::ExpectationNotMetError", "message" => message, "backtrace" => ["./.jitcatch/h_spec.rb:3:in 'block (2 levels) in <top (required)>'"] })]
+
+    result = JitCatch::RSpecParser.parse(report(examples), "", "")["tests"].fetch("H text")
+
+    assert_equal message.rstrip, result["message"]
+    assert_equal [{ "file" => ".jitcatch/h_spec.rb", "line" => 3 }], result["backtrace"]
+  end
 end
