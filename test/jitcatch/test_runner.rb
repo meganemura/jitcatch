@@ -566,6 +566,41 @@ class TestRunner < Minitest::Test
     end
   end
 
+  def test_a_qualified_new_names_the_constructor_of_that_class_alone
+    with_repo do |repo|
+      source = "module A\n  class Box\n    attr_reader :n\n\n    def initialize(n) = (@n = n)\n  end\nend\n"
+      repo.write("lib/box.rb", source + source.sub("module A", "module B"))
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/box.rb", source.sub("@n = n", "@n = n * 2") + source.sub("module A", "module B").sub("@n = n", "@n = n + 1"))
+      repo.commit("Scale the boxes.", date: "2026-02-12T00:00:00Z")
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, {
+        "box_test.rb" => <<~RUBY
+          require "minitest/autorun"
+          require "box"
+
+          class BoxTest < Minitest::Test
+            def test_qualified
+              assert_equal 1, A::Box.new(1).n
+            end
+
+            def test_bare
+              assert_equal 1, B::Box.new(1).n
+            end
+          end
+        RUBY
+      })
+
+      doc = execute(repo, tests)
+      ids = doc["methods"].to_h { |method| [method["name"], method["id"]] }
+      rows = doc["tests"].to_h { |test| [test["name"], test.values_at("method_id", "method_ids", "mentions")] }
+
+      assert_equal [ids.fetch("A::Box#initialize"), [ids.fetch("A::Box#initialize")], ["A::Box#n", "A::Box.new", "n"]], rows.fetch("BoxTest#test_qualified")
+      assert_equal [ids.fetch("B::Box#initialize"), [ids.fetch("B::Box#initialize")], ["B::Box#n", "B::Box.new", "n"]], rows.fetch("BoxTest#test_bare")
+    end
+  end
+
   def test_reruns_judge_only_candidates_and_run_every_rerun
     with_repo do |repo|
       repo.write("lib/calc.rb", BASE_CALC)

@@ -597,7 +597,7 @@ module JitCatch
           end
           refer(enclosing, node.name) unless spec_helper_call?(node)
           owner = constructor_owner(node) || described_owner(node)
-          refer(enclosing, "#{owner.split("::").last}.new") if owner
+          refer(enclosing, "#{owner}.new") if owner
           named = reflective_name(node)
           refer(enclosing, named) if named
           refer(enclosing, "to_s") if MESSAGE_CALLS.include?(node.name)
@@ -742,7 +742,7 @@ module JitCatch
       return nil unless node.name == :new
 
       receiver = node.receiver
-      name_of(receiver).to_s if receiver.is_a?(Prism::ConstantReadNode) || receiver.is_a?(Prism::ConstantPathNode)
+      const_name(receiver) if receiver.is_a?(Prism::ConstantReadNode) || receiver.is_a?(Prism::ConstantPathNode)
     end
 
     # Prism 0.19, the default on Ruby 3.3, has no ConstantPathNode#name: the

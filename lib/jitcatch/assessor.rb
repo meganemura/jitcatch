@@ -174,7 +174,7 @@ module JitCatch
       tags = []
       changed_mentions = @methods.map { |item| mention(item) }
       gem = origin_gem(test)
-      named = method && mentions.include?(mention(method)) && sent_to_named_receivers([method], mentions).any?
+      named = method && mentioned?(method, mentions) && sent_to_named_receivers([method], mentions).any?
       direct = method && gem.nil? && (named || frame_hits?(test, method))
       tags << "touches:changed_method" if direct
       tags << "touches:changed_dependency" if gem && Array(@doc["dependencies"]).any? { |dep| dep["gem"] == gem }
@@ -212,7 +212,7 @@ module JitCatch
       return [method_from_backtrace(test), framed] if framed.any?
 
       mentions = Array(test["mentions"])
-      mentioned = sent_to_named_receivers(@methods.select { |item| mentions.include?(mention(item)) }, mentions)
+      mentioned = sent_to_named_receivers(@methods.select { |item| mentioned?(item, mentions) }, mentions)
       # Almost every test builds its object with `.new`, so a changed
       # constructor is the related method only when nothing else points.
       constructors, named = mentioned.partition { |item| mention(item).end_with?(".new") }
@@ -343,6 +343,20 @@ module JitCatch
 
     def mention(item)
       self.class.mention_of(item["name"].to_s)
+    end
+
+    # A test writes a constructor as `Box.new` or `A::Box.new`. The written
+    # path names this class when its segments end the class's name, so
+    # `A::Box.new` is not a mention of `B::Box#initialize`.
+    def mentioned?(item, mentions)
+      name = mention(item)
+      return mentions.include?(name) unless name.end_with?(".new")
+
+      owner = SourceIndex.split_qualified(item["name"].to_s).first
+      mentions.any? { |text|
+        written = text.delete_suffix(".new")
+        text.end_with?(".new") && (owner == written || owner.end_with?("::#{written}") || written.end_with?("::#{owner}"))
+      }
     end
 
     def lowest(items)

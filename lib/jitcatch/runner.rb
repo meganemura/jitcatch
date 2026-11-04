@@ -364,7 +364,7 @@ module JitCatch
 
     # The names a test can mention. A test runs `Owner#initialize` by writing
     # `Owner.new`, so a constructor is mentioned as `Owner.new`, with the
-    # owner's last name segment as the test usually writes it.
+    # owner's last name segment, the shortest way a test can write it.
     def mention_names(change)
       names = change["methods"].flat_map { |method|
         [method["name"], *method["reachable_from"], *method["dynamic_callers"].map { |caller| caller["from"] }].map { |name| Assessor.mention_of(name) }
@@ -378,7 +378,7 @@ module JitCatch
     # calls, so a neighbor test in the same file does not change its tags.
     def mentions_for(index, test_name, line, known)
       referenced = (line && index.example_references(line)) || index.referenced_names(test_name)
-      referenced.select { |name| known.include?(name) || known.include?(SourceIndex.split_qualified(name).last) }
+      referenced.select { |name| known.include?(name) || known.include?(SourceIndex.split_qualified(name).last) || known.include?(Assessor.mention_of(name)) }
     end
 
     # A file-level row (`file#load`, `file#timeout`) reruns the whole file.
