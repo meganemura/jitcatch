@@ -28,8 +28,8 @@ methods:
 entrypoints Shop::Cart:
   Shop::Cart#volume_discount_cents affected
   Shop::Cart.new unchanged
-  Shop::Cart#add unchanged
-  Shop::Cart#subtotal_cents unchanged
   Shop::Cart#tax_cents unchanged
   Shop::Cart#taxable_cents unchanged
   Shop::Cart#total_cents unchanged
+  Shop::Cart#add unchanged
+  Shop::Cart#subtotal_cents unchanged

@@ -383,10 +383,13 @@ module JitCatch
           # A test builds the object with `.new`, which runs `initialize`.
           listed << { "name" => "#{qualifier}.new", "role" => changed[constructor] || "unchanged" }
         end
-        listed = listed.sort_by { |item| [item["role"] == "unchanged" ? 1 : 0, item["name"].end_with?(".new") ? 0 : 1, item["name"]] }
+        # An unchanged method that reaches a changed one is the call a test
+        # makes, so the cap leaves it in before the other unchanged ones.
+        callers = methods.flat_map { |method| Array(method["reachable_from"]) }
+        listed = listed.sort_by { |item| [item["role"] == "unchanged" ? 1 : 0, item["name"].end_with?(".new") ? 0 : 1, item["role"] == "unchanged" && callers.include?(item["name"]) ? 0 : 1, item["name"]] }
         next if listed.empty?
 
-        { "class" => qualifier, "methods" => listed.first(ENTRY_CAP) }
+        { "class" => qualifier, "methods" => listed.first(ENTRY_CAP), "omitted" => [listed.size - ENTRY_CAP, 0].max }
       end
     end
 

@@ -166,6 +166,7 @@ module JitCatch
       entrypoints.each do |entry|
         lines << "entrypoints #{entry["class"]}:"
         entry["methods"].each { |method| lines << "  #{method["name"]} #{method["role"]}" }
+        lines << "  (+#{entry["omitted"]} more)" if entry["omitted"].to_i.positive?
       end
       lines
     end

@@ -260,6 +260,7 @@ Concern の `included do`、`prepended do`、`class_methods do` ブロックの�
 ブリーフの最後には、変更メソッドを持つクラスやモジュールごとに `entrypoints <Const>:` の節が出る。
 その節は、そのクラスの head での public メソッドを並べる（head に無ければ base のもの）。
 変更メソッドが先に変更の種類つきで並び、残りは `unchanged` として続き、最大 12 件である。
+`unchanged` のうち変更メソッドに届くものが先に並び、入らなかったメソッドの数を `(+N more)` と出す。
 どちらかの側で `initialize` を定義するクラスは、その代わりに `Owner.new` を `Owner#initialize` の変更の種類つきで出す。
 これはテストが呼べるメソッドであり、`run` はその名前も言及として数える。
 

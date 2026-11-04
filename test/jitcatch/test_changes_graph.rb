@@ -494,4 +494,20 @@ class TestChangesGraph < Minitest::Test
       }, doc["entrypoints"].to_h { |entry| [entry["class"], entry["methods"].map { |method| method.values_at("name", "role") }] })
     end
   end
+
+  def test_the_entrypoint_cap_keeps_the_callers_of_a_changed_method
+    with_repo do |repo|
+      source = ["module Support", *("a".."n").map { |name| "  def self.#{name} = 0" }, "  def self.outcomes = text(1)", "  def self.text(n) = BODY", "  private_class_method :text", "end", ""].join("\n")
+      repo.write("lib/support.rb", source.sub("BODY", "n.to_s"))
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/support.rb", source.sub("BODY", "n.to_s * 2"))
+      repo.commit("Say it twice.", date: "2026-02-12T00:00:00Z")
+
+      entry = JitCatch::Changes.between(repo.dir, "base", "HEAD")["entrypoints"].fetch(0)
+
+      assert_equal [["Support.outcomes", "Support.a"], 3], [entry["methods"].first(2).map { |method| method["name"] }, entry["omitted"]]
+      assert_includes JitCatch::Render.context_text(JitCatch::Changes.between(repo.dir, "base", "HEAD")), "  Support.k unchanged\n  (+3 more)\n"
+    end
+  end
 end
