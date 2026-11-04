@@ -381,6 +381,38 @@ class TestAssessor < Minitest::Test
     assert_equal ["m06", %w[m05 m06]], row.values_at("method_id", "method_ids")
   end
 
+  def test_a_guess_passes_over_an_edit_that_only_forwards_to_an_added_method
+    doc = {
+      "methods" => [
+        method("m01", "modified", "same", "total", [], 1).merge("forwards_to_added" => true),
+        method("m02", "modified", "same", "label", [], 10)
+      ],
+      "constants" => [],
+      "tests" => [candidate("t01", "LabelTest#test_text", %w[label total], failure("Expected: 1\n  Actual: 2"))]
+    }
+
+    row = JitCatch::Assessor.apply(doc)["tests"].fetch(0)
+
+    assert_equal ["m02", %w[m01 m02]], row.values_at("method_id", "method_ids")
+  end
+
+  # A moved method's old lines count in the file it came from, not in the
+  # file a frame names.
+  def test_a_frame_on_the_old_lines_of_a_moved_method_does_not_hit_it
+    doc = {
+      "methods" => [
+        method("m01", "moved", "same", "total", [], 20).merge("old_start" => 1, "old_end" => 3, "moved_from" => "lib/old.rb"),
+        method("m02", "modified", "same", "label", [], 2)
+      ],
+      "constants" => [],
+      "tests" => [candidate("t01", "LabelTest#test_text", %w[label total], error("RuntimeError", "boom"), frames("lib/calc.rb", 3))]
+    }
+
+    row = JitCatch::Assessor.apply(doc)["tests"].fetch(0)
+
+    assert_equal ["m02", %w[m02]], row.values_at("method_id", "method_ids")
+  end
+
   def test_an_assertion_that_quotes_a_missing_name_is_not_a_name_error
     doc = {
       "methods" => [
