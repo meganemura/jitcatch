@@ -1545,6 +1545,21 @@ class TestRunner < Minitest::Test
     end
   end
 
+  def test_a_directory_with_no_candidate_runs_to_an_empty_report
+    with_repo do |repo|
+      repo.write("lib/calc.rb", "class Calc; end\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.write("README.md", "head\n")
+      repo.commit("Touch readme.", date: "2026-02-12T00:00:00Z")
+      tests = File.join(repo.dir, "candidates")
+      FileUtils.mkdir_p(tests)
+
+      doc = JitCatch::Runner.run(repo.dir, "HEAD~1", "HEAD", tests, reruns: 0)
+
+      assert_equal [], doc["tests"]
+    end
+  end
+
   def test_a_failed_bundle_names_the_bundler_settings_it_did_not_get
     with_repo do |repo|
       repo.write("lib/flag.rb", "module Flag; end\n")
