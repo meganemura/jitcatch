@@ -339,7 +339,16 @@ module JitCatch
     def message_lines(head)
       return [] if head.nil?
 
-      failure_lines(head).map { |line| line.length > MESSAGE_LINE ? "#{line[0, MESSAGE_LINE]}... (+#{line.length - MESSAGE_LINE} more; the whole message is in --json)" : line }
+      failure_lines(head).map { |line| cut_line(line) }
+    end
+
+    # The end of a line often holds what differs, after a path or a value
+    # both sides share, so a cut leaves out the middle.
+    def cut_line(line)
+      return line if line.length <= MESSAGE_LINE
+
+      half = MESSAGE_LINE / 2
+      "#{line[0, half]}... (+#{line.length - MESSAGE_LINE} more; the whole message is in --json) ...#{line[-half..]}"
     end
 
     def failure_lines(head)
@@ -368,9 +377,19 @@ module JitCatch
           # Lines that do not replace each other share no column.
           [removed, added].compact.map { |index| "#{changed[index][0]}#{shortened(changed[index][1..])}" }
         end
+      elsif lines[0] && lines[0].length > MESSAGE_LINE && (changed = rspec_diff_changes(head["message"].to_s))
+        [lines[0], *changed]
       else
         lines.first(1)
       end
+    end
+
+    # The removed and added lines of the Diff RSpec prints under a matcher's
+    # message, such as have_attributes, whose one line shows both Hashes.
+    def rspec_diff_changes(message)
+      diff = message.lines.map(&:rstrip).drop_while { |line| line != "Diff:" }.drop(1)
+      changed = diff.select { |line| line.match?(/\A[-+](?![-+]{2} )/) }
+      changed.empty? ? nil : changed.first(2 * DIFF_KEYS)
     end
 
     # A long line, such as a whole Hash on one line, is hard to compare by

@@ -111,10 +111,45 @@ class TestRender < Minitest::Test
     long = "can't modify frozen Array: [#{(1..5000).to_a.join(", ")}]"
     lines = JitCatch::Render.message_lines({ "message" => long })
 
-    assert_equal ["#{long[0, 300]}... (+#{long.length - 300} more; the whole message is in --json)"], lines
+    assert_equal ["#{long[0, 150]}... (+#{long.length - 300} more; the whole message is in --json) ...#{long[-150..]}"], lines
     assert_equal ["x" * 300], JitCatch::Render.message_lines({ "message" => "x" * 300 })
-    assert_equal ["Expected: 1", "Actual: #{"y" * 292}... (+1 more; the whole message is in --json)"],
-      JitCatch::Render.message_lines({ "message" => "Expected: 1\n  Actual: #{"y" * 293}" })
+    actual = "Actual: #{"y" * 292}z"
+    assert_equal ["Expected: 1", "#{actual[0, 150]}... (+1 more; the whole message is in --json) ...#{actual[-150..]}"],
+      JitCatch::Render.message_lines({ "message" => "Expected: 1\n  #{actual}" })
+  end
+
+  # The end of an error a matcher got often holds what differs, after a
+  # long path or a long value that both sides share.
+  def test_a_cut_line_keeps_its_end
+    got = "expected ArgumentError with message matching /state=pending/, got #<ArgumentError: #{"x" * 290} state=draft>"
+
+    line = JitCatch::Render.message_lines({ "message" => got }).fetch(0)
+
+    assert line.end_with?(" state=draft>"), line
+    assert line.start_with?("expected ArgumentError with message matching /state=pending/, got #<ArgumentError: x"), line
+  end
+
+  # RSpec's have_attributes prints the record and both attribute Hashes on
+  # one line, sorted by name, so the attribute that differs can sit in the
+  # part a cut leaves out; the Diff under it names that attribute.
+  def test_a_cut_first_line_shows_the_lines_its_diff_changed
+    borrower = %(#<Borrower id: 1, name: "#{"G" * 120}", limit_cents: 50000>)
+    message = <<~MESSAGE
+      expected #<Loan id: 1, state: "draft"> to have attributes {amount_cents: 500, borrower: #{borrower}, id: 1, state: "pending"} but had attributes {amount_cents: 500, borrower: #{borrower}, id: 1, state: "draft"}
+      Diff:
+      @@ -3,4 +3,4 @@
+       :borrower => #{borrower},
+       :id => 1,
+      -:state => "pending",
+      +:state => "draft",
+    MESSAGE
+
+    lines = JitCatch::Render.message_lines({ "message" => message })
+
+    assert_equal [%(-:state => "pending",), %(+:state => "draft",)], lines.drop(1)
+    assert_match(/\Aexpected #<Loan id: 1, state: "draft"> to have attributes .*\.\.\. \(\+\d+ more; the whole message is in --json\) \.\.\..*state: "draft"\}\z/, lines.fetch(0))
+    assert_equal ["expected 1 to eq 2"], JitCatch::Render.message_lines({ "message" => "expected 1 to eq 2\nDiff:\n@@ -1 +1 @@\n-2\n+1\n" }),
+      "a first line in full needs no diff"
   end
 
   # Minitest's first removed and first added lines are a pair only when the
