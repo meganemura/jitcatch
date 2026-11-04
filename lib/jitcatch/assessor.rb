@@ -95,8 +95,8 @@ module JitCatch
     # empty hash when the error kept no frame.
     def broken_call(test, method)
       error = raised(test)
-      symbol = missing_symbol(error.message)
-      if %w[NameError NoMethodError].include?(error.error_class) && symbol && removed_symbol?(symbol)
+      symbol = missing_symbol(error)
+      if symbol && removed_symbol?(symbol)
         return error.frames.first || {}
       end
       return nil unless arity_error?(error)
@@ -203,7 +203,7 @@ module JitCatch
     # pick is a guess: a test that names only unchanged callers reaches
     # every changed method below them.
     def related_method(test)
-      symbol = missing_symbol(raised(test).message)
+      symbol = missing_symbol(raised(test))
       if symbol
         hits = @methods.select { |item| item["bare_name"] == symbol }
         return [lowest(hits), hits] if hits.any?
@@ -295,7 +295,12 @@ module JitCatch
       Array(test.dig("head", "backtrace"))
     end
 
-    def missing_symbol(message)
+    # The name a NameError says is missing. Another error, or an assertion,
+    # can quote the same words without any lookup having failed.
+    def missing_symbol(error)
+      return nil unless %w[NameError NoMethodError].include?(error.error_class)
+
+      message = error.message
       if (match = message.match(/undefined method [`']([^`']+)[`']/))
         match[1]
       elsif (match = message.match(/undefined local variable or method [`']([^`']+)[`']/))

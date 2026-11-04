@@ -216,7 +216,7 @@ class TestAssessor < Minitest::Test
     assert_equal({
       "t01" => ["m04", ["discard:signature_change", "error:NoMethodError"]],
       "t02" => ["m02", ["error:NoMethodError", "report"]],
-      "t03" => ["m01", ["error:RuntimeError", "report"]],
+      "t03" => [nil, ["error:RuntimeError", "report"]],
       "t04" => ["m05", ["caller:changed:lib/calc.rb:31", "error:ArgumentError", "related:guess", "report", "touches:changed_method"]],
       "t05" => ["m03", ["error:ArgumentError", "report", "touches:changed_method"]],
       "t06" => [nil, ["assertion", "report"]],
@@ -379,6 +379,23 @@ class TestAssessor < Minitest::Test
     row = JitCatch::Assessor.apply(doc)["tests"].fetch(0)
 
     assert_equal ["m06", %w[m05 m06]], row.values_at("method_id", "method_ids")
+  end
+
+  def test_an_assertion_that_quotes_a_missing_name_is_not_a_name_error
+    doc = {
+      "methods" => [
+        method("m01", "modified", "same", "label", [], 1),
+        method("m02", "removed", "removed", "total", [], 10)
+      ],
+      "constants" => [],
+      "tests" => [
+        candidate("t01", "LabelTest#test_text", ["label"], failure("Expected: \"ok\"\n  Actual: \"undefined method 'total' for nil\""))
+      ]
+    }
+
+    row = JitCatch::Assessor.apply(doc)["tests"].fetch(0)
+
+    assert_equal ["m01", ["m01"], "reported"], row.values_at("method_id", "method_ids", "disposition")
   end
 
   def method(id, change, signature, bare, reachable, start_line)
