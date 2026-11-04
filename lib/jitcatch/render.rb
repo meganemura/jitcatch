@@ -360,7 +360,8 @@ module JitCatch
       return line if line.length <= MESSAGE_LINE
 
       half = MESSAGE_LINE / 2
-      "#{line[0, half]}... (+#{line.length - MESSAGE_LINE} more; the whole message is in --json) ...#{line[-half..]}"
+      left = line.length - MESSAGE_LINE
+      "#{line[0, half]}... (+#{left} #{left == 1 ? "character" : "characters"}; the whole message is in --json) ...#{line[-half..]}"
     end
 
     def failure_lines(head)

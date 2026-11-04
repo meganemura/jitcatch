@@ -111,10 +111,10 @@ class TestRender < Minitest::Test
     long = "can't modify frozen Array: [#{(1..5000).to_a.join(", ")}]"
     lines = JitCatch::Render.message_lines({ "message" => long })
 
-    assert_equal ["#{long[0, 150]}... (+#{long.length - 300} more; the whole message is in --json) ...#{long[-150..]}"], lines
+    assert_equal ["#{long[0, 150]}... (+#{long.length - 300} characters; the whole message is in --json) ...#{long[-150..]}"], lines
     assert_equal ["x" * 300], JitCatch::Render.message_lines({ "message" => "x" * 300 })
     actual = "Actual: #{"y" * 292}z"
-    assert_equal ["Expected: 1", "#{actual[0, 150]}... (+1 more; the whole message is in --json) ...#{actual[-150..]}"],
+    assert_equal ["Expected: 1", "#{actual[0, 150]}... (+1 character; the whole message is in --json) ...#{actual[-150..]}"],
       JitCatch::Render.message_lines({ "message" => "Expected: 1\n  #{actual}" })
   end
 
@@ -147,7 +147,7 @@ class TestRender < Minitest::Test
     lines = JitCatch::Render.message_lines({ "message" => message })
 
     assert_equal [%(-:state => "pending",), %(+:state => "draft",)], lines.drop(1)
-    assert_match(/\Aexpected #<Loan id: 1, state: "draft"> to have attributes .*\.\.\. \(\+\d+ more; the whole message is in --json\) \.\.\..*state: "draft"\}\z/, lines.fetch(0))
+    assert_match(/\Aexpected #<Loan id: 1, state: "draft"> to have attributes .*\.\.\. \(\+\d+ characters; the whole message is in --json\) \.\.\..*state: "draft"\}\z/, lines.fetch(0))
     assert_equal ["expected 1 to eq 2"], JitCatch::Render.message_lines({ "message" => "expected 1 to eq 2\nDiff:\n@@ -1 +1 @@\n-2\n+1\n" }),
       "a first line in full needs no diff"
     full = "x" * 300
