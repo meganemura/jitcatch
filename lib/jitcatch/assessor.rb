@@ -86,7 +86,7 @@ module JitCatch
 
     def discard_reason(test, call)
       head = test["head"] || {}
-      return "timeout" if head["status"] == "timeout" || head["error_class"] == "Timeout"
+      return "timeout" if head["status"] == "timeout" || head["error_class"] == "Timeout" || test.dig("base", "status") == "timeout"
       return "load_error" if head["error_class"] == "LoadError"
       return "no_database" if NO_DATABASE.include?(head["error_class"])
       # Only a call the test wrote is a claim the new signature voids. With

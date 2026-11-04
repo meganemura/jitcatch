@@ -1116,7 +1116,30 @@ class TestRunner < Minitest::Test
       assert_equal "pass", row["base"]["status"]
       assert_equal "timeout", row["head"]["status"]
       assert_equal "slow_test.rb#timeout", row["name"]
-      assert_includes JitCatch::Render.run_text(doc), "slow_test.rb#timeout slow_test.rb\n    hint: head timed out after 1s; raise --timeout if the file needs longer\n"
+      assert_includes JitCatch::Render.run_text(doc), "slow_test.rb#timeout slow_test.rb\n    hint: head timed out after 1s; raise --timeout if the file needs longer, as a Rails app's first run in a new checkout can (it loads db/schema.rb)\n"
+    end
+  end
+
+  # A file that times out on base too says nothing about either side, as a
+  # Rails app that loads its schema in each new checkout can.
+  def test_discards_a_timeout_on_both_sides
+    with_repo do |repo|
+      repo.write("lib/flag.rb", "module Flag; def self.ok; true; end; end\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("README.md", "head\n")
+      repo.commit("Touch readme.", date: "2026-02-12T00:00:00Z")
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, { "slow_test.rb" => "require \"minitest/autorun\"\nrequire \"flag\"\n\nclass SlowTest < Minitest::Test\n  def test_slow\n    sleep 60\n    assert Flag.ok\n  end\nend\n" })
+
+      doc = execute(repo, tests, timeout: 1, reruns: 2)
+
+      assert_equal [0, 1, 0], doc["counts"].values_at("fail_on_base", "discarded", "reported")
+      row = doc["tests"].fetch(0)
+      assert_equal %w[slow_test.rb#timeout discarded timeout timeout], [row["name"], row["disposition"], row.dig("base", "status"), row.dig("head", "status")]
+      assert_nil row["reruns"], "a timeout is not rerun"
+      assert_includes row["tags"], "discard:timeout"
+      assert_includes JitCatch::Render.run_text(doc), "    hint: base and head timed out after 1s; raise --timeout if the file needs longer, as a Rails app's first run in a new checkout can (it loads db/schema.rb)\n"
     end
   end
 

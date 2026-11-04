@@ -357,6 +357,8 @@ Run that command in a checkout of that side, fix what it says (often `bundle ins
 その名前が 1 つも無いときは、すべての `.rb` を実行する。
 上限は 40 ファイル。
 base で通り、head で失敗、エラー、またはタイムアウトになったテストが候補になる。
+base でタイムアウトし、head で通らなかったテストも候補になる。
+base は時間があれば通ったかもしれないので、後で述べるタイムアウトのルールがそれを除く。
 `--reruns` は候補を head で繰り返す。
 1 回でも結果が違えば `flaky` である。
 比べるのは失敗メッセージの全体である。
@@ -367,7 +369,7 @@ base で通り、head で失敗、エラー、またはタイムアウトにな�
 タイムアウトは再実行しない。
 
 候補を `discarded` にするルールは 4 つある。
-head での `LoadError`、タイムアウト、データベースが無いか届かないことを示す head での Active Record のエラー（`NoDatabaseError`、`ConnectionNotEstablished`、`DatabaseConnectionError`）、そして diff が消したかシグネチャを書き換えた名前に対する `NameError`、`NoMethodError`、引数個数の `ArgumentError` である。
+head での `LoadError`、どちらかの側でのタイムアウト、データベースが無いか届かないことを示す head での Active Record のエラー（`NoDatabaseError`、`ConnectionNotEstablished`、`DatabaseConnectionError`）、そして diff が消したかシグネチャを書き換えた名前に対する `NameError`、`NoMethodError`、引数個数の `ArgumentError` である。
 消えたクラスやモジュールも消えた名前に数える。
 引数個数の `ArgumentError` とは `wrong number of arguments`、`missing keyword`、`unknown keyword`、`struct size differs`（メンバーより多くの値を渡した `Struct`）のことで、`assert_raises` や RSpec の `raise_error` が受け取って失敗にしたときも同じに扱う。
 コードが意図して起こす `ArgumentError`（`qty must be > 0` のようなもの）は `reported` のまま残る。

@@ -193,7 +193,7 @@ class TestRender < Minitest::Test
       "version" => "0.1.0", "base" => "b", "head" => "h", "reruns" => 2, "timeout_s" => 7, "tests" => [
         { "id" => "t01", "file" => "a_test.rb", "name" => "A#test_a", "classification" => "flaky",
           "base" => { "status" => "pass" }, "head" => fail_line, "reruns" => [fail_line, { "status" => "pass", "error_class" => nil, "message_first_line" => "" }] },
-        { "id" => "t02", "file" => "b_test.rb", "name" => "b_test.rb#timeout", "classification" => "fail_on_base",
+        { "id" => "t02", "file" => "b_test.rb", "name" => "b_test.rb#timeout", "classification" => "candidate",
           "base" => { "status" => "timeout" }, "head" => { "status" => "timeout" } },
         { "id" => "t03", "file" => "c_test.rb", "name" => "C#test_c", "classification" => "no_signal",
           "base" => { "status" => "pass" }, "head" => { "status" => "pass" }, "reruns" => [fail_line] },
@@ -210,9 +210,8 @@ class TestRender < Minitest::Test
         t01 flaky A#test_a a_test.rb
           rerun 1: fail Minitest::Assertion Expected: 1
           rerun 2: pass
-        t02 fail_on_base b_test.rb#timeout b_test.rb
-          hint: base timed out after 7s; raise --timeout if the file needs longer
-          hint: head timed out after 7s; raise --timeout if the file needs longer
+        t02 discarded b_test.rb#timeout b_test.rb
+          hint: base and head timed out after 7s; raise --timeout if the file needs longer, as a Rails app's first run in a new checkout can (it loads db/schema.rb)
         t03 no_signal C#test_c c_test.rb
         t04 fail_on_base D#test_d d_test.rb
           base: error NoMethodError undefined method 'coupon' for an instance of Cart

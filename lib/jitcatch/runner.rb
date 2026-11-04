@@ -155,7 +155,7 @@ module JitCatch
       end
       rows = rows_for(relative, base_run, head_run, index, known, head_dir)
       return rows unless rows.any? { |row| row["classification"] == "candidate" }
-      return rows if head_run.timed_out
+      return rows if head_run.timed_out || base_run.timed_out
 
       @reruns.times do
         rerun = execute(head_dir, relative, normalizer)
@@ -231,10 +231,13 @@ module JitCatch
       }
     end
 
+    # A base that timed out may pass with more time, so a head that did not
+    # pass is a candidate the assessor discards, not a test that failed on
+    # base.
     def classify(base_result, head_result)
       base_pass = base_result["status"] == "pass"
       head_status = head_result["status"]
-      if base_pass && %w[fail error timeout].include?(head_status)
+      if (base_pass || base_result["status"] == "timeout") && %w[fail error timeout].include?(head_status)
         "candidate"
       elsif base_pass && %w[pass skip].include?(head_status)
         "no_signal"

@@ -264,9 +264,10 @@ module JitCatch
     end
 
     def timeout_lines(test, seconds)
-      %w[base head].select { |side| test.dig(side, "status") == "timeout" }.map do |side|
-        "    hint: #{side} timed out after #{seconds}s; raise --timeout if the file needs longer"
-      end
+      sides = %w[base head].select { |side| test.dig(side, "status") == "timeout" }
+      return [] if sides.empty?
+
+      ["    hint: #{sides.join(" and ")} timed out after #{seconds}s; raise --timeout if the file needs longer, as a Rails app's first run in a new checkout can (it loads db/schema.rb)"]
     end
 
     def counts_line(counts)
