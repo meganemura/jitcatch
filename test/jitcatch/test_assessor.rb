@@ -240,7 +240,7 @@ class TestAssessor < Minitest::Test
       "t04" => ["m05", ["caller:changed:lib/calc.rb:31", "error:ArgumentError", "report", "touches:changed_method"]],
       "t05" => ["m03", ["error:ArgumentError", "report", "touches:changed_method"]],
       "t06" => [nil, ["assertion", "report"]],
-      "t07" => ["m02", ["assertion", "report", "touches:changed_method"]],
+      "t07" => [nil, ["assertion", "report"]],
       "t08" => [nil, ["discard:timeout"]],
       "t09" => ["m03", ["assertion", "report", "touches:unchanged_caller"]]
     }, out)
@@ -426,6 +426,24 @@ class TestAssessor < Minitest::Test
       ],
       "constants" => [],
       "tests" => [candidate("t01", "LabelTest#test_text", %w[label total], error("RuntimeError", "boom"), frames("lib/calc.rb", 3))]
+    }
+
+    row = JitCatch::Assessor.apply(doc)["tests"].fetch(0)
+
+    assert_equal ["m02", %w[m02]], row.values_at("method_id", "method_ids")
+  end
+
+  # A frame of the head run names a line of head's file. Lines 5 to 7 held
+  # `boot` and `fetch` on base, and hold the added `guard` on head.
+  def test_a_frame_hits_the_method_head_has_on_its_line
+    doc = {
+      "methods" => [
+        method("m01", "modified", "same", "boot", [], 20).merge("old_start" => 5, "old_end" => 7),
+        method("m02", "added", "added", "guard", [], 5),
+        method("m03", "removed", "removed", "fetch", [], 6)
+      ],
+      "constants" => [],
+      "tests" => [candidate("t01", "BootTest#test_a", %w[boot], error("RuntimeError", "boom"), frames("lib/calc.rb", 6) + frames("lib/calc.rb", 21))]
     }
 
     row = JitCatch::Assessor.apply(doc)["tests"].fetch(0)

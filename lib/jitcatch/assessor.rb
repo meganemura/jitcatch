@@ -292,15 +292,12 @@ module JitCatch
       frames(test).any? { |frame| frame_hits_method?(frame, method) }
     end
 
+    # The frames are the head run's, so only head's lines of a method count.
+    # A removed method has no lines on head.
     def frame_hits_method?(frame, method)
-      return false unless frame["file"] == method["file"]
+      return false unless frame["file"] == method["file"] && method["change"] != "removed"
 
-      line = frame["line"]
-      ranges = []
-      ranges << (method["start_line"]..method["end_line"]) if method["start_line"] && method["end_line"]
-      # A moved method's old lines are in another file.
-      ranges << (method["old_start"]..method["old_end"]) if method["old_start"] && method["old_end"] && method["moved_from"].nil?
-      ranges.any? { |range| range.cover?(line) }
+      (method["start_line"]..method["end_line"]).cover?(frame["line"])
     end
 
     def frames(test)
