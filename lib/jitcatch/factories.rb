@@ -47,11 +47,8 @@ module JitCatch
         .select { |pair| pair.key.is_a?(Prism::SymbolNode) }.to_h { |pair| [pair.key.unescaped, pair.value] }
       name = literal(first)
       reason = "its name is not a symbol or a string" unless name
-      own_class = nil
-      if options.key?("class")
-        own_class = class_named(options["class"])
-        reason ||= "class: is not a constant, a string, or a symbol" unless own_class
-      end
+      own_class = class_named(options["class"]) if options.key?("class")
+      reason ||= "class: is not a constant, a string, or a symbol" if options.key?("class") && own_class.nil?
       parent = options.key?("parent") ? literal(options["parent"]) : nil
       reason ||= "parent: is not a symbol or a string" if options.key?("parent") && parent.nil?
       aliases = options["aliases"].is_a?(Prism::ArrayNode) ? options["aliases"].elements.filter_map { |element| literal(element) } : []
