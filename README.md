@@ -2,7 +2,87 @@
 
 jitcatch keeps the Ruby tests that pass on the parent of a change and fail on the change, and names the changed method each one reaches.
 
-## Quick start
+## Quick start in your Rails app
+
+You need Ruby 3.3 or newer, git, and an app whose specs run with RSpec (`rspec-rails`). Run each step from the app's root.
+
+### 1. Add the gem
+
+Add jitcatch to the `:development, :test` group of the app's `Gemfile`, then run `bundle install`. jitcatch has no runtime dependency, so it adds no other gem to the bundle.
+
+<!-- rails:gemfile -->
+```ruby
+group :development, :test do
+  gem "jitcatch", require: false
+end
+```
+
+If the test database is PostgreSQL or MySQL, give each side its own database once, as [Rails apps](#rails-apps) shows. SQLite at the Rails default path needs no setup.
+
+### 2. Pick a commit
+
+A good first target is a recent commit that changed a model method with a few branches and an existing spec. List the last commits that changed a model:
+
+<!-- rails:pick -->
+```sh
+git log --oneline -n 5 -- app/models
+```
+
+### 3. Write one spec and run jitcatch
+
+Write one spec that states what the method did before that commit. Put it in `tmp/jitcatch`, which git ignores, start it with `require "rails_helper"`, and use the app's factories as its own specs do. Then run jitcatch on the commit. Replace `Loan`, `approve`, the expected result, and `72ebf7a` with your model, its method, what the method returned before the commit, and the commit you picked.
+
+<!-- rails:script -->
+```sh
+mkdir -p tmp/jitcatch
+cat > tmp/jitcatch/loan_approve_spec.rb <<'RUBY'
+require "rails_helper"
+
+RSpec.describe Loan, type: :model do
+  it "lets a clerk approve a loan of 10000 cents" do
+    loan = create(:loan, amount_cents: 10_000)
+    expect(loan.approve(name: "Grace", senior: false)).to eq(:approved)
+  end
+end
+RUBY
+bundle exec jitcatch run 72ebf7a~1 72ebf7a tmp/jitcatch
+```
+
+## What you will see
+
+This output is from a small sample app: Rails 8.1 with FactoryBot and SQLite, where `Loan#approve` asks a senior officer to approve a large loan. `git log` lists two commits:
+
+<!-- rails:pick-output -->
+```
+72ebf7a Ask a senior officer from 10000 cents.
+4a1d57a Characterize Loan#approve.
+```
+
+The last commit asks a senior officer from 10000 cents, where it used to ask only above 10000. jitcatch prints this:
+
+<!-- rails:output -->
+```
+jitcatch run
+version 0.1.0
+base 4a1d57ae042c0b5dd0ae5b1c14f5623c9b2ec302
+head 72ebf7ab5ce5a144c85d971160c207e2582d8f5b
+reruns 2
+timeout_s 60
+bundle base ok
+bundle head ok
+tests:
+  t01 reported Loan lets a clerk approve a loan of 10000 cents loan_approve_spec.rb:4 m01
+counts generated=1 no_signal=0 fail_on_base=0 candidates=1 flaky=0 discarded=0 reported=1
+assess:
+  c01 Loan lets a clerk approve a loan of 10000 cents base=pass head=fail m01 assertion,report,touches:changed_method
+    expected: :approved
+    got: :needs_senior
+    rerun: bundle exec ruby -Ilib -I. -e 'require "rspec/core"; require "rspec/support/object_formatter"; RSpec::Support::ObjectFormatter.default_instance.max_formatted_output_length = nil; exit(RSpec::Core::Runner.run(ARGV))' tmp/jitcatch/loan_approve_spec.rb:4
+```
+
+The spec passed on the parent and fails on the commit, so it is `reported`: the commit changed what the old code did. `expected:` is the old result and `got:` is the new one. `m01` is the changed method the spec reaches, `Loan#approve`. Next, read the commit message. This one asks for the change, so the row is intended. Without that sentence, the row would be a likely regression. Run the `rerun:` line to see the failure again, and run `bundle exec jitcatch context 72ebf7a~1 72ebf7a` to see the old and new source of each changed method. A spec that fails on the parent too describes the new behavior, so it is `fail_on_base` and is not evidence. jitcatch boots the app in a new checkout of each side and waits up to 60 seconds for each spec file there. When a row times out, its `hint:` line says what to pass or raise.
+
+## Try it without an app
 
 You need Ruby 3.3 or newer and git.
 
@@ -105,48 +185,6 @@ methods:
         total > 50 ? 0 : 5
       end
 ```
-
-## Use it in a Rails app (RSpec)
-
-Install the gem for the Ruby the app runs on. The app's `Gemfile` needs no change: jitcatch runs `bundle exec` in a checkout of each side, so the app's bundle must have `rspec-core`, which `rspec-rails` brings.
-
-Write each candidate as a spec that starts with `require "rails_helper"`, in a folder git ignores, such as `tmp/jitcatch`. Factories and the test database work as in the app's own specs. The run below is on a small Rails 8.1 app with FactoryBot and SQLite. Its last commit asks a senior officer from 10000 cents, where it used to ask only above 10000:
-
-```sh
-mkdir -p tmp/jitcatch
-cat > tmp/jitcatch/loan_approve_spec.rb <<'RUBY'
-require "rails_helper"
-
-RSpec.describe Loan, type: :model do
-  it "lets a clerk approve a loan of 10000 cents" do
-    loan = create(:loan, amount_cents: 10_000)
-    expect(loan.approve(name: "Grace", senior: false)).to eq(:approved)
-  end
-end
-RUBY
-jitcatch run --timeout 60 HEAD~1 HEAD tmp/jitcatch
-```
-
-```
-jitcatch run
-version 0.1.0
-base 76147462b9fc10dbbcea9e9bc5165f8bdd40ff59
-head 29fce4ba8795c4d17be8ce09f395bd2d7348d53c
-reruns 2
-timeout_s 60
-bundle base ok
-bundle head ok
-tests:
-  t01 reported Loan lets a clerk approve a loan of 10000 cents loan_approve_spec.rb:4 m01
-counts generated=1 no_signal=0 fail_on_base=0 candidates=1 flaky=0 discarded=0 reported=1
-assess:
-  c01 Loan lets a clerk approve a loan of 10000 cents base=pass head=fail m01 assertion,report,touches:changed_method
-    expected: :approved
-    got: :needs_senior
-    rerun: bundle exec ruby -Ilib -I. -e 'require "rspec/core"; require "rspec/support/object_formatter"; RSpec::Support::ObjectFormatter.default_instance.max_formatted_output_length = nil; exit(RSpec::Core::Runner.run(ARGV))' tmp/jitcatch/loan_approve_spec.rb:4
-```
-
-`--timeout 60` gives each new checkout time for its first boot, which loads `db/schema.rb`. The clerk's approval of exactly 10000 cents passed on the parent and returns `:needs_senior` on the change. The commit message asks for that, so this row is intended. Without that sentence in the message, it would be a likely regression. A Rails app on PostgreSQL or MySQL needs one test database per side; see [Rails apps](#rails-apps) before the first run.
 
 ## Usage
 
@@ -383,7 +421,7 @@ Each file boots the app once on each side. On the sample app (4 CPUs), six files
 
 ## Install
 
-`gem install jitcatch` installs the `jitcatch` command. It has no runtime dependency. A checkout of this repository works too: put its `bin` directory on `PATH`.
+`gem install jitcatch` installs the `jitcatch` command. In an app with a `Gemfile`, add the gem to the `:development, :test` group instead, as the [Quick start](#quick-start-in-your-rails-app) shows, and run `bundle exec jitcatch`. It has no runtime dependency. A checkout of this repository works too: put its `bin` directory on `PATH`.
 
 Install the skill with the [`skills`](https://github.com/vercel-labs/skills) CLI (Node.js 22.20 or newer). This repository is private, so the command needs GitHub access through a Git credential, the GitHub CLI, or SSH.
 

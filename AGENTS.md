@@ -33,7 +33,13 @@ To run jitcatch on its own commits with RSpec candidates, the bundle of both sid
 
 The engine tests build temporary git repositories and cover context, execution, flakes, timeouts, and signature-change discards. `test/jitcatch/test_shop_demo.rb` runs `script/setup_shop` in a temp directory and compares `context` and `run` to `examples/runs/*/context.txt` and `run.txt`, byte for byte.
 
-`test/jitcatch/test_readme_quickstart.rb` runs the block under `<!-- quickstart:script -->` in README.md with `bash -e` in a temp directory, and compares what it prints with the `quickstart:output` block (commit ids masked) and the `quickstart:context` excerpt. README.ja.md must hold the same three blocks. When a change moves that output, run the script with the gem built from this checkout (`gem build jitcatch.gemspec`, then `gem install --local` into a scratch `GEM_HOME`) and paste the new output into both files.
+`test/jitcatch/test_readme_quickstart.rb` runs the block under `<!-- quickstart:script -->` in README.md with `bash -e` in a temp directory, and compares what it prints with the `quickstart:output` block (commit ids masked) and the `quickstart:context` excerpt. README.ja.md must hold the same three blocks. The Rails Quick start at the top of README.md is quoted the same way under `<!-- rails:NAME -->` markers (`gemfile`, `pick`, `pick-output`, `script`, `output`), and README.ja.md must hold the same five. Its output comes from the lending-desk sample app, `examples/rails` in meganemura/ruby-testing-skills, which is not in this repository, so the test that runs it skips unless `JITCATCH_RAILS_EXAMPLE` names a copy of that folder whose bundle this Ruby has installed. It copies the folder, runs its `script/setup_repo`, installs this checkout as the gem in a scratch `GEM_HOME`, appends the `gemfile` block to the app's `Gemfile`, runs `bundle install --local`, and compares both outputs byte for byte, commit ids included, since `setup_repo` fixes them:
+
+```sh
+JITCATCH_RAILS_EXAMPLE=/path/to/ruby-testing-skills/examples/rails ruby -Ilib test/jitcatch/test_readme_quickstart.rb
+```
+
+When a change moves that output, run the script with the gem built from this checkout (`gem build jitcatch.gemspec`, then `gem install --local` into a scratch `GEM_HOME`) and paste the new output into both files.
 
 `ruby script/setup_shop` writes a gitignored history at `examples/shop`. The sources are `examples/fixtures/shop/`. `examples/runs/` is the recorded demo, not a place to check in new candidate tests. If a change to rendering or the fixture moves those bytes, regenerate from the fixture and review the diff. Do not hand-edit the records to hide a mismatch. To regenerate a record, write the history to a scratch directory and run the CLI from this checkout:
 

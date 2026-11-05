@@ -4,13 +4,13 @@ require_relative "../test_helper"
 require "open3"
 require "shellwords"
 
-# Runs the Quick start as the README writes it, so the pasted output cannot
-# drift from what jitcatch prints.
+# Runs the Quick starts as the README writes them, so the pasted output
+# cannot drift from what jitcatch prints.
 class TestReadmeQuickstart < Minitest::Test
   ROOT = File.expand_path("../..", __dir__)
 
-  def test_quick_start_prints_what_the_readme_shows
-    quoted = quick_start("README.md")
+  def test_quick_start_without_an_app_prints_what_the_readme_shows
+    quoted = quoted_blocks("README.md", "quickstart")
     Dir.mktmpdir("jitcatch-quickstart-") do |dir|
       env = reader_shell(dir)
       run, status = Open3.capture2e(env, "bash", "-e", "-c", quoted.fetch("script"), chdir: dir)
@@ -23,17 +23,53 @@ class TestReadmeQuickstart < Minitest::Test
     end
   end
 
-  def test_japanese_readme_quotes_the_same_quick_start
-    english = quick_start("README.md")
+  # The sample Rails app and its bundle live outside this repository, so
+  # this runs only when JITCATCH_RAILS_EXAMPLE names a copy of
+  # meganemura/ruby-testing-skills' examples/rails whose bundle this Ruby has. It
+  # installs this checkout as the gem, so the Gemfile step runs as written;
+  # `bundle install --local` stands in for `bundle install` because the
+  # gem comes from that local build.
+  def test_rails_quick_start_prints_what_the_readme_shows
+    example = ENV["JITCATCH_RAILS_EXAMPLE"]
+    skip "set JITCATCH_RAILS_EXAMPLE to the lending-desk sample app (examples/rails in meganemura/ruby-testing-skills)" unless example
+
+    quoted = quoted_blocks("README.md", "rails")
+    Dir.mktmpdir("jitcatch-rails-") do |dir|
+      env = rails_shell(dir)
+      copy = File.join(dir, "example")
+      FileUtils.cp_r(File.expand_path(example), copy)
+      succeed(env, %w[sh script/setup_repo], copy)
+      app = File.join(copy, "tmp", "lending-repo")
+      _out, bundled = Open3.capture2e(env.merge("GEM_HOME" => nil, "GEM_PATH" => nil), "bundle", "check", chdir: app)
+      skip "the sample app's bundle is not installed for Ruby #{RUBY_VERSION}" unless bundled.success?
+
+      File.write(File.join(app, "Gemfile"), "\n#{quoted.fetch("gemfile")}", mode: "a")
+      succeed(env, %w[bundle install --local], app)
+      assert_equal quoted.fetch("pick-output"), succeed(env, ["bash", "-e", "-c", quoted.fetch("pick")], app)
+      assert_equal quoted.fetch("output"), succeed(env, ["bash", "-e", "-c", quoted.fetch("script")], app)
+    end
+  end
+
+  def test_japanese_readme_quotes_the_same_quick_starts
+    english = quoted_blocks("README.md", "quickstart")
     assert_equal %w[context output script], english.keys.sort
-    assert_equal english, quick_start("README.ja.md")
+    assert_equal english, quoted_blocks("README.ja.md", "quickstart")
+    rails = quoted_blocks("README.md", "rails")
+    assert_equal %w[gemfile output pick pick-output script], rails.keys.sort
+    assert_equal rails, quoted_blocks("README.ja.md", "rails")
   end
 
   private
 
-  # Each `<!-- quickstart:NAME -->` marker names the fenced block after it.
-  def quick_start(name)
-    File.read(File.join(ROOT, name), encoding: "UTF-8").scan(/^<!-- quickstart:(\w+) -->\n```\w*\n(.*?)^```$/m).to_h
+  # Each `<!-- PREFIX:NAME -->` marker names the fenced block after it.
+  def quoted_blocks(name, prefix)
+    File.read(File.join(ROOT, name), encoding: "UTF-8").scan(/^<!-- #{prefix}:([\w-]+) -->\n```\w*\n(.*?)^```$/m).to_h
+  end
+
+  def succeed(env, command, dir)
+    out, status = Open3.capture2e(env, *command, chdir: dir)
+    assert status.success?, "#{command.join(" ")}\n#{out}"
+    out
   end
 
   # A shell with `jitcatch` on PATH, run by this Ruby from this checkout, and
@@ -45,10 +81,30 @@ class TestReadmeQuickstart < Minitest::Test
     command = File.join(bin, "jitcatch")
     File.write(command, "#!/bin/sh\nexec #{RbConfig.ruby.shellescape} #{File.join(ROOT, "bin/jitcatch").shellescape} \"$@\"\n")
     File.chmod(0o755, command)
+    git_identity(dir).merge("PATH" => "#{bin}#{File::PATH_SEPARATOR}#{ENV.fetch("PATH")}")
+  end
+
+  # This Ruby's own `bundle` first on PATH, and a gem home that holds this
+  # checkout built as the gem in front of the gems this Ruby has. A bundle
+  # the suite itself runs under must not reach the app's commands.
+  def rails_shell(dir)
+    gems = File.join(dir, "gems")
+    built = File.join(dir, "jitcatch.gem")
+    out, status = Open3.capture2e(RbConfig.ruby, "-S", "gem", "build", "jitcatch.gemspec", "-o", built, chdir: ROOT)
+    assert status.success?, out
+    out, status = Open3.capture2e(RbConfig.ruby, "-S", "gem", "install", "--local", "--no-document", "--install-dir", gems, built)
+    assert status.success?, out
+    ENV.keys.grep(/\A(BUNDLE_|RUBYOPT\z|RUBYLIB\z)/).to_h { |key| [key, nil] }.merge(git_identity(dir)).merge(
+      "GEM_HOME" => gems,
+      "GEM_PATH" => [gems, *Gem.path].join(File::PATH_SEPARATOR),
+      "PATH" => [RbConfig::CONFIG.fetch("bindir"), ENV.fetch("PATH")].join(File::PATH_SEPARATOR)
+    )
+  end
+
+  def git_identity(dir)
     global = File.join(dir, "gitconfig")
     File.write(global, "")
     {
-      "PATH" => "#{bin}#{File::PATH_SEPARATOR}#{ENV.fetch("PATH")}",
       "GIT_CONFIG_GLOBAL" => global,
       "GIT_CONFIG_NOSYSTEM" => "1",
       "GIT_AUTHOR_NAME" => "Reader",

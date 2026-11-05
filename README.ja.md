@@ -2,7 +2,108 @@
 
 jitcatch は、変更の親で通り、その変更で落ちる Ruby のテストを残し、それぞれが届く変更されたメソッドを示す。
 
-## クイックスタート
+## Rails アプリでのクイックスタート
+
+Ruby 3.3 以降、git、そして spec を RSpec（`rspec-rails`）で走らせるアプリが要る。
+どの手順もアプリのルートで走らせる。
+
+### 1. gem を足す
+
+アプリの `Gemfile` の `:development, :test` グループに jitcatch を足し、`bundle install` を走らせる。
+jitcatch には実行時の依存がないので、bundle にほかの gem は増えない。
+
+<!-- rails:gemfile -->
+```ruby
+group :development, :test do
+  gem "jitcatch", require: false
+end
+```
+
+テスト用データベースが PostgreSQL や MySQL なら、[Rails アプリ](#rails-アプリ) のとおり、両側にそれぞれのデータベースを一度だけ用意する。
+Rails の既定の場所にある SQLite なら、準備は要らない。
+
+### 2. コミットを選ぶ
+
+最初の対象には、分岐がいくつかあり既存の spec もあるモデルのメソッドを変えた、最近のコミットが向いている。
+モデルを変えた最近のコミットを並べる。
+
+<!-- rails:pick -->
+```sh
+git log --oneline -n 5 -- app/models
+```
+
+### 3. spec を 1 つ書いて jitcatch を走らせる
+
+そのコミットの前にメソッドが何をしていたかを述べる spec を 1 つ書く。
+置き場所は git が無視する `tmp/jitcatch` にし、`require "rails_helper"` で始め、アプリ自身の spec と同じようにファクトリを使う。
+そのあと、そのコミットに対して jitcatch を走らせる。
+`Loan`、`approve`、期待する結果、`72ebf7a` は、自分のモデル、そのメソッド、コミットの前にメソッドが返していた値、選んだコミットに置き換える。
+
+<!-- rails:script -->
+```sh
+mkdir -p tmp/jitcatch
+cat > tmp/jitcatch/loan_approve_spec.rb <<'RUBY'
+require "rails_helper"
+
+RSpec.describe Loan, type: :model do
+  it "lets a clerk approve a loan of 10000 cents" do
+    loan = create(:loan, amount_cents: 10_000)
+    expect(loan.approve(name: "Grace", senior: false)).to eq(:approved)
+  end
+end
+RUBY
+bundle exec jitcatch run 72ebf7a~1 72ebf7a tmp/jitcatch
+```
+
+## 表示される内容
+
+次の出力は小さなサンプルアプリでのものである。
+FactoryBot と SQLite を使う Rails 8.1 アプリで、`Loan#approve` は大きな貸付の承認をシニアの担当者に求める。
+`git log` は 2 つのコミットを並べる。
+
+<!-- rails:pick-output -->
+```
+72ebf7a Ask a senior officer from 10000 cents.
+4a1d57a Characterize Loan#approve.
+```
+
+最後のコミットは、10000 セントを超えるときだけでなく、10000 セントちょうどからシニアの担当者を求めるようにした。
+jitcatch は次を出す。
+
+<!-- rails:output -->
+```
+jitcatch run
+version 0.1.0
+base 4a1d57ae042c0b5dd0ae5b1c14f5623c9b2ec302
+head 72ebf7ab5ce5a144c85d971160c207e2582d8f5b
+reruns 2
+timeout_s 60
+bundle base ok
+bundle head ok
+tests:
+  t01 reported Loan lets a clerk approve a loan of 10000 cents loan_approve_spec.rb:4 m01
+counts generated=1 no_signal=0 fail_on_base=0 candidates=1 flaky=0 discarded=0 reported=1
+assess:
+  c01 Loan lets a clerk approve a loan of 10000 cents base=pass head=fail m01 assertion,report,touches:changed_method
+    expected: :approved
+    got: :needs_senior
+    rerun: bundle exec ruby -Ilib -I. -e 'require "rspec/core"; require "rspec/support/object_formatter"; RSpec::Support::ObjectFormatter.default_instance.max_formatted_output_length = nil; exit(RSpec::Core::Runner.run(ARGV))' tmp/jitcatch/loan_approve_spec.rb:4
+```
+
+spec は親で通り、そのコミットで落ちるので、`reported` になる。
+コミットが古いコードの振る舞いを変えたということである。
+`expected:` は古い結果で、`got:` は新しい結果である。
+`m01` は spec が届く変更されたメソッド、`Loan#approve` である。
+次にコミットメッセージを読む。
+このメッセージはその変更を求めているので、この行は意図どおりである。
+その一文がなければ、回帰の疑いが強い。
+`rerun:` の行を走らせると、その失敗をもう一度見られる。
+`bundle exec jitcatch context 72ebf7a~1 72ebf7a` を走らせると、変更されたメソッドごとに古いソースと新しいソースを見られる。
+親でも落ちる spec は新しい振る舞いを書いたものなので、`fail_on_base` になり、証拠にはならない。
+jitcatch は両側の新しいチェックアウトでアプリを起動し、そこで spec ファイルごとに最大 60 秒待つ。
+行がタイムアウトしたら、その `hint:` の行が、何を渡すか何を上げるかを示す。
+
+## アプリなしで試す
 
 Ruby 3.3 以降と git が要る。
 
@@ -116,44 +217,6 @@ methods:
         total > 50 ? 0 : 5
       end
 ```
-
-## Rails アプリで使う（RSpec）
-
-アプリが動く Ruby に gem を入れる。
-アプリの `Gemfile` は変えなくてよい。
-jitcatch は両側のチェックアウトで `bundle exec` を走らせるので、アプリの bundle に `rspec-core` があればよい。
-`rspec-rails` がそれを持ち込む。
-
-候補は `require "rails_helper"` で始まる spec として、`tmp/jitcatch` のような git が無視するフォルダに書く。
-ファクトリとテスト用データベースは、アプリ自身の spec と同じように使える。
-次の実行は、FactoryBot と SQLite を使う小さな Rails 8.1 アプリでのものである。
-その最後のコミットは、10000 セントを超えるときだけでなく、10000 セントちょうどからシニアの担当者を求めるようにした。
-
-```sh
-mkdir -p tmp/jitcatch
-cat > tmp/jitcatch/loan_approve_spec.rb <<'RUBY'
-require "rails_helper"
-
-RSpec.describe Loan, type: :model do
-  it "lets a clerk approve a loan of 10000 cents" do
-    loan = create(:loan, amount_cents: 10_000)
-    expect(loan.approve(name: "Grace", senior: false)).to eq(:approved)
-  end
-end
-RUBY
-jitcatch run --timeout 60 HEAD~1 HEAD tmp/jitcatch
-```
-
-```
-
-```
-
-`--timeout 60` は、新しいチェックアウトごとの最初の起動に、`db/schema.rb` を読み込む時間を与える。
-担当者による 10000 セントちょうどの承認は親で通り、変更では `:needs_senior` を返す。
-コミットメッセージがそれを求めているので、この行は意図どおりである。
-メッセージにその一文がなければ、回帰の疑いが強い。
-PostgreSQL や MySQL を使う Rails アプリでは、両側に 1 つずつテスト用データベースが要る。
-最初の実行の前に [Rails アプリ](#rails-アプリ) を読む。
 
 ## 使い方
 
@@ -666,6 +729,7 @@ bootsnap のキャッシュは、チェックアウトごとに空から始ま�
 ## インストール
 
 `gem install jitcatch` で `jitcatch` コマンドが入る。
+`Gemfile` のあるアプリでは、代わりに [クイックスタート](#rails-アプリでのクイックスタート) のとおり `:development, :test` グループに gem を足し、`bundle exec jitcatch` で走らせる。
 実行時の依存はない。
 このリポジトリのチェックアウトからも使える。
 その場合は `bin` ディレクトリを `PATH` に置く。
