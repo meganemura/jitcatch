@@ -267,10 +267,7 @@ module JitCatch
     end
 
     def untested_line(doc)
-      results = doc["tests"].flat_map { |test| [test["base"], test["head"]].compact }
-      causes = []
-      causes << "timed out" if results.any? { |result| result["status"] == "timeout" || result["error_class"] == "Timeout" }
-      causes << "found no database" if results.any? { |result| Assessor::NO_DATABASE.include?(result["error_class"]) }
+      causes = Assessor::UNTESTED_CAUSES.keys & doc["tests"].flat_map { |test| Assessor.untested_causes(test) }
       "jitcatch: no row ran to a result on both sides (#{doc["untested"]} of #{doc["tests"].size} #{causes.join(" or ")}), so this run cannot tell base from head"
     end
 

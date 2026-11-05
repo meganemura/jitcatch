@@ -310,6 +310,9 @@ class TestRender < Minitest::Test
     assert_equal "jitcatch: no row ran to a result on both sides (1 of 1 timed out), so this run cannot tell base from head\n", first.([timed_out])
     assert_equal "jitcatch: no row ran to a result on both sides (1 of 1 found no database), so this run cannot tell base from head\n", first.([no_database])
     assert_equal "jitcatch: no row ran to a result on both sides (2 of 2 timed out or found no database), so this run cannot tell base from head\n", first.([timed_out, no_database])
+    base_timed_out = timed_out.merge("classification" => "fail_on_base", "head" => { "status" => "pass" })
+    base_no_database = no_database.merge("classification" => "fail_on_base", "base" => no_database["head"], "head" => { "status" => "pass" })
+    assert_equal "jitcatch: no row ran to a result on both sides (2 of 2 timed out or found no database), so this run cannot tell base from head\n", first.([base_no_database, base_timed_out])
   end
 
   def test_context_text_lists_dependencies_only_when_one_changed

@@ -63,10 +63,17 @@ module JitCatch
     # A row whose side timed out or found no database says nothing about
     # the change, whatever its classification.
     def self.untested?(test)
-      %w[base head].any? { |side|
-        result = test[side] || {}
-        result["status"] == "timeout" || result["error_class"] == "Timeout" || NO_DATABASE.include?(result["error_class"])
-      }
+      !untested_causes(test).empty?
+    end
+
+    UNTESTED_CAUSES = {
+      "timed out" => ->(result) { result["status"] == "timeout" },
+      "found no database" => ->(result) { NO_DATABASE.include?(result["error_class"]) }
+    }.freeze
+
+    def self.untested_causes(test)
+      results = %w[base head].map { |side| test[side] || {} }
+      UNTESTED_CAUSES.select { |_cause, seen| results.any?(&seen) }.keys
     end
 
     # Rows that each say nothing about the change are a run that tested
