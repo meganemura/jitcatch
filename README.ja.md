@@ -260,6 +260,8 @@ gem の中から始まったエラーには `touches:changed_method` を付け�
 `--json` の `caller_depths` がその回数を持つ。
 上位の二つを id でしか並べられないときは、どれも選ばない。
 その行は `related guess: none of m01,m02,m03` となり、id の位置に `-` が出て、`method_id` は `null` になる。
+この行には、テストが `method_ids` のどれか一つの名前を含めば `touches:changed_method` を付ける。
+id が最も小さいものだけを見るのではない。
 `related:dynamic` は、関連する変更メソッドはないが、テストが `dynamic_callers:` のメソッドを呼んでいる。
 その行の次の行が `related: none, Emit.looked_up sends render to a receiver the source does not name` のようにそれを言う。
 

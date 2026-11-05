@@ -322,6 +322,26 @@ class TestAssessor < Minitest::Test
     assert_equal "m02", JitCatch::Assessor.apply(deeper)["tests"].fetch(0)["method_id"]
   end
 
+  # With no pick, the row's tags must not depend on which tied method has
+  # the lower id: the test names Calc.new whichever id it carries.
+  def test_a_row_with_no_pick_tags_a_named_method_of_its_pool_whatever_its_id
+    rows = [%w[m01 m02], %w[m02 m01]].map do |constructor_id, total_id|
+      doc = {
+        "methods" => [
+          method(constructor_id, "modified", "same", "initialize", ["Calc.run"], 1),
+          method(total_id, "modified", "same", "total", ["Calc.run"], 10)
+        ].sort_by { |item| item["id"] },
+        "constants" => [],
+        "tests_dir" => "candidates",
+        "tests" => [candidate("t01", "RunTest#test_run", %w[Calc.new run], failure("Expected: 1\n  Actual: 2"))]
+      }
+      JitCatch::Assessor.apply(doc)["tests"].fetch(0)
+    end
+
+    assert_equal [[nil, %w[assertion related:guess report touches:changed_method touches:unchanged_caller]]] * 2,
+      rows.map { |row| [row["method_id"], row["tags"]] }
+  end
+
   def test_candidate_ids_follow_test_ids_and_other_rows_carry_nulls
     stale = { "method_id" => "m09", "tags" => ["report"], "disposition" => "reported", "candidate_id" => "c09" }
     doc = {

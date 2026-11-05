@@ -40,7 +40,7 @@ module JitCatch
           test["method_id"] = tied ? nil : method&.dig("id")
           test["method_ids"] = pool.map { |item| item["id"] }.sort
           test["disposition"] = reason ? "discarded" : "reported"
-          test["tags"] = tags_for(test, method, reason, call)
+          test["tags"] = tags_for(test, tied ? pool : [method].compact, reason, call)
           test["tags"] = (test["tags"] + ["related:guess"]).sort if pool.size > 1
           test["dynamic_call"] = method ? nil : dynamic_call(test)
           test["tags"] = (test["tags"] + ["related:dynamic"]).sort if test["dynamic_call"]
@@ -180,7 +180,7 @@ module JitCatch
       "caller:#{changed || edited ? "changed" : "unchanged"}:#{call["file"]}:#{call["line"]}"
     end
 
-    def tags_for(test, method, reason, call)
+    def tags_for(test, judged, reason, call)
       head = test["head"] || {}
       tags = []
       tags << (reason ? "discard:#{reason}" : "report")
@@ -189,17 +189,20 @@ module JitCatch
       if head["error_class"] && head["status"] != "fail"
         tags << "error:#{head["error_class"]}"
       end
-      tags.concat(touch_tags(test, method))
+      tags.concat(touch_tags(test, judged))
       tags.compact.uniq.sort
     end
 
-    def touch_tags(test, method)
+    # A row with no pick judges every method of its pool, so its tags do not
+    # depend on which tied method has the lower id.
+    def touch_tags(test, judged)
       mentions = Array(test["mentions"])
       tags = []
       changed_mentions = @methods.map { |item| mention(item) }
       gem = origin_gem(test)
-      named = method && mentioned?(method, mentions) && sent_to_named_receivers([method], mentions).any?
-      direct = method && gem.nil? && (named || frame_hits?(test, method))
+      direct = gem.nil? && judged.any? { |method|
+        (mentioned?(method, mentions) && sent_to_named_receivers([method], mentions).any?) || frame_hits?(test, method)
+      }
       tags << "touches:changed_method" if direct
       tags << "touches:changed_dependency" if gem && Array(@doc["dependencies"]).any? { |dep| dep["gem"] == gem }
       tags << "touches:changed_constant" if (mentions & @constants.map { |const| const["bare_name"] }).any?
