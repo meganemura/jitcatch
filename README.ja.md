@@ -1,6 +1,161 @@
 # jitcatch
 
-jitcatch は、変更の親で通り、その変更で落ちる Ruby のテストを残す。
+jitcatch は、変更の親で通り、その変更で落ちる Ruby のテストを残し、それぞれが届く変更されたメソッドを示す。
+
+## クイックスタート
+
+Ruby 3.3 以降と git が要る。
+
+```sh
+gem install jitcatch
+```
+
+空のフォルダで、次をシェルに貼り付ける。
+2 つのコミットを持つ git リポジトリができる。
+2 つ目のコミットは空の注文の送料をなくすためのものだが、ちょうど 50 の注文の送料無料もなくしてしまう。
+そのあと候補のテストを 3 つ書き、jitcatch を走らせる。
+
+<!-- quickstart:script -->
+```sh
+mkdir jitcatch-demo && cd jitcatch-demo && git init -q
+
+mkdir lib && cat > lib/shipping.rb <<'RUBY'
+module Shipping
+  # Orders of 50 dollars or more ship free.
+  def self.fee(total)
+    total >= 50 ? 0 : 5
+  end
+end
+RUBY
+git add . && git commit -qm "Add the shipping fee" && git tag base
+
+cat > lib/shipping.rb <<'RUBY'
+module Shipping
+  # Orders of 50 dollars or more ship free.
+  def self.fee(total)
+    return 0 if total.zero?
+
+    total > 50 ? 0 : 5
+  end
+end
+RUBY
+git commit -qam "Charge no fee on an empty order"
+
+mkdir candidates && cat > candidates/shipping_test.rb <<'RUBY'
+require "minitest/autorun"
+require "shipping"
+
+class ShippingTest < Minitest::Test
+  def test_fifty_ships_free
+    assert_equal 0, Shipping.fee(50)
+  end
+
+  def test_empty_order_has_no_fee
+    assert_equal 0, Shipping.fee(0)
+  end
+
+  def test_small_order_pays_five
+    assert_equal 5, Shipping.fee(10)
+  end
+end
+RUBY
+
+jitcatch run base HEAD candidates
+```
+
+jitcatch は次を出す。
+2 つのコミット ID は手元のものになる。
+
+<!-- quickstart:output -->
+```
+jitcatch run
+version 0.1.0
+base 81b05b22f14f2b5a1e580c048856a5e9d9b25b85
+head 7c53dd7485d4c994d97bddd3cb7bd5481a337b61
+reruns 2
+timeout_s 10
+tests:
+  t01 fail_on_base ShippingTest#test_empty_order_has_no_fee shipping_test.rb
+    base: fail Minitest::Assertion Expected: 0
+      Actual: 5
+  t02 reported ShippingTest#test_fifty_ships_free shipping_test.rb m01
+  t03 no_signal ShippingTest#test_small_order_pays_five shipping_test.rb
+counts generated=3 no_signal=1 fail_on_base=1 candidates=1 flaky=0 discarded=0 reported=1
+assess:
+  c01 ShippingTest#test_fifty_ships_free base=pass head=fail m01 assertion,report,touches:changed_method
+    Expected: 0
+    Actual: 5
+    rerun: ruby -Ilib -I. candidates/shipping_test.rb -n ShippingTest#test_fifty_ships_free
+```
+
+`test_fifty_ships_free` は親で通り、変更で落ちるので、`reported` になる。
+古いコードが満たしていた主張を、変更が壊したということである。
+`test_empty_order_has_no_fee` は新しい振る舞いを書いたもので、親で落ちるので `fail_on_base` になり、証拠にはならない。
+`test_small_order_pays_five` は両側で通る。
+コミットメッセージが求めているのは空の注文の規則だけなので、報告された行は回帰の疑いが強い。
+`rerun:` の行を走らせると、その失敗をもう一度見られる。
+比較を直すか、意図のほうを変える。
+
+`m01` は、報告されたテストが届く変更されたメソッドである。
+`jitcatch context base HEAD` は意図を出し、変更されたメソッドごとに、古いソースと新しいソースを含むブロックを出す。
+
+<!-- quickstart:context -->
+```
+methods:
+  [m01] modified Shipping.fee lib/shipping.rb:3-7 signature=same visibility=public
+    callsites: (none)
+    tests: (none)
+    old:
+      def self.fee(total)
+        total >= 50 ? 0 : 5
+      end
+    new:
+      def self.fee(total)
+        return 0 if total.zero?
+      
+        total > 50 ? 0 : 5
+      end
+```
+
+## Rails アプリで使う（RSpec）
+
+アプリが動く Ruby に gem を入れる。
+アプリの `Gemfile` は変えなくてよい。
+jitcatch は両側のチェックアウトで `bundle exec` を走らせるので、アプリの bundle に `rspec-core` があればよい。
+`rspec-rails` がそれを持ち込む。
+
+候補は `require "rails_helper"` で始まる spec として、`tmp/jitcatch` のような git が無視するフォルダに書く。
+ファクトリとテスト用データベースは、アプリ自身の spec と同じように使える。
+次の実行は、FactoryBot と SQLite を使う小さな Rails 8.1 アプリでのものである。
+その最後のコミットは、10000 セントを超えるときだけでなく、10000 セントちょうどからシニアの担当者を求めるようにした。
+
+```sh
+mkdir -p tmp/jitcatch
+cat > tmp/jitcatch/loan_approve_spec.rb <<'RUBY'
+require "rails_helper"
+
+RSpec.describe Loan, type: :model do
+  it "lets a clerk approve a loan of 10000 cents" do
+    loan = create(:loan, amount_cents: 10_000)
+    expect(loan.approve(name: "Grace", senior: false)).to eq(:approved)
+  end
+end
+RUBY
+jitcatch run --timeout 60 HEAD~1 HEAD tmp/jitcatch
+```
+
+```
+
+```
+
+`--timeout 60` は、新しいチェックアウトごとの最初の起動に、`db/schema.rb` を読み込む時間を与える。
+担当者による 10000 セントちょうどの承認は親で通り、変更では `:needs_senior` を返す。
+コミットメッセージがそれを求めているので、この行は意図どおりである。
+メッセージにその一文がなければ、回帰の疑いが強い。
+PostgreSQL や MySQL を使う Rails アプリでは、両側に 1 つずつテスト用データベースが要る。
+最初の実行の前に [Rails アプリ](#rails-アプリ) を読む。
+
+## 使い方
 
 変更をレビューするエージェントは、その差分向けのテストを書く。
 新しい振る舞いだけを書いたテストは親で落ち、回帰の証拠にならない。
@@ -8,8 +163,6 @@ jitcatch は、変更の親で通り、その変更で落ちる Ruby のテス�
 jitcatch はそのテストを両方のリビジョンで走らせ、フレークと、ほかのいくつかの非シグナルを除いて、残ったものを出す。
 
 方法は Meta の catching JiT tests に沿う（[Harden and Catch](https://arxiv.org/abs/2504.16472)、Meta での報告は [Just-in-Time Catching Test Generation at Meta](https://arxiv.org/abs/2601.22832)）。
-
-## 使い方
 
 Ruby 3.3 以降。
 追加の gem はない。
@@ -509,8 +662,10 @@ bootsnap のキャッシュは、チェックアウトごとに空から始ま�
 
 ## インストール
 
-実行ファイルは、このリポジトリのチェックアウトにある `bin/jitcatch` である。
-そのディレクトリを `PATH` に置く。
+`gem install jitcatch` で `jitcatch` コマンドが入る。
+実行時の依存はない。
+このリポジトリのチェックアウトからも使える。
+その場合は `bin` ディレクトリを `PATH` に置く。
 
 スキルは [`skills`](https://github.com/vercel-labs/skills) CLI で入れる（Node.js 22.20 以降）。
 このリポジトリは非公開なので、Git の認証情報、GitHub CLI、または SSH で GitHub にアクセスできる必要がある。
@@ -529,7 +684,7 @@ npx skills add meganemura/jitcatch -a claude-code
 ```
 
 確認を飛ばすときは `-y` を足す。
-`bin/jitcatch` も `PATH` に置く。
+スキルは `jitcatch` コマンドを走らせるので、gem も入れておく。
 
 CLI を使わない場合は、`skills/jitcatch` をエージェントの skills ディレクトリへコピーまたはシンボリックリンクする（例: `.agents/skills/`、`.claude/skills/`、`.cursor/skills/`）。
 

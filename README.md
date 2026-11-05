@@ -1,12 +1,158 @@
 # jitcatch
 
-jitcatch keeps the Ruby tests that pass on the parent of a change and fail on the change.
+jitcatch keeps the Ruby tests that pass on the parent of a change and fail on the change, and names the changed method each one reaches.
+
+## Quick start
+
+You need Ruby 3.3 or newer and git.
+
+```sh
+gem install jitcatch
+```
+
+Paste this into a shell in an empty folder. It makes a git repository with two commits. The second commit means to waive the fee on an empty order, and it also stops shipping an order of exactly 50 for free. Then it writes three candidate tests and runs jitcatch.
+
+<!-- quickstart:script -->
+```sh
+mkdir jitcatch-demo && cd jitcatch-demo && git init -q
+
+mkdir lib && cat > lib/shipping.rb <<'RUBY'
+module Shipping
+  # Orders of 50 dollars or more ship free.
+  def self.fee(total)
+    total >= 50 ? 0 : 5
+  end
+end
+RUBY
+git add . && git commit -qm "Add the shipping fee" && git tag base
+
+cat > lib/shipping.rb <<'RUBY'
+module Shipping
+  # Orders of 50 dollars or more ship free.
+  def self.fee(total)
+    return 0 if total.zero?
+
+    total > 50 ? 0 : 5
+  end
+end
+RUBY
+git commit -qam "Charge no fee on an empty order"
+
+mkdir candidates && cat > candidates/shipping_test.rb <<'RUBY'
+require "minitest/autorun"
+require "shipping"
+
+class ShippingTest < Minitest::Test
+  def test_fifty_ships_free
+    assert_equal 0, Shipping.fee(50)
+  end
+
+  def test_empty_order_has_no_fee
+    assert_equal 0, Shipping.fee(0)
+  end
+
+  def test_small_order_pays_five
+    assert_equal 5, Shipping.fee(10)
+  end
+end
+RUBY
+
+jitcatch run base HEAD candidates
+```
+
+jitcatch prints this. The two commit ids are your own.
+
+<!-- quickstart:output -->
+```
+jitcatch run
+version 0.1.0
+base 81b05b22f14f2b5a1e580c048856a5e9d9b25b85
+head 7c53dd7485d4c994d97bddd3cb7bd5481a337b61
+reruns 2
+timeout_s 10
+tests:
+  t01 fail_on_base ShippingTest#test_empty_order_has_no_fee shipping_test.rb
+    base: fail Minitest::Assertion Expected: 0
+      Actual: 5
+  t02 reported ShippingTest#test_fifty_ships_free shipping_test.rb m01
+  t03 no_signal ShippingTest#test_small_order_pays_five shipping_test.rb
+counts generated=3 no_signal=1 fail_on_base=1 candidates=1 flaky=0 discarded=0 reported=1
+assess:
+  c01 ShippingTest#test_fifty_ships_free base=pass head=fail m01 assertion,report,touches:changed_method
+    Expected: 0
+    Actual: 5
+    rerun: ruby -Ilib -I. candidates/shipping_test.rb -n ShippingTest#test_fifty_ships_free
+```
+
+`test_fifty_ships_free` passed on the parent and fails on the change, so it is `reported`: the change broke a claim the old code met. `test_empty_order_has_no_fee` describes the new behavior and fails on the parent, so it is `fail_on_base` and is not evidence. `test_small_order_pays_five` passes on both sides. The commit message asks only for the empty-order rule, so the reported row is a likely regression. Run the `rerun:` line to see the failure again, and fix the comparison or change the intent.
+
+`m01` is the changed method the reported test reaches. `jitcatch context base HEAD` prints the intent and one block for each changed method, with its old and new source:
+
+<!-- quickstart:context -->
+```
+methods:
+  [m01] modified Shipping.fee lib/shipping.rb:3-7 signature=same visibility=public
+    callsites: (none)
+    tests: (none)
+    old:
+      def self.fee(total)
+        total >= 50 ? 0 : 5
+      end
+    new:
+      def self.fee(total)
+        return 0 if total.zero?
+      
+        total > 50 ? 0 : 5
+      end
+```
+
+## Use it in a Rails app (RSpec)
+
+Install the gem for the Ruby the app runs on. The app's `Gemfile` needs no change: jitcatch runs `bundle exec` in a checkout of each side, so the app's bundle must have `rspec-core`, which `rspec-rails` brings.
+
+Write each candidate as a spec that starts with `require "rails_helper"`, in a folder git ignores, such as `tmp/jitcatch`. Factories and the test database work as in the app's own specs. The run below is on a small Rails 8.1 app with FactoryBot and SQLite. Its last commit asks a senior officer from 10000 cents, where it used to ask only above 10000:
+
+```sh
+mkdir -p tmp/jitcatch
+cat > tmp/jitcatch/loan_approve_spec.rb <<'RUBY'
+require "rails_helper"
+
+RSpec.describe Loan, type: :model do
+  it "lets a clerk approve a loan of 10000 cents" do
+    loan = create(:loan, amount_cents: 10_000)
+    expect(loan.approve(name: "Grace", senior: false)).to eq(:approved)
+  end
+end
+RUBY
+jitcatch run --timeout 60 HEAD~1 HEAD tmp/jitcatch
+```
+
+```
+jitcatch run
+version 0.1.0
+base 76147462b9fc10dbbcea9e9bc5165f8bdd40ff59
+head 29fce4ba8795c4d17be8ce09f395bd2d7348d53c
+reruns 2
+timeout_s 60
+bundle base ok
+bundle head ok
+tests:
+  t01 reported Loan lets a clerk approve a loan of 10000 cents loan_approve_spec.rb:4 m01
+counts generated=1 no_signal=0 fail_on_base=0 candidates=1 flaky=0 discarded=0 reported=1
+assess:
+  c01 Loan lets a clerk approve a loan of 10000 cents base=pass head=fail m01 assertion,report,touches:changed_method
+    expected: :approved
+    got: :needs_senior
+    rerun: bundle exec ruby -Ilib -I. -e 'require "rspec/core"; require "rspec/support/object_formatter"; RSpec::Support::ObjectFormatter.default_instance.max_formatted_output_length = nil; exit(RSpec::Core::Runner.run(ARGV))' tmp/jitcatch/loan_approve_spec.rb:4
+```
+
+`--timeout 60` gives each new checkout time for its first boot, which loads `db/schema.rb`. The clerk's approval of exactly 10000 cents passed on the parent and returns `:needs_senior` on the change. The commit message asks for that, so this row is intended. Without that sentence in the message, it would be a likely regression. A Rails app on PostgreSQL or MySQL needs one test database per side; see [Rails apps](#rails-apps) before the first run.
+
+## Usage
 
 A coding agent reviewing a change writes tests for that diff. A test that only describes the new behavior fails on the parent and is not evidence of a regression. A test the parent already passes, and that fails on the change, shows a claim the old code satisfied and the new code does not. jitcatch runs the tests on both revisions, drops flakes and a few other non-signals, and prints what is left.
 
 The method follows Meta's catching JiT tests ([Harden and Catch](https://arxiv.org/abs/2504.16472); [Just-in-Time Catching Test Generation at Meta](https://arxiv.org/abs/2601.22832)).
-
-## Usage
 
 Ruby 3.3 or newer. No gems. `minitest` and `prism` ship with Ruby. `jitcatch --version` (or `-v`) prints `jitcatch 0.1.0`, followed by the commit, as in `jitcatch 0.1.0 (1fbcd18)`, when jitcatch runs from its own git checkout, as a gem installed from git does, and `--help` prints the commands. RSpec candidates need `rspec-core` where they run: in the project's bundle, or installed for that Ruby when the project has no `Gemfile`. `BASE` is the parent revision and `HEAD` is the change. Each must resolve to a commit. Uncommitted files are not in the diff.
 
@@ -237,7 +383,7 @@ Each file boots the app once on each side. On the sample app (4 CPUs), six files
 
 ## Install
 
-The program is `bin/jitcatch` in a checkout of this repository. Put that directory on `PATH`.
+`gem install jitcatch` installs the `jitcatch` command. It has no runtime dependency. A checkout of this repository works too: put its `bin` directory on `PATH`.
 
 Install the skill with the [`skills`](https://github.com/vercel-labs/skills) CLI (Node.js 22.20 or newer). This repository is private, so the command needs GitHub access through a Git credential, the GitHub CLI, or SSH.
 
@@ -254,7 +400,7 @@ npx skills add meganemura/jitcatch -a cursor
 npx skills add meganemura/jitcatch -a claude-code
 ```
 
-Add `-y` to skip prompts. Put `bin/jitcatch` on `PATH` as well.
+Add `-y` to skip prompts. The skill runs the `jitcatch` command, so install the gem as well.
 
 Without the CLI, copy or symlink `skills/jitcatch` into the agent's skills directory, for example `.agents/skills/`, `.claude/skills/`, or `.cursor/skills/`.
 
