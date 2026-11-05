@@ -35,14 +35,15 @@ class TestReadmeQuickstart < Minitest::Test
 
     quoted = quoted_blocks("README.md", "rails")
     Dir.mktmpdir("jitcatch-rails-") do |dir|
-      env = rails_shell(dir)
+      shell = rails_shell(dir)
       copy = File.join(dir, "example")
       FileUtils.cp_r(File.expand_path(example), copy)
-      succeed(env, %w[sh script/setup_repo], copy)
+      succeed(shell, %w[sh script/setup_repo], copy)
       app = File.join(copy, "tmp", "lending-repo")
-      _out, bundled = Open3.capture2e(env.merge("GEM_HOME" => nil, "GEM_PATH" => nil), "bundle", "check", chdir: app)
+      _out, bundled = Open3.capture2e(shell, "bundle", "check", chdir: app)
       skip "the sample app's bundle is not installed for Ruby #{RUBY_VERSION}" unless bundled.success?
 
+      env = shell.merge(installed_from_this_checkout(shell, dir))
       File.write(File.join(app, "Gemfile"), "\n#{quoted.fetch("gemfile")}", mode: "a")
       succeed(env, %w[bundle install --local], app)
       assert_equal quoted.fetch("pick-output"), succeed(env, ["bash", "-e", "-c", quoted.fetch("pick")], app)
@@ -84,21 +85,30 @@ class TestReadmeQuickstart < Minitest::Test
     git_identity(dir).merge("PATH" => "#{bin}#{File::PATH_SEPARATOR}#{ENV.fetch("PATH")}")
   end
 
-  # This Ruby's own `bundle` first on PATH, and a gem home that holds this
-  # checkout built as the gem in front of the gems this Ruby has. A bundle
-  # the suite itself runs under must not reach the app's commands.
+  # This Ruby's own `bundle` first on PATH. A bundle the suite itself runs
+  # under must not reach the app's commands, so the variables `bundle exec`
+  # set go back to what they were before it (its BUNDLER_ORIG_ copies).
   def rails_shell(dir)
+    env = ENV.keys.grep(/\A(BUNDLE_|BUNDLER_)|\A(RUBYOPT|RUBYLIB|GEM_HOME|GEM_PATH)\z/).to_h { |key| [key, nil] }
+    %w[RUBYOPT RUBYLIB GEM_HOME GEM_PATH].each do |key|
+      original = ENV["BUNDLER_ORIG_#{key}"]
+      env[key] = original if original && original != "BUNDLER_ENVIRONMENT_PRESERVER_INTENTIONALLY_NIL"
+    end
+    env.merge(git_identity(dir)).merge("PATH" => [RbConfig::CONFIG.fetch("bindir"), ENV.fetch("PATH")].join(File::PATH_SEPARATOR))
+  end
+
+  # A gem home that holds this checkout built as the gem, in front of the
+  # gems this Ruby has.
+  def installed_from_this_checkout(shell, dir)
     gems = File.join(dir, "gems")
+    path, status = Open3.capture2(shell, RbConfig.ruby, "-e", "print Gem.path.join(File::PATH_SEPARATOR)")
+    assert status.success?
     built = File.join(dir, "jitcatch.gem")
     out, status = Open3.capture2e(RbConfig.ruby, "-S", "gem", "build", "jitcatch.gemspec", "-o", built, chdir: ROOT)
     assert status.success?, out
     out, status = Open3.capture2e(RbConfig.ruby, "-S", "gem", "install", "--local", "--no-document", "--install-dir", gems, built)
     assert status.success?, out
-    ENV.keys.grep(/\A(BUNDLE_|RUBYOPT\z|RUBYLIB\z)/).to_h { |key| [key, nil] }.merge(git_identity(dir)).merge(
-      "GEM_HOME" => gems,
-      "GEM_PATH" => [gems, *Gem.path].join(File::PATH_SEPARATOR),
-      "PATH" => [RbConfig::CONFIG.fetch("bindir"), ENV.fetch("PATH")].join(File::PATH_SEPARATOR)
-    )
+    { "GEM_HOME" => gems, "GEM_PATH" => [gems, path].join(File::PATH_SEPARATOR) }
   end
 
   def git_identity(dir)
