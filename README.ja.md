@@ -322,7 +322,7 @@ jitcatch run --repo DIR BASE HEAD TESTS_DIR
 | `--repo DIR` | `context`, `run` | 読む git リポジトリ。既定は作業ディレクトリ。 |
 | `--coverage FILE` | `context` | 既存テストの grep の代わりにこのファイルを使う。JSON は `"format": "jitcatch-coverage-v1"` と `tests` 配列を持つ。例は `examples/coverage/jitcatch-coverage-v1.sample.json`。 |
 | `--reruns N` | `run` | base で通り head で落ちたあとの、head での追加実行回数。既定は 2。`0` でフレーク検査をしない。 |
-| `--timeout SEC` | `run` | テストファイルを止めるまでの秒数。既定は 10。最小は 1。 |
+| `--timeout SEC` | `run` | テストファイルを止めるまでの秒数。head に `config/application.rb` があれば既定は 60 で、それ以外は 10。Rails アプリは新しいチェックアウトごとに起動して `db/schema.rb` を読み込むからである。最小は 1。 |
 | `--workers N` | `run` | 同時に実行するテストファイルの数。ワーカーごとに base と head の worktree を持つ。既定は 1。1 つのワーカーは Ruby プロセスを 2 つ同時に動かすので、ワーカーを増やして速くなるのは CPU が空いているときだけである。N によらずレポートは同じになる。 |
 | `--serial` | `run` | Ruby プロセスを 1 つずつ動かす。ファイルの base 側を走らせてから head 側を走らせる。worktree の外の決まったパスに書く候補や、決まったポートで待ち受ける候補のためのものである。`--workers` に 1 より大きい値は渡せない。テキストのレポートは `serial` と出し、`--json` は `"serial": true` を記録する。 |
 | `--env NAME` | `run` | この環境変数を今の環境からテストのプロセスへ渡す。複数の名前は繰り返して渡す。実行結果には値ではなく名前を記録する。設定されていない名前は `env_unset` 行に出す。 |

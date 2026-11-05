@@ -268,7 +268,7 @@ jitcatch run --repo DIR BASE HEAD TESTS_DIR
 | `--repo DIR` | `context`, `run` | Git repository to read. The default is the working directory. |
 | `--coverage FILE` | `context` | Replace the grep of existing tests with this file. The JSON has `"format": "jitcatch-coverage-v1"` and a `tests` array. See `examples/coverage/jitcatch-coverage-v1.sample.json`. |
 | `--reruns N` | `run` | Extra runs on head after a pass-on-base / fail-on-head result. The default is 2. `0` skips the flake check. |
-| `--timeout SEC` | `run` | Seconds before a test file is killed. The default is 10. The minimum is 1. |
+| `--timeout SEC` | `run` | Seconds before a test file is killed. The default is 60 when head has `config/application.rb`, since a Rails app boots and loads `db/schema.rb` in each new checkout, and 10 otherwise. The minimum is 1. |
 | `--workers N` | `run` | Test files that run at the same time, each worker in its own base and head worktrees. The default is 1. Each worker runs two Ruby processes at once, so more workers help only while CPUs are idle. The report is the same for every N. |
 | `--serial` | `run` | Runs one Ruby process at a time: a file's base run, then its head run. For candidates that write a fixed path outside the worktree or listen on a fixed port. It takes no `--workers` above 1. The text report prints `serial` and `--json` records `"serial": true`. |
 | `--env NAME` | `run` | Pass this variable from your environment to the test processes. Repeat it for more names. The run records the names, not the values, and lists a name that is not set on an `env_unset` line. |

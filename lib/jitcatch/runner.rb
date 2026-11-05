@@ -44,7 +44,7 @@ module JitCatch
     # record calls that make it run that callback.
     Known = Data.define(:names, :constants, :unsaved)
 
-    def self.run(repo, base_ref, head_ref, tests_dir, reruns: 2, timeout: 10, env: [], workers: 1, serial: false, finished_in_time: nil)
+    def self.run(repo, base_ref, head_ref, tests_dir, reruns: 2, timeout: nil, env: [], workers: 1, serial: false, finished_in_time: nil)
       new(repo, base_ref, head_ref, tests_dir, reruns: reruns, timeout: timeout, env: env, workers: workers, serial: serial, finished_in_time: finished_in_time).run
     end
 
@@ -58,7 +58,7 @@ module JitCatch
       @tests_dir = File.expand_path(tests_dir)
       @reruns = reruns
       @timeout = timeout
-      @finished_in_time = finished_in_time || ->(waiter) { !waiter.join(timeout).nil? }
+      @finished_in_time = finished_in_time || ->(waiter) { !waiter.join(@timeout).nil? }
       @env_names = env.uniq.sort
       @workers = workers
       raise UsageError, "--workers must be at least 1" unless workers.is_a?(Integer) && workers >= 1
@@ -86,6 +86,9 @@ module JitCatch
       begin
         # One at a time: git takes a lock on the repository for each add.
         pairs.each { |pair| check_out(pair, change) }
+        rails_app = File.file?(File.join(pairs.first.head, "config", "application.rb"))
+        # A Rails app boots and loads db/schema.rb in each new checkout.
+        @timeout ||= rails_app ? 60 : 10
         normalizer = build_normalizer([*pairs.flat_map { |pair| [pair.base, pair.head] }, @git.dir])
         first = pairs.first
         frameworks = @frameworks.values.uniq
@@ -93,7 +96,6 @@ module JitCatch
         head_setup = setup_status("head", change["head"], first.head, normalizer, frameworks)
         setups = [base_setup.value, head_setup]
         failed = setups.filter_map { |setup| setup["failure"] }
-        rails_app = File.file?(File.join(first.head, "config", "application.rb"))
         raise EnvironmentError, setup_failed_doc(change, failed, rails_app: rails_app) unless failed.empty?
 
         bundle = { "base" => setups[0]["bundle"], "head" => setups[1]["bundle"] }

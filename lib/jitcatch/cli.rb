@@ -70,7 +70,7 @@ module JitCatch
         positional[1],
         positional[2],
         reruns: opts.fetch(:reruns, 2),
-        timeout: opts.fetch(:timeout, 10),
+        timeout: opts[:timeout],
         env: opts.fetch(:env, []),
         workers: opts.fetch(:workers, 1),
         serial: opts.fetch(:serial, false),

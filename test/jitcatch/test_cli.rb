@@ -199,6 +199,27 @@ class TestCLI < Minitest::Test
     end
   end
 
+  # A Rails app boots and loads db/schema.rb in each new checkout, which
+  # takes longer than a gem's test file, so its run waits longer unless the
+  # caller names a timeout.
+  def test_run_waits_60_seconds_for_a_rails_app_and_10_for_anything_else
+    with_repo do |repo|
+      repo.write("lib/flag.rb", "module Flag; def self.ok = true; end\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("README.md", "head\n")
+      repo.commit("Touch readme.", date: "2026-02-12T00:00:00Z")
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, { "flag_test.rb" => %(require "minitest/autorun"\nrequire "flag"\n\nclass FlagTest < Minitest::Test\n  def test_ok = assert(Flag.ok)\nend\n) })
+      timeout = ->(*options) { JSON.parse(cli("run", "--json", "--repo", repo.dir, "--reruns", "0", *options, "base", "HEAD", tests)[0])["timeout_s"] }
+
+      assert_equal 10, timeout.call
+      repo.write("config/application.rb", "module App; end\n")
+      repo.commit("Make it a Rails app.", date: "2026-02-13T00:00:00Z")
+      assert_equal [60, 5], [timeout.call, timeout.call("--timeout", "5")]
+    end
+  end
+
   # A gem installed from git is a checkout, so its version line can name
   # the commit a quoted output came from.
   def test_version_names_the_commit_of_the_checkout_it_runs_from
