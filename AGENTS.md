@@ -33,6 +33,8 @@ To run jitcatch on its own commits with RSpec candidates, the bundle of both sid
 
 The engine tests build temporary git repositories and cover context, execution, flakes, timeouts, and signature-change discards. `test/jitcatch/test_shop_demo.rb` runs `script/setup_shop` in a temp directory and compares `context` and `run` to `examples/runs/*/context.txt` and `run.txt`, byte for byte.
 
+`test/jitcatch/test_readme_quickstart.rb` runs the block under `<!-- quickstart:script -->` in README.md with `bash -e` in a temp directory, and compares what it prints with the `quickstart:output` block (commit ids masked) and the `quickstart:context` excerpt. README.ja.md must hold the same three blocks. When a change moves that output, run the script with the gem built from this checkout (`gem build jitcatch.gemspec`, then `gem install --local` into a scratch `GEM_HOME`) and paste the new output into both files.
+
 `ruby script/setup_shop` writes a gitignored history at `examples/shop`. The sources are `examples/fixtures/shop/`. `examples/runs/` is the recorded demo, not a place to check in new candidate tests. If a change to rendering or the fixture moves those bytes, regenerate from the fixture and review the diff. Do not hand-edit the records to hide a mismatch. To regenerate a record, write the history to a scratch directory and run the CLI from this checkout:
 
 ```sh
