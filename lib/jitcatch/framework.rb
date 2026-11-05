@@ -43,7 +43,7 @@ module JitCatch
         bundled ? 'minitest is not in the bundle: add gem "minitest" to the Gemfile' : "minitest is not installed for this Ruby: gem install minitest"
       end
 
-      def rerun(path, name, _line, pin_root: true)
+      def rerun(path, name, _line, pin_root: true, launcher: false)
         ["ruby", "-Ilib", "-I.", path, *(["-n", name] if name)].map { |part| quote(part) }.join(" ")
       end
 
@@ -90,13 +90,20 @@ module JitCatch
         bundled ? 'rspec-core is not in the bundle: add gem "rspec" to the Gemfile' : "rspec-core is not installed for this Ruby: gem install rspec-core"
       end
 
-      # The same Ruby flags and launch as the run, so the rerun loads what
+      # What `rspec -r` loads to lift the cut, when head's Ruby can load it.
+      LAUNCHER = "jitcatch/rspec"
+
+      # The same load path and launch as the run, so the rerun loads what
       # the row loaded. In a checkout that holds spec/ RSpec already takes
-      # the working directory as its root, so the line leaves out the pin,
-      # the one part that sets rspec-core's private state.
-      def rerun(path, _name, line, pin_root: true)
+      # the working directory as its root and adds its lib/, so the line
+      # needs no pin, the one part that sets rspec-core's private state, and
+      # is plain `rspec` when head's Ruby loads the launcher.
+      def rerun(path, _name, line, pin_root: true, launcher: false)
+        target = "#{path}#{":#{line}" if line}"
+        return ["rspec", "-I.", "-r", LAUNCHER, target].map { |part| Minitest.quote(part) }.join(" ") if launcher && !pin_root
+
         launch = pin_root ? LAUNCH : LAUNCH.sub(PIN_ROOT, "")
-        ["ruby", "-Ilib", "-I.", "-e", launch, "#{path}#{":#{line}" if line}"].map { |part| Minitest.quote(part) }.join(" ")
+        ["ruby", "-Ilib", "-I.", "-e", launch, target].map { |part| Minitest.quote(part) }.join(" ")
       end
     end
   end

@@ -48,6 +48,10 @@ class TestReadmeQuickstart < Minitest::Test
       succeed(env, %w[bundle install --local], app)
       assert_equal quoted.fetch("pick-output"), succeed(env, ["bash", "-e", "-c", quoted.fetch("pick")], app)
       assert_equal quoted.fetch("output"), succeed(env, ["bash", "-e", "-c", quoted.fetch("script")], app)
+      rerun = quoted.fetch("output")[/^    rerun: (.*)$/, 1]
+      out, status = Open3.capture2e(env, "bash", "-c", rerun, chdir: app)
+      refute status.success?, out
+      assert_includes out, "got: :needs_senior"
     end
   end
 

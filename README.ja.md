@@ -87,7 +87,7 @@ assess:
   c01 Loan lets a clerk approve a loan of 10000 cents base=pass head=fail m01 assertion,report,touches:changed_method
     expected: :approved
     got: :needs_senior
-    rerun: bundle exec ruby -Ilib -I. -e 'require "rspec/core"; require "rspec/support/object_formatter"; RSpec::Support::ObjectFormatter.default_instance.max_formatted_output_length = nil; exit(RSpec::Core::Runner.run(ARGV))' tmp/jitcatch/loan_approve_spec.rb:4
+    rerun: bundle exec rspec -I. -r jitcatch/rspec tmp/jitcatch/loan_approve_spec.rb:4
 ```
 
 spec は親で通り、そのコミットで落ちるので、`reported` になる。
@@ -677,12 +677,15 @@ Ruby 自身の prefix は `{ruby}/` と書く。
 行には値を書かない。
 たとえば `ruby -Ilib -I. -e 'require "rspec/core"; require "rspec/support/object_formatter"; RSpec::Core::RubyProject.instance_variable_set(:@project_root, Dir.pwd); RSpec::Support::ObjectFormatter.default_instance.max_formatted_output_length = nil; exit(RSpec::Core::Runner.run(ARGV))' candidates/cart_spec.rb:11` や `ruby -Ilib -I. candidates/cart_test.rb -n CartTest#test_total` で、head に `Gemfile` があれば `bundle exec` が前に付く。
 `<file>#load` と `<file>#timeout` の行は、ファイル全体を再実行する。
-RSpec の行がただの `rspec` でないのは、`rspec` が `spec/` を持ついちばん近い親ディレクトリの `lib/` を読み込みパスの先頭に置くからである。
+Rails アプリのように head の根に `spec` があり、jitcatch を実行したチェックアウトが `jitcatch/rspec` を読み込めるとき、RSpec の行は `rspec -I. -r jitcatch/rspec candidates/cart_spec.rb:11` になる。
+チェックアウトが読み込めるのは、クイックスタートのようにその `Gemfile` が jitcatch を挙げるとき、または `Gemfile` がなく、使っている Ruby に gem が入っているときである。
+`jitcatch/rspec` は RSpec が表示するオブジェクトを 200 文字で切る設定を外すので、`raise_error` の行は受け取ったエラーを最後まで示す。
+それ以外のとき、この行は上の例のように、実行と同じ起動のしかたで Ruby を動かし、これも切る設定を外す。
+その起動がただの `rspec` でないのは、`rspec` が `spec/` を持ついちばん近い親ディレクトリの `lib/` を読み込みパスの先頭に置くからである。
 そのため Rails アプリの `tmp/` の下にあるチェックアウトでは、アプリの `lib/` を読んでしまう。
-この行はそのディレクトリを作業ディレクトリに固定し、実行時のワークツリーでも同じようにする。
-Rails アプリのように head の根に `spec` があれば、RSpec はもともとその根を見つける。
+この起動はそのディレクトリを作業ディレクトリに固定し、実行時のワークツリーでも同じようにする。
+head の根に `spec` があれば、RSpec はもともとその根を見つける。
 そのときこの行は、rspec-core の内部の状態を書き換えるただ一つの部分である固定（`RSpec::Core::RubyProject.instance_variable_set(:@project_root, Dir.pwd); `）を省く。
-また、RSpec が表示するオブジェクトを 200 文字で切る設定を外すので、`raise_error` の行は受け取ったエラーを最後まで示す。
 
 ## Rails アプリ
 

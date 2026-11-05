@@ -102,7 +102,8 @@ module JitCatch
         rows = classify_files(files, pairs, normalizer, Known.new(names: mention_names(change), constants: changes.head_constants, unsaved: unsaved_mentions(change)))
         bundled = gemfile?(first.head)
         spec_root = File.exist?(File.join(first.head, "spec"))
-        rows.each { |row| row["rerun"] = rerun_command(row, bundled, !spec_root) }
+        launcher = @frameworks.value?(Framework::RSpec) && launcher_loads?
+        rows.each { |row| row["rerun"] = rerun_command(row, bundled, !spec_root, launcher) }
         unloaded = load_failure_doc(change, rows, bundled, rails_app)
         raise EnvironmentError, unloaded if unloaded
       ensure
@@ -595,11 +596,22 @@ module JitCatch
     end
 
     # A file-level row (`file#load`, `file#timeout`) reruns the whole file.
-    def rerun_command(row, bundled, pin_root)
+    def rerun_command(row, bundled, pin_root, launcher)
       file_level = row["line"].nil? && row["name"].start_with?("#{File.basename(row["file"])}#")
       name = file_level ? nil : row["name"]
-      command = @frameworks.fetch(row["file"]).rerun(File.join(tests_from_root, row["file"]), name, row["line"], pin_root: pin_root)
+      command = @frameworks.fetch(row["file"]).rerun(File.join(tests_from_root, row["file"]), name, row["line"], pin_root: pin_root, launcher: launcher)
       bundled ? "bundle exec #{command}" : command
+    end
+
+    # The rerun line runs in the reader's checkout, whose Gemfile can list
+    # jitcatch while the commits under test do not, so the launcher is
+    # tried there, with that Gemfile, and not in a worktree.
+    def launcher_loads?
+      bundled = gemfile?(@git.dir)
+      env = (PASSED_ENV + @env_names).to_h { |key| [key, ENV[key]] }.compact.merge(FIXED_ENV)
+      env["BUNDLE_GEMFILE"] = File.join(@git.dir, "Gemfile") if bundled
+      script = [*(BUNDLE_SETUP if bundled), "require #{Framework::RSpec::LAUNCHER.inspect}"].join("; ")
+      system(env, RbConfig.ruby, "-e", script, chdir: @git.dir, unsetenv_others: true, out: File::NULL, err: File::NULL) == true
     end
 
     # The rerun line runs from the repository root, so the tests directory

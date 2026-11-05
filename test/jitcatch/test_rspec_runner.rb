@@ -330,6 +330,33 @@ class TestRSpecRunner < Minitest::Test
     end
   end
 
+  # RUBYLIB stands in for a bundle that holds jitcatch: either way head's
+  # Ruby loads jitcatch/rspec, and so does the reader's shell.
+  def test_a_head_that_loads_the_launcher_reruns_with_plain_rspec_and_the_whole_message
+    with_repo do |repo|
+      repo.write("spec/.keep", "")
+      repo.write("lib/a.rb", %(module A; def self.f = raise(KeyError, "k"); end\n))
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/a.rb", %(module A; def self.f = raise(ArgumentError, "#{"x" * 200} wrapped k"); end\n))
+      repo.commit("Wrap the key error.", date: "2026-02-12T00:00:00Z")
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, { "a_spec.rb" => %(require "a"\n\nRSpec.describe A do\n  it("raises a key error") { expect { A.f }.to raise_error(KeyError) }\nend\n) })
+      lib = File.expand_path("../../lib", __dir__)
+
+      row = with_env("RUBYLIB" => lib) {
+        JitCatch::Assessor.apply(JitCatch::Runner.run(repo.dir, "base", "HEAD", tests, reruns: 0, timeout: 20, env: ["RUBYLIB"]))
+      }["tests"].fetch(0)
+
+      assert_equal "reported", row["disposition"], row["head"]["message"]
+      assert_equal "rspec -I. -r jitcatch/rspec candidates/a_spec.rb:4", row["rerun"]
+      shell = { "RUBYLIB" => lib, "PATH" => [Gem.bindir, ENV.fetch("PATH")].join(File::PATH_SEPARATOR) }
+      out, status = Open3.capture2e(shell, "bash", "-c", row["rerun"], chdir: repo.dir)
+      refute status.success?, out
+      assert_includes out, "#{"x" * 200} wrapped k>"
+    end
+  end
+
   def test_a_script_an_example_starts_lends_its_calls_to_the_mentions
     with_repo do |repo|
       tool = "module Tool\n  def self.run = value + 1\n\n  def self.value = 0\nend\n"

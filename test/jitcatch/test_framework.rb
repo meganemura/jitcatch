@@ -27,5 +27,10 @@ class TestFramework < Minitest::Test
     assert_equal "ruby -Ilib -I. -e #{launch} candidates/a_spec.rb", JitCatch::Framework::RSpec.rerun("candidates/a_spec.rb", nil, nil)
     short = %('require "rspec/core"; require "rspec/support/object_formatter"; RSpec::Support::ObjectFormatter.default_instance.max_formatted_output_length = nil; exit(RSpec::Core::Runner.run(ARGV))')
     assert_equal "ruby -Ilib -I. -e #{short} candidates/a_spec.rb:7", JitCatch::Framework::RSpec.rerun("candidates/a_spec.rb", "A b", 7, pin_root: false)
+    assert_equal "rspec -I. -r jitcatch/rspec candidates/a_spec.rb:7", JitCatch::Framework::RSpec.rerun("candidates/a_spec.rb", "A b", 7, pin_root: false, launcher: true)
+    assert_equal "rspec -I. -r jitcatch/rspec candidates/a_spec.rb", JitCatch::Framework::RSpec.rerun("candidates/a_spec.rb", nil, nil, pin_root: false, launcher: true)
+    # The launcher loads after RSpec has put the nearest spec/'s lib/ on the
+    # load path, too late for the pin.
+    assert_equal "ruby -Ilib -I. -e #{launch} candidates/a_spec.rb:7", JitCatch::Framework::RSpec.rerun("candidates/a_spec.rb", "A b", 7, launcher: true)
   end
 end
