@@ -17,7 +17,7 @@ group :development, :test do
 end
 ```
 
-If the test database is PostgreSQL or MySQL, give each side its own database once, as [Rails apps](#rails-apps) shows. SQLite at the Rails default path needs no setup.
+SQLite at the Rails default path needs no setup. When the test database is PostgreSQL or MySQL under one name, jitcatch finds that base and head would share it and runs one process at a time, with a `warning:` that names the line to change in `config/database.yml` to run them at once, as [Rails apps](#rails-apps) shows.
 
 ### 2. Pick a commit
 
@@ -308,7 +308,7 @@ jitcatch run --repo DIR BASE HEAD TESTS_DIR
 | `--reruns N` | `run` | Extra runs on head after a pass-on-base / fail-on-head result. The default is 2. `0` skips the flake check. |
 | `--timeout SEC` | `run` | Seconds before a test file is killed. The default is 60 when head has `config/application.rb`, since a Rails app boots and loads `db/schema.rb` in each new checkout, and 10 otherwise. The minimum is 1. |
 | `--workers N` | `run` | Test files that run at the same time, each worker in its own base and head worktrees. The default is 1. Each worker runs two Ruby processes at once, so more workers help only while CPUs are idle. The report is the same for every N. |
-| `--serial` | `run` | Runs one Ruby process at a time: a file's base run, then its head run. For candidates that write a fixed path outside the worktree or listen on a fixed port. It takes no `--workers` above 1. The text report prints `serial` and `--json` records `"serial": true`. |
+| `--serial` | `run` | Runs one Ruby process at a time: a file's base run, then its head run. For candidates that write a fixed path outside the worktree or listen on a fixed port. It takes no `--workers` above 1. `run` also runs this way, with a `warning:`, when base and head of a Rails app share one test database (see Rails apps). The text report prints `serial` and `--json` records `"serial": true`. |
 | `--env NAME` | `run` | Pass this variable from your environment to the test processes. Repeat it for more names. The run records the names, not the values, and lists a name that is not set on an `env_unset` line. |
 
 | Command | Arguments |
@@ -413,7 +413,13 @@ Create the databases once, two for each worker, before the first run. Rails load
 for n in 1 2; do RAILS_ENV=test TEST_ENV_NUMBER=$n bin/rails db:create; done
 ```
 
-When head's database is missing, its rows are `discard:no_database`. When `database.yml` does not use the variable, pass `--serial`, so that one process runs at a time. On the sample app, six files took 34 s with `--serial` and 6 to 10 s with numbered databases.
+When head's database is missing, its rows are `discard:no_database`. When `database.yml` does not use the variable, `run` finds it before any candidate runs: it reads each side's `config/database.yml` as Active Record does, with that side's `TEST_ENV_NUMBER` and any `DATABASE_URL` that `--env` passes, and when base and head name one database on a server, or one SQLite file at an absolute path, it runs one process at a time, as `--serial` does, whatever `--workers` says. The text report then prints `serial` and this line:
+
+```text
+warning: base and head use one test database, lending_test, so jitcatch ran one process at a time. To run them at once, end the test database name in config/database.yml with <%= ENV["TEST_ENV_NUMBER"] %> and create the numbered databases: for n in 1 2; do RAILS_ENV=test TEST_ENV_NUMBER=$n bin/rails db:create; done
+```
+
+With `--env DATABASE_URL`, the line first says to pass no `DATABASE_URL`, because the URL names the database for every checkout. A `database.yml` that reads only in the booted app, such as one that calls `Rails.application`, gives no answer, and the run keeps the processes it would run. On the sample app with PostgreSQL 16 and a change to `db/schema.rb`, six files took 40 to 50 s one at a time and 18 s with numbered databases at a load average of 11 to 18, and 32 s and 9 s at a load average of 2; with `--workers 3` and one shared database, one of two runs reported a `loan_spec.rb#load` row the change did not cause. Before this check, six one-example files took 34 s with `--serial` and 6 to 10 s with numbered databases.
 
 Each checkout has only the files git tracks. An initializer that reads a credential fails there without `config/master.key`, so pass the key: `RAILS_MASTER_KEY=$(cat config/master.key) jitcatch run --env RAILS_MASTER_KEY BASE HEAD TESTS_DIR`.
 
@@ -456,7 +462,7 @@ Without the CLI, copy or symlink `skills/jitcatch` into the agent's skills direc
 - Files run one at a time unless you pass `--workers`. The base run and the head run of one file run at the same time, each in its own worktree, so a test that writes a fixed path outside the worktree or listens on a fixed port can collide with its other side, and with other files under `--workers`. Pass `--serial` for such files. The repository's existing suite is not run. The repository has to be able to add worktrees.
 - An assertion backtrace usually stops in the test, so a library line is found from names the test mentions.
 - An RSpec example's mentions come from its own block, the `let`, `subject`, and hook blocks of the groups around it, those groups' arguments, and the same-file helpers they call. A group described as `"#total"` or `".build"` names that method, and `described_class.new` names `Owner.new`. `described_class.parse` is listed as `Owner.parse`. A `let(:result)` or `subject(:result)` name is the spec's own helper, so neither it nor a bare `result` call mentions a changed method `result`. When its block builds one class, as `let(:cart) { Cart.new }` does, `cart.total` is listed as `Cart#total`. An implicit `subject`, a shared example group, and a helper in `spec/support` are not read; an example from a shared group defined in another file reads the whole candidate file.
-- Base and head of a Rails app on a database server share one test database unless `config/database.yml` names it with `TEST_ENV_NUMBER` on both revisions (see Rails apps). The suite tests only the shape of a Rails project; the Rails recipe was measured on a Rails 8.1 app with PostgreSQL 16 and SQLite.
+- Base and head of a Rails app on a database server share one test database unless `config/database.yml` names it with `TEST_ENV_NUMBER` on both revisions; `run` then runs one process at a time (see Rails apps). It cannot tell when `database.yml` reads only in the booted app. MySQL was not run; its shared name was tested only through Active Record's reading of `database.yml`. The suite tests only the shape of a Rails project; the Rails recipe was measured on a Rails 8.1 app with PostgreSQL 16 and SQLite.
 - An RSpec error outside every example, such as in an `after(:suite)` hook, is reported only when no example ran.
 
 ## Development

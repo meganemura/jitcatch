@@ -19,8 +19,10 @@ group :development, :test do
 end
 ```
 
-テスト用データベースが PostgreSQL や MySQL なら、[Rails アプリ](#rails-アプリ) のとおり、両側にそれぞれのデータベースを一度だけ用意する。
 Rails の既定の場所にある SQLite なら、準備は要らない。
+テスト用データベースが 1 つの名前の PostgreSQL や MySQL なら、jitcatch は base と head がそれを共有すると見つけ、プロセスを 1 つずつ動かす。
+そのとき `warning:` が、両側を同時に動かすために `config/database.yml` のどこを変えるかを示す。
+詳しくは [Rails アプリ](#rails-アプリ) を参照。
 
 ### 2. コミットを選ぶ
 
@@ -387,7 +389,7 @@ jitcatch run --repo DIR BASE HEAD TESTS_DIR
 | `--reruns N` | `run` | base で通り head で落ちたあとの、head での追加実行回数。既定は 2。`0` でフレーク検査をしない。 |
 | `--timeout SEC` | `run` | テストファイルを止めるまでの秒数。head に `config/application.rb` があれば既定は 60 で、それ以外は 10。Rails アプリは新しいチェックアウトごとに起動して `db/schema.rb` を読み込むからである。最小は 1。 |
 | `--workers N` | `run` | 同時に実行するテストファイルの数。ワーカーごとに base と head の worktree を持つ。既定は 1。1 つのワーカーは Ruby プロセスを 2 つ同時に動かすので、ワーカーを増やして速くなるのは CPU が空いているときだけである。N によらずレポートは同じになる。 |
-| `--serial` | `run` | Ruby プロセスを 1 つずつ動かす。ファイルの base 側を走らせてから head 側を走らせる。worktree の外の決まったパスに書く候補や、決まったポートで待ち受ける候補のためのものである。`--workers` に 1 より大きい値は渡せない。テキストのレポートは `serial` と出し、`--json` は `"serial": true` を記録する。 |
+| `--serial` | `run` | Ruby プロセスを 1 つずつ動かす。ファイルの base 側を走らせてから head 側を走らせる。worktree の外の決まったパスに書く候補や、決まったポートで待ち受ける候補のためのものである。`--workers` に 1 より大きい値は渡せない。Rails アプリの base と head が 1 つのテスト用データベースを共有するときも、`run` は `warning:` を出してこのように動かす（Rails アプリの節を参照）。テキストのレポートは `serial` と出し、`--json` は `"serial": true` を記録する。 |
 | `--env NAME` | `run` | この環境変数を今の環境からテストのプロセスへ渡す。複数の名前は繰り返して渡す。実行結果には値ではなく名前を記録する。設定されていない名前は `env_unset` 行に出す。 |
 
 | コマンド | 引数 |
@@ -716,8 +718,20 @@ for n in 1 2; do RAILS_ENV=test TEST_ENV_NUMBER=$n bin/rails db:create; done
 ```
 
 head のデータベースが無いときは、その行は `discard:no_database` になる。
-`database.yml` がこの変数を使っていないときは `--serial` を渡し、一度に 1 つのプロセスだけを動かす。
-手元のサンプルアプリでは、6 つのファイルに `--serial` で 34 秒、番号付きのデータベースで 6 秒から 10 秒かかった。
+`database.yml` がこの変数を使っていないことは、`run` が候補を動かす前に見つける。
+`run` は各側の `config/database.yml` を、その側の `TEST_ENV_NUMBER` と、`--env` で渡した `DATABASE_URL` があればそれも使って、Active Record と同じように読む。
+base と head がサーバー上の 1 つのデータベース、または絶対パスの 1 つの SQLite ファイルを指すとき、`--workers` の値にかかわらず、`--serial` と同じく一度に 1 つのプロセスだけを動かす。
+そのときテキストの報告は `serial` と次の行を出す。
+
+```text
+warning: base and head use one test database, lending_test, so jitcatch ran one process at a time. To run them at once, end the test database name in config/database.yml with <%= ENV["TEST_ENV_NUMBER"] %> and create the numbered databases: for n in 1 2; do RAILS_ENV=test TEST_ENV_NUMBER=$n bin/rails db:create; done
+```
+
+`--env DATABASE_URL` を渡したときは、URL がすべてのチェックアウトのデータベースを決めるので、この行はまず `DATABASE_URL` を渡さないように言う。
+`Rails.application` を呼ぶもののように、起動したアプリの中でしか読めない `database.yml` からは答えが出ないので、実行は本来のプロセス数のまま進む。
+PostgreSQL 16 を使うサンプルアプリで `db/schema.rb` も変える変更では、6 つのファイルが、ロードアベレージ 11 から 18 では 1 つずつで 40 秒から 50 秒、番号付きのデータベースで 18 秒、ロードアベレージ 2 ではそれぞれ 32 秒と 9 秒かかった。
+1 つのデータベースを共有したまま `--workers 3` で動かすと、2 回のうち 1 回、変更が原因でない `loan_spec.rb#load` の行が報告された。
+この確認が入る前は、1 つの例を持つ 6 つのファイルに `--serial` で 34 秒、番号付きのデータベースで 6 秒から 10 秒かかった。
 
 それぞれのチェックアウトには、git が追跡するファイルしか無い。
 認証情報を読むイニシャライザーは、`config/master.key` が無いのでそこで失敗する。
@@ -838,7 +852,10 @@ CLI を使わない場合は、`skills/jitcatch` をエージェントの skills
   そのブロックが一つのクラスを作るときは、`let(:cart) { Cart.new }` のように、`cart.total` は `Cart#total` として出る。
   暗黙の `subject`、共有 example グループ、`spec/support` のヘルパーは読まない。
   別のファイルで定義した共有グループの example は、候補ファイル全体を読む。
-- データベースサーバーを使う Rails アプリの base と head は、両方のリビジョンの `config/database.yml` が `TEST_ENV_NUMBER` でテスト用データベースを名付けていない限り、1 つのテスト用データベースを共有する（Rails アプリの節を参照）。
+- データベースサーバーを使う Rails アプリの base と head は、両方のリビジョンの `config/database.yml` が `TEST_ENV_NUMBER` でテスト用データベースを名付けていない限り、1 つのテスト用データベースを共有する。
+  そのとき `run` はプロセスを 1 つずつ動かす（Rails アプリの節を参照）。
+  起動したアプリの中でしか読めない `database.yml` では、共有しているかを判断できない。
+  MySQL では動かしておらず、共有する名前は Active Record による `database.yml` の読み取りだけで試した。
   テストスイートが試すのは Rails プロジェクトの形だけである。
   Rails の手順は、PostgreSQL 16 と SQLite を使う Rails 8.1 のアプリで測った。
 - RSpec のすべての example の外で起きたエラー（`after(:suite)` フックの中など）は、example が 1 つも走らなかったときだけ報告する。

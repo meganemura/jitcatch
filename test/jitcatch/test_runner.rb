@@ -1861,6 +1861,65 @@ class TestRunner < Minitest::Test
     end
   end
 
+  # Each case: the test section of config/database.yml on both sides, the
+  # variables jitcatch's caller has, the ones --env passes, and the database
+  # the warning names (nil for none). A database server reached under one name is one database for
+  # every checkout; an SQLite file at a relative path is a file of each.
+  SHARED_DATABASE_CASES = [
+    ["adapter: postgresql\n  database: lending_test", {}, [], "lending_test"],
+    ["adapter: mysql2\n  database: app_test", {}, [], "app_test"],
+    [%(adapter: postgresql\n  database: app_test<%= ENV["TEST_ENV_NUMBER"] %>), {}, [], nil],
+    [%(adapter: postgresql\n  database: app_test<%= ENV["TEST_ENV_NUMBER"] %>), { "DATABASE_URL" => "postgres://db.example/ci_test" }, ["DATABASE_URL"], "ci_test"],
+    ["adapter: sqlite3\n  database: storage/test.sqlite3", {}, [], nil],
+    ["adapter: sqlite3\n  database: /var/tmp/app_test.sqlite3", {}, [], "/var/tmp/app_test.sqlite3"],
+    # A DATABASE_URL that --env does not pass reaches no candidate.
+    [%(adapter: postgresql\n  database: app_test<%= ENV["TEST_ENV_NUMBER"] %>), { "DATABASE_URL" => "postgres://db.example/ci_test" }, [], nil],
+    # A file that needs the booted app reads as no answer, so the run stays as it was.
+    ["adapter: postgresql\n  database: <%= Rails.application.class.module_parent_name %>_test", {}, [], nil]
+  ].freeze
+
+  def test_base_and_head_that_share_one_test_database_run_one_process_at_a_time
+    skip "activerecord is not installed for #{RUBY_VERSION}" if Gem::Specification.find_all_by_name("activerecord").empty?
+
+    SHARED_DATABASE_CASES.each do |config, env, passed, shared|
+      with_repo do |repo|
+        repo.write("lib/calc.rb", "class Calc; end\n")
+        repo.write("config/database.yml", "test:\n  #{config}\n")
+        repo.commit("base", date: "2026-02-11T00:00:00Z")
+        repo.branch("base")
+        repo.write("README.md", "head\n")
+        repo.commit("Touch readme.", date: "2026-02-12T00:00:00Z")
+        tests = File.join(repo.dir, "candidates")
+        number = %(flunk "number=\#{ENV.fetch("TEST_ENV_NUMBER", "unset")}")
+        write_tests(tests, {
+          "a_number_test.rb" => candidate_source("ANumberTest", "test_number", number),
+          "b_number_test.rb" => candidate_source("BNumberTest", "test_number", number)
+        })
+
+        doc = with_env(env) { JitCatch::Runner.run(repo.dir, "base", "HEAD", tests, reruns: 0, workers: 2, env: passed) }
+
+        sides = doc["tests"].map { |test| [test["base"]["message_first_line"], test["head"]["message_first_line"]] }.sort
+        warning = doc["warnings"].grep(/one test database/)
+        if shared
+          assert_equal [["number=1", "number=2"]] * 2, sides, config
+          assert doc["serial"], config
+          assert_equal [
+            "base and head use one test database, #{shared}, so jitcatch ran one process at a time. " \
+            "To run them at once, #{"pass no --env DATABASE_URL, which names it for every checkout, " if passed.include?("DATABASE_URL")}" \
+            "end the test database name in config/database.yml with <%= ENV[\"TEST_ENV_NUMBER\"] %> " \
+            "and create the numbered databases: for n in 1 2; do RAILS_ENV=test TEST_ENV_NUMBER=$n bin/rails db:create; done"
+          ], warning, config
+          # The READMEs quote the line the sample app printed.
+          %w[README.md README.ja.md].each { |name| assert_includes File.read(File.expand_path("../../#{name}", __dir__), encoding: "UTF-8"), "warning: #{warning.first}\n" } if shared == "lending_test"
+        else
+          assert_equal [["number=1", "number=2"], ["number=3", "number=4"]], sides, config
+          refute doc["serial"], config
+          assert_empty warning, config
+        end
+      end
+    end
+  end
+
   def test_candidate_process_gets_only_the_allowlisted_environment
     with_repo do |repo|
       repo.write("lib/flag.rb", "module Flag; def self.ok; true; end; end\n")

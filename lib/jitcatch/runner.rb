@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "fileutils"
+require "open3"
 require "pathname"
 require "rbconfig"
 require "tmpdir"
@@ -35,6 +36,18 @@ module JitCatch
     # Rescuing in the child keeps Bundler's own message and drops its backtrace.
     BUNDLE_SETUP = 'begin; require "bundler/setup"; rescue Exception => e; $stderr.puts e.message; exit 1; end'
     SETUP_STDERR_LINES = 10
+    # The test databases of a side, as Active Record reads config/database.yml
+    # with that side's TEST_ENV_NUMBER and the variables --env passes, so a
+    # DATABASE_URL merges in as it does when rails_helper sets RAILS_ENV.
+    TEST_DATABASES = <<~'SCRIPT'
+      ENV["RAILS_ENV"] ||= "test"
+      require "json"
+      require "active_record"
+      require "active_record/database_configurations"
+      require "active_support/configuration_file"
+      configs = ActiveRecord::DatabaseConfigurations.new(ActiveSupport::ConfigurationFile.parse("config/database.yml")).configs_for(env_name: "test")
+      print JSON.generate(configs.map { |config| config.configuration_hash.slice(:adapter, :host, :port, :socket, :database).transform_values(&:to_s) })
+    SCRIPT
     # `lines` maps an RSpec example's name to the line it starts on.
     Result = Data.define(:tests, :lines, :file_error, :timed_out, :exit_code)
     # One worker's two checkouts. A worker runs one file at a time in them.
@@ -99,7 +112,9 @@ module JitCatch
         raise EnvironmentError, setup_failed_doc(change, failed, rails_app: rails_app) unless failed.empty?
 
         bundle = { "base" => setups[0]["bundle"], "head" => setups[1]["bundle"] }
-        rows = classify_files(files, pairs, normalizer, Known.new(names: mention_names(change), constants: changes.head_constants, unsaved: unsaved_mentions(change)))
+        shared = shared_test_database(first)
+        @serial ||= !shared.nil?
+        rows = classify_files(files, shared ? [first] : pairs, normalizer, Known.new(names: mention_names(change), constants: changes.head_constants, unsaved: unsaved_mentions(change)))
         bundled = gemfile?(first.head)
         spec_root = File.exist?(File.join(first.head, "spec"))
         launcher = @frameworks.value?(Framework::RSpec) && launcher_loads?
@@ -120,7 +135,7 @@ module JitCatch
         "command" => "run",
         "base" => change["base"],
         "head" => change["head"],
-        "warnings" => change["warnings"] + require_warnings(files),
+        "warnings" => change["warnings"] + require_warnings(files) + [*(shared_database_warning(shared) if shared)],
         "reruns" => @reruns,
         "timeout_s" => @timeout,
         "serial" => @serial,
@@ -363,6 +378,43 @@ module JitCatch
 
     def gemfile?(worktree)
       File.file?(File.join(worktree, "Gemfile"))
+    end
+
+    # A database server that base and head reach under one name is one
+    # database, into which each side loads its own schema while the other
+    # runs; an SQLite file at a relative path is a file of each worktree.
+    # Nil when they share none, or when a side's config/database.yml does
+    # not read without booting the app.
+    def shared_test_database(pair)
+      base = Thread.new { test_databases(pair.base) }
+      head = test_databases(pair.head)
+      (base.value.to_a & head.to_a).first&.last
+    end
+
+    def test_databases(worktree)
+      return nil unless File.file?(File.join(worktree, "config", "database.yml"))
+
+      script = [*(BUNDLE_SETUP if gemfile?(worktree)), TEST_DATABASES].join("\n")
+      out, status = Open3.capture2(child_env(worktree), RbConfig.ruby, "-e", script, chdir: worktree, unsetenv_others: true, err: File::NULL)
+      return nil unless status.success?
+
+      JSON.parse(out).filter_map do |config|
+        name = config["database"]
+        next [[config["adapter"], config["host"], config["port"], config["socket"], name], name] unless config["adapter"].include?("sqlite")
+
+        full = File.expand_path(name, worktree)
+        [[full], full]
+      end
+    rescue JSON::ParserError
+      nil
+    end
+
+    # A DATABASE_URL that --env passes names the database over database.yml.
+    def shared_database_warning(name)
+      url = "pass no --env DATABASE_URL, which names it for every checkout, " if @env_names.include?("DATABASE_URL")
+      "base and head use one test database, #{name}, so jitcatch ran one process at a time. " \
+        "To run them at once, #{url}end the test database name in config/database.yml with <%= ENV[\"TEST_ENV_NUMBER\"] %> " \
+        "and create the numbered databases: for n in 1 2; do RAILS_ENV=test TEST_ENV_NUMBER=$n bin/rails db:create; done"
     end
 
     # One check per side, so a side that cannot load its bundle or a
@@ -609,7 +661,6 @@ module JitCatch
     def launcher_loads?
       bundled = gemfile?(@git.dir)
       env = (PASSED_ENV + @env_names).to_h { |key| [key, ENV[key]] }.compact.merge(FIXED_ENV)
-      env["BUNDLE_GEMFILE"] = File.join(@git.dir, "Gemfile") if bundled
       script = [*(BUNDLE_SETUP if bundled), "require #{Framework::RSpec::LAUNCHER.inspect}"].join("; ")
       system(env, RbConfig.ruby, "-e", script, chdir: @git.dir, unsetenv_others: true, out: File::NULL, err: File::NULL) == true
     end
