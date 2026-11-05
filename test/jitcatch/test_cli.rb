@@ -148,16 +148,17 @@ class TestCLI < Minitest::Test
         jitcatch: setup failed, so no test ran; a test cannot pass or fail on a side that cannot load
         base #{base}
         head #{head}
+        ruby #{RUBY_VERSION} #{RbConfig.ruby}
         setup base failed: #{command}
           #{missing}
         setup head failed: #{command}
           #{missing}
-        Run that command in a checkout of that side, fix what it says (often `bundle install` there), and run jitcatch again.
+        Run that command with that Ruby in a checkout of that side, fix what it says (often `bundle install` there; a bundle installed for another Ruby reads as gems not installed), and run jitcatch again.
       TEXT
       assert_equal [3, ""], [json_status, json_err]
       side = ->(name, sha) { { "side" => name, "commit" => sha, "command" => command, "stderr" => [missing], "not_passed" => [] } }
       assert_equal(
-        { "version" => JitCatch::VERSION, "command" => "run", "error" => "setup_failed", "stage" => "setup", "rails_app" => false, "base" => base, "head" => head,
+        { "version" => JitCatch::VERSION, "command" => "run", "error" => "setup_failed", "stage" => "setup", "rails_app" => false, "ruby" => { "version" => RUBY_VERSION, "path" => RbConfig.ruby }, "base" => base, "head" => head,
           "setup_failed" => [side.("base", base), side.("head", head)] },
         JSON.parse(json_out)
       )

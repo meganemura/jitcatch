@@ -360,16 +360,17 @@ RSpec がファイルを読む途中のエラーは、Minitest と同じく `<fi
 `Gemfile` が無い側では、jitcatch を動かす Ruby にフレームワークがあるかを確かめる。
 成功した実行は、`Gemfile` がある側ごとに `bundle base ok` を出す。
 ある側が確認に失敗すると（たとえばロックした gem がインストールされていないとき）、その側ではすべての候補が読み込みに失敗し、`fail_on_base` や回帰のように見えてしまう。
-そのため `run` は終了コード 3 で止まり、失敗した側、失敗したコマンド、その stderr の最後の行を出す。
+そのため `run` は終了コード 3 で止まり、確認を動かした Ruby（バージョンとパス）、失敗した側、失敗したコマンド、その stderr の最後の行を出す。
 
 ```text
 jitcatch: setup failed, so no test ran; a test cannot pass or fail on a side that cannot load
 base <sha>
 head <sha>
+ruby 3.3.6 /opt/rbenv/versions/3.3.6/bin/ruby
 setup head failed: ruby -e 'require "bundler/setup"; require "minitest"'
   Could not find gem 'jitcatch_absent_gem (= 9.9.9)' in locally installed gems.
   not passed: BUNDLE_WITHOUT (add --env BUNDLE_WITHOUT)
-Run that command in a checkout of that side, fix what it says (often `bundle install` there), and run jitcatch again.
+Run that command with that Ruby in a checkout of that side, fix what it says (often `bundle install` there; a bundle installed for another Ruby reads as gems not installed), and run jitcatch again.
 ```
 
 確認に通った側でも、すべての候補が読み込むものを起動できないことがある。
@@ -378,7 +379,7 @@ Run that command in a checkout of that side, fix what it says (often `bundle ins
 そのときの最初の行は `jitcatch: every candidate file failed to load on both sides, so no row can tell base from head` で、側ごとに最初のファイルの再実行コマンドを示す `load base failed:` の行と、その下にエラーが出る。
 
 この文は、終了コード 3 の報告がどれもそうであるように stdout に出て、stderr には何も出ない。
-`--json` のときは、代わりに stdout に `{"command": "run", "error": "setup_failed", "stage", "rails_app", "base", "head", "setup_failed": [{"side", "commit", "command", "stderr", "not_passed"}]}` を出す。
+`--json` のときは、代わりに stdout に `{"command": "run", "error": "setup_failed", "stage", "rails_app", "ruby": {"version", "path"}, "base", "head", "setup_failed": [{"side", "commit", "command", "stderr", "not_passed"}]}` を出す。
 `stage` は `setup` か `load` である。
 `rails_app` は head に `config/application.rb` があるときに true になる。
 そのときだけ、`load` の報告に `config/master.key` と `RAILS_MASTER_KEY` の助言を足す。

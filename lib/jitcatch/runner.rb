@@ -425,6 +425,8 @@ module JitCatch
         "error" => "setup_failed",
         "stage" => stage,
         "rails_app" => rails_app,
+        # A bundle installed for another Ruby reads as gems not installed.
+        "ruby" => { "version" => RUBY_VERSION, "path" => RbConfig.ruby },
         "base" => change["base"],
         "head" => change["head"],
         "setup_failed" => failed

@@ -1952,6 +1952,10 @@ class TestRunner < Minitest::Test
       stderr = ["rspec-core is not installed for this Ruby: gem install rspec-core", "minitest is not installed for this Ruby: gem install minitest"]
       expected = ->(side, ref) { { "side" => side, "commit" => repo.git("rev-parse", ref).strip, "command" => %(ruby -e 'require "rspec/core"; require "minitest"'), "stderr" => stderr, "not_passed" => [] } }
       assert_equal [expected.("base", "base"), expected.("head", "HEAD")], err.doc["setup_failed"]
+      # A bundle installed for another Ruby reads as gems not installed, so
+      # the report names the Ruby that ran the check.
+      assert_equal({ "version" => RUBY_VERSION, "path" => RbConfig.ruby }, err.doc["ruby"])
+      assert_includes JitCatch::Render.setup_failed_text(err.doc), "\nruby #{RUBY_VERSION} #{RbConfig.ruby}\n"
     end
   end
 
@@ -1982,6 +1986,8 @@ class TestRunner < Minitest::Test
       assert_equal [["{worktree}/candidates/support.rb:1:in #{quote}<top (required)>': connection to server at 127.0.0.1 port 1 failed (IOError)"]] * 2, err.doc["setup_failed"].map { |failure| failure["stderr"] }
       text = JitCatch::Render.setup_failed_text(err.doc)
       assert_includes text, "jitcatch: every candidate file failed to load on both sides, so no row can tell base from head\n"
+      assert_equal({ "version" => RUBY_VERSION, "path" => RbConfig.ruby }, err.doc["ruby"])
+      assert_includes text, "\nruby #{RUBY_VERSION} #{RbConfig.ruby}\n"
       refute_includes text, "master.key", "a repository with no config/application.rb is not a Rails app"
 
       repo.write("config/application.rb", "\n")

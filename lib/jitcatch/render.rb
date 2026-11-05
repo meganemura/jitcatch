@@ -91,6 +91,7 @@ module JitCatch
       lines = [load ? "jitcatch: every candidate file failed to load on both sides, so no row can tell base from head" : "jitcatch: setup failed, so no test ran; a test cannot pass or fail on a side that cannot load"]
       lines << "base #{doc["base"]}"
       lines << "head #{doc["head"]}"
+      lines << "ruby #{doc.dig("ruby", "version")} #{doc.dig("ruby", "path")}"
       doc["setup_failed"].each do |failure|
         lines << "#{load ? "load" : "setup"} #{failure["side"]} failed: #{failure["command"]}"
         failure["stderr"].each { |line| lines << "  #{line}" }
@@ -101,7 +102,7 @@ module JitCatch
         rails = " A file git ignores, such as config/master.key, is not in the checkouts jitcatch makes; pass its value with --env, such as RAILS_MASTER_KEY." if doc["rails_app"]
         "Run that command from the repository root with that side checked out, fix what it says (often a database, a credential, or a service the app needs at boot), and run jitcatch again.#{rails}"
       else
-        "Run that command in a checkout of that side, fix what it says (often `bundle install` there), and run jitcatch again."
+        "Run that command with that Ruby in a checkout of that side, fix what it says (often `bundle install` there; a bundle installed for another Ruby reads as gems not installed), and run jitcatch again."
       end
       finish(lines)
     end
