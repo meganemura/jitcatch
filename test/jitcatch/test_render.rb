@@ -198,6 +198,19 @@ class TestRender < Minitest::Test
     assert_equal %(hash keys differ: "b", "c", "d", "e" (+1 more)), pair.call(hash.call((four + ["f"]).to_h { |key| [key, 1] }.merge("a" => long)), hash.call((four + ["f"]).to_h { |key| [key, 2] }.merge("a" => long))).first
   end
 
+  def test_a_load_report_names_the_ruby_and_gives_the_master_key_hint_only_for_a_rails_app
+    failure = ->(side) { { "side" => side, "command" => "ruby -Ilib -I. candidates/a_test.rb", "stderr" => ["boom (IOError)"], "not_passed" => [] } }
+    doc = { "stage" => "load", "rails_app" => false, "ruby" => { "version" => "3.3.6", "path" => "/r/bin/ruby" }, "base" => "b", "head" => "h",
+            "setup_failed" => [failure.("base"), failure.("head")] }
+    advice = "Run that command from the repository root with that side checked out, fix what it says (often a database, a credential, or a service the app needs at boot), and run jitcatch again."
+    hint = " A file git ignores, such as config/master.key, is not in the checkouts jitcatch makes; pass its value with --env, such as RAILS_MASTER_KEY."
+    lines = ->(rails_app) { JitCatch::Render.setup_failed_text(doc.merge("rails_app" => rails_app)).lines(chomp: true) }
+
+    assert_equal ["base b", "head h", "ruby 3.3.6 /r/bin/ruby", "load base failed: ruby -Ilib -I. candidates/a_test.rb"], lines.(false)[1, 4]
+    assert_equal advice, lines.(false).last
+    assert_equal advice + hint, lines.(true).last
+  end
+
   def test_run_text_names_omitted_files_and_an_empty_run
     doc = JitCatch::Assessor.apply({
       "version" => "0.1.0", "base" => "b", "head" => "h", "reruns" => 2, "timeout_s" => 10,
