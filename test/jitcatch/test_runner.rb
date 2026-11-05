@@ -106,6 +106,48 @@ class TestRunner < Minitest::Test
     end
   end
 
+  # Minitest names a test on stdout before it runs and its result after it,
+  # so a test that prints, or tests that run at once, split or join those
+  # lines.
+  def test_a_row_names_one_test_whatever_the_tests_print_or_however_they_run
+    with_repo do |repo|
+      repo.write("lib/flag.rb", "module Flag; def self.on; true; end; end\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/flag.rb", "module Flag; def self.on; false; end; end\n")
+      repo.commit("Turn the flag off.", date: "2026-02-12T00:00:00Z")
+
+      prints = [
+        'print "half a line"',
+        'puts "PrintTest#test_ghost = 0.00 s = F"',
+        'puts "\n  1) Failure:\nPrintTest#test_ghost [x.rb:1]:\nno"',
+        'puts "\n9 runs, 0 assertions, 0 failures, 0 errors, 0 skips"',
+        '$stdout.write "\r\n"'
+      ]
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, {
+        "print_test.rb" => <<~RUBY
+          require "minitest/autorun"
+          require "flag"
+
+          class PrintTest < Minitest::Test
+            parallelize_me!
+
+          #{prints.each_with_index.map { |line, index| "  def test_prints_#{index}\n    sleep 0.05\n    #{line}\n    assert Flag.on\n  end\n" }.join("\n")}
+            def test_fails_on_base
+              sleep 0.05
+              refute Flag.on
+            end
+          end
+        RUBY
+      })
+      doc = execute(repo, tests)
+      rows = doc["tests"].to_h { |test| [test["name"], [test["base"]["status"], test["head"]["status"]]] }
+      expected = prints.each_index.to_h { |index| ["PrintTest#test_prints_#{index}", %w[pass fail]] }
+      assert_equal expected.merge("PrintTest#test_fails_on_base" => %w[fail pass]), rows
+    end
+  end
+
   def test_drops_a_test_that_does_not_fail_again_on_head
     with_repo do |repo|
       repo.write("lib/flag.rb", "module Flag; def self.ok; true; end; end\n")

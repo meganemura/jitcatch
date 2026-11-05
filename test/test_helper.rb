@@ -22,6 +22,13 @@ require_relative "support/repo"
 
 module JitCatch
   module TestHelp
+    # The report lib/jitcatch/minitest_report.rb writes: one line per
+    # [name, result code, text], then a last line once the run finished.
+    def minitest_report(*records, finished: true)
+      lines = records.map { |record| record.map(&:dump).join("\t") }
+      [*lines, *("finished" if finished)].map { |line| "#{line}\n" }.join
+    end
+
     def with_repo
       repo = Support::Repo.new
       yield repo

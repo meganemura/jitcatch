@@ -1,41 +1,37 @@
 # frozen_string_literal: true
 
 module JitCatch
-  # Parses Minitest's verbose output (`ruby test.rb -v --seed 1`).
+  # Reads the report minitest_report.rb writes in a Minitest candidate's
+  # process, and Minitest's output for an error that stopped the file.
   class MinitestParser
-    # minitest/spec names a test after its description, spaces included.
-    VERBOSE = /^(\S.*?) = \d+\.\d+ s = ([.FES])$/.freeze
-    ISSUE = /^\s+\d+\) (Failure|Error|Skip):\s*$/.freeze
-    SUMMARY = /^\d+ runs, \d+ assertions, \d+ failures, \d+ errors, \d+ skips$/.freeze
     HEADER = /^(\S.*?)(?:\s+\[(.+):(\d+)\])?:\s*$/.freeze
-    LETTERS = { "." => "pass", "F" => "fail", "E" => "error", "S" => "skip" }.freeze
-    # minitest_cause.rb prints the error an error was raised from under this
-    # line, between the message and the frames.
+    STATUSES = { "F" => "fail", "E" => "error" }.freeze
+    # minitest_report.rb prints the error an error was raised from under
+    # this line, between the message and the frames.
     CAUSED_BY = "--- Caused by: ---"
+    FINISHED = "finished"
 
-    def self.parse(stdout, stderr, normalizer: ->(text) { text })
-      new(normalizer.call(stdout.to_s), normalizer.call(stderr.to_s)).parse
+    def self.parse(report, stdout, stderr, normalizer: ->(text) { text })
+      new(report.to_s, normalizer.call(stdout.to_s), normalizer.call(stderr.to_s), normalizer).parse
     end
 
-    def initialize(stdout, stderr)
+    def initialize(report, stdout, stderr, normalizer)
+      @report = report
       @stdout = stdout.gsub("\r\n", "\n")
       @stderr = stderr.gsub("\r\n", "\n")
+      @normalizer = normalizer
     end
 
     def parse
       tests = {}
-      @stdout.each_line do |raw|
-        line = raw.delete_suffix("\n")
-        next unless (match = line.match(VERBOSE))
+      summary = false
+      @report.each_line(chomp: true) do |line|
+        next summary = true if line == FINISHED
 
-        tests[match[1]] = Failure.passed(LETTERS.fetch(match[2]))
+        name, code, text = line.split("\t", 3).map(&:undump)
+        tests[name] = result(code, @normalizer.call(text.to_s))
       end
 
-      issues(stdout_lines).each do |issue|
-        tests[issue["name"]] = issue["result"]
-      end
-
-      summary = stdout_lines.any? { |line| line.match?(SUMMARY) }
       file_error = summary ? nil : Failure.from_streams(@stdout, @stderr)
       if !summary && tests.empty? && file_error.nil?
         file_error = Failure.result("error", "RuntimeError", "minitest summary not found", [])
@@ -45,40 +41,20 @@ module JitCatch
 
     private
 
-    def stdout_lines
-      @stdout_lines ||= @stdout.lines.map { |line| line.delete_suffix("\n") }
+    # The text is what Minitest prints for a result in its summary: the
+    # failure's label line, the test's location, then the message.
+    def result(code, text)
+      status = STATUSES[code]
+      return Failure.passed(code == "S" ? "skip" : "pass") unless status
+
+      parse_issue(status, text.gsub("\r\n", "\n").lines(chomp: true).drop(1))
     end
 
-    def issues(lines)
-      found = []
-      index = 0
-      while index < lines.length
-        match = lines[index].match(ISSUE)
-        unless match
-          index += 1
-          next
-        end
-        kind = match[1]
-        block = []
-        index += 1
-        while index < lines.length && !lines[index].match?(ISSUE) && !lines[index].match?(SUMMARY)
-          block << lines[index]
-          index += 1
-        end
-        parsed = parse_issue(kind, block)
-        found << parsed if parsed
-      end
-      found
-    end
-
-    def parse_issue(kind, block)
-      header = block.shift.to_s
-      match = header.match(HEADER)
-      return nil unless match
-
+    def parse_issue(status, block)
+      match = block.shift.to_s.match(HEADER)
       frames = []
-      frames << Failure.frame(match[2], match[3]) if match[2]
-      body, backtrace = kind == "Error" ? split_backtrace(block) : [block, []]
+      frames << Failure.frame(match[2], match[3]) if match&.[](2)
+      body, backtrace = status == "error" ? split_backtrace(block) : [block, []]
       message_lines = []
       quoting = false
       body.each do |line|
@@ -94,20 +70,19 @@ module JitCatch
         end
         message_lines << line
       end
-      error_class = "Minitest::Assertion" if kind == "Failure"
-      if kind == "Error" && (err = message_lines.first.to_s.match(/\A([A-Za-z0-9_:]+): ?(.*)\z/))
+      error_class = "Minitest::Assertion" if status == "fail"
+      if status == "error" && (err = message_lines.first.to_s.match(/\A([A-Za-z0-9_:]+): ?(.*)\z/))
         error_class = err[1]
         message_lines[0] = err[2]
       end
       cause = nil
-      if kind == "Error" && (at = message_lines.index(CAUSED_BY))
+      if status == "error" && (at = message_lines.index(CAUSED_BY))
         cause_lines = message_lines.drop(at + 1)
         message_lines = message_lines.take(at)
         named = cause_lines.first.to_s.match(/\A([A-Za-z0-9_:]+): ?(.*)\z/)
         cause = { "error_class" => named ? named[1] : "", "message" => [named ? named[2] : cause_lines.first.to_s, *cause_lines.drop(1)].join("\n") }
       end
-      status = { "Failure" => "fail", "Error" => "error", "Skip" => "skip" }.fetch(kind)
-      { "name" => match[1], "result" => Failure.result(status, error_class, message_lines.join("\n"), frames + Failure.frames_in(backtrace), cause: cause) }
+      Failure.result(status, error_class, message_lines.join("\n"), frames + Failure.frames_in(backtrace), cause: cause)
     end
 
     # An error prints "Class: message", then each frame on a line of its own

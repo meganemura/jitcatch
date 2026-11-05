@@ -36,18 +36,16 @@ class TestParserProperty < Minitest::Test
     end
   end
 
-  def test_verbose_minitest_lines_round_trip
+  def test_any_name_and_any_output_leave_the_reported_results_unchanged
     Hegel.test do |tc|
-      names = tc.draw(arrays(from_regex("[A-Z][a-z]{0,4}Test#test_[a-z_]{1,8}"), unique: true, max_size: 6))
-      letters = names.to_h { |name| [name, tc.draw(sampled_from(%w[. F E S]))] }
-      stdout = [
-        "Run options: -v --seed 1", "", "# Running:", "",
-        *letters.map { |name, letter| "#{name} = 0.00 s = #{letter}" },
-        "", "#{names.size} runs, 0 assertions, 0 failures, 0 errors, 0 skips"
-      ].join("\n")
-      parsed = JitCatch::MinitestParser.parse(stdout, "")
+      names = tc.draw(arrays(text(min_size: 1, max_size: 30), unique: true, max_size: 6))
+      codes = names.to_h { |name| [name, tc.draw(sampled_from(%w[. F E S]))] }
+      texts = codes.to_h { |name, code| [name, { "F" => "Failure:\n#{name}:\nno\n", "E" => "Error:\n#{name}:\nRuntimeError: no\n" }.fetch(code, "")] }
+      looks_like_minitest = names.flat_map { |name| ["#{name} = 0.00 s = F", "  1) Failure:", "#{name} [x.rb:1]:", "1 runs, 0 assertions, 0 failures, 0 errors, 0 skips"] }
+      stdout = tc.draw(arrays(one_of(text(max_size: 40), sampled_from(looks_like_minitest.empty? ? [""] : looks_like_minitest)), max_size: 8)).join(tc.draw(sampled_from(["", "\n", "\r\n"])))
+      parsed = JitCatch::MinitestParser.parse(minitest_report(*codes.map { |name, code| [name, code, texts.fetch(name)] }), stdout, "")
       status = { "." => "pass", "F" => "fail", "E" => "error", "S" => "skip" }
-      assert_equal letters.transform_values { |letter| status.fetch(letter) }, parsed["tests"].transform_values { |result| result["status"] }
+      assert_equal codes.transform_values { |code| status.fetch(code) }, parsed["tests"].transform_values { |result| result["status"] }
       assert_equal [true, nil], parsed.values_at("summary", "file_error")
     end
   end
@@ -136,9 +134,9 @@ class TestParserProperty < Minitest::Test
       # error message that ends on one would lose it.
       lines << "end" if kind == "Error" && lines.last&.match?(/\A    .*:in /)
       body = kind == "Error" ? ["KeyError: first", *lines, *frames.map { |file, line| "    #{file}:#{line}:in 'g'" }] : ["first", *lines]
-      stdout = ["  1) #{kind}:", "ATest#test_a#{" [a_test.rb:3]" if kind == "Failure"}:", *body, "", "1 runs, 1 assertions, 0 failures, 0 errors, 0 skips"].join("\n")
+      text = ["#{kind}:", "ATest#test_a#{" [a_test.rb:3]" if kind == "Failure"}:", *body, ""].join("\n")
 
-      result = JitCatch::MinitestParser.parse(stdout, "")["tests"].fetch("ATest#test_a")
+      result = JitCatch::MinitestParser.parse(minitest_report(["ATest#test_a", kind[0], text]), "", "")["tests"].fetch("ATest#test_a")
 
       assert_equal ["first", *lines].join("\n").rstrip, result["message"]
       assert_equal kind == "Error" ? frames : [["a_test.rb", 3]], result["backtrace"].map { |item| [item["file"], item["line"]] }

@@ -25,14 +25,14 @@ module JitCatch
         basename.match?(/\Atest_.+\.rb\z/) || basename.end_with?("_test.rb")
       end
 
-      CAUSE = File.expand_path("minitest_cause.rb", __dir__)
+      REPORTER = File.expand_path("minitest_report.rb", __dir__)
 
       def arguments(path)
-        ["-r#{CAUSE}", path, "-v", "--seed", "1"]
+        ["-r#{REPORTER}", path, "--seed", "1"]
       end
 
-      def parse(_report, stdout, stderr, normalizer)
-        MinitestParser.parse(stdout, stderr, normalizer: normalizer)
+      def parse(report, stdout, stderr, normalizer)
+        MinitestParser.parse(report, stdout, stderr, normalizer: normalizer)
       end
 
       LIBRARY = "minitest"

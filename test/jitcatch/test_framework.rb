@@ -14,7 +14,7 @@ class TestFramework < Minitest::Test
   end
 
   def test_each_framework_runs_the_file_it_is_given
-    assert_equal ["-r#{File.expand_path("../../lib/jitcatch/minitest_cause.rb", __dir__)}", ".jitcatch/a_test.rb", "-v", "--seed", "1"], JitCatch::Framework::Minitest.arguments(".jitcatch/a_test.rb")
+    assert_equal ["-r#{File.expand_path("../../lib/jitcatch/minitest_report.rb", __dir__)}", ".jitcatch/a_test.rb", "--seed", "1"], JitCatch::Framework::Minitest.arguments(".jitcatch/a_test.rb")
     assert_equal ".jitcatch/a_spec.rb", JitCatch::Framework::RSpec.arguments(".jitcatch/a_spec.rb").last
     assert_includes JitCatch::Framework::RSpec.arguments("x"), JitCatch::Framework::REPORT
   end

@@ -197,7 +197,7 @@ jitcatch run --repo DIR BASE HEAD TESTS_DIR
 失敗した `assert_raises(X)` の行には、代わりに来たエラーを示す Minitest の `Class:` 行と `Message:` 行も出る。
 別のエラーから上げられたエラーの行には、`cause: KeyError: key not found` のように元のエラーのクラスとメッセージが出る。
 RSpec は元のエラーを自分で出力する。
-Minitest は出力しないので、jitcatch は Minitest の候補の各プロセスに `-r` で `lib/jitcatch/minitest_cause.rb` を読み込み、Minitest のエラーの文に元のエラーを足す。
+Minitest は出力しないので、jitcatch は Minitest の候補の各プロセスに `-r` で `lib/jitcatch/minitest_report.rb` を読み込み、Minitest のエラーの文に元のエラーを足す。
 `rerun:` の行はこれを読み込まない。
 行の 1 行が 300 文字を超えると、`FrozenError` に出た凍結 Array 全体のような行でも、最初と最後の 150 文字を残し、そのあいだを `... (+N characters; the whole message is in --json) ...` にする。
 マッチャーが受け取ったエラーでは、長いパスのあとの末尾に違いがあることが多いからである。
@@ -338,10 +338,13 @@ Concern の中のコールバックの行、親クラスが宣言するもの、
 `run` はリビジョンごとに git worktree を作り、スクラッチディレクトリをその worktree の `.jitcatch/` へコピーし、ファイルごとに 1 プロセスで実行する。
 
 ```sh
-ruby -Ilib -I. -r<jitcatch>/lib/jitcatch/minitest_cause.rb .jitcatch/<file> -v --seed 1
+ruby -Ilib -I. -r<jitcatch>/lib/jitcatch/minitest_report.rb .jitcatch/<file> --seed 1
 ruby -Ilib -I. -e 'require "rspec/core"; exit(RSpec::Core::Runner.run(ARGV))' -- \
   --format json --out .jitcatch-report.json --seed 1 --backtrace --no-color .jitcatch/<file>_spec.rb
 ```
+
+このファイルは Minitest の結果を 1 つずつ `.jitcatch-report.json` に書き、行の名前と状態は Minitest の出力ではなくそこから取る。
+そのため、テストが何を出力しても、テストが同時に走っても（`parallelize_me!`）、1 つの行は 1 つのテストを指す。
 
 `*_spec.rb` という名前のファイルは RSpec で実行する。
 ただし `minitest` を require するファイル（minitest/spec のファイル）は Minitest で実行する。
