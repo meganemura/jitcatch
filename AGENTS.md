@@ -67,3 +67,7 @@ BUNDLE_GEMFILE=/path/to/Gemfile bundle exec mutineer run --since origin/queue \
 - The CLI does not call a model. Generation and the intended-versus-regression judgment stay outside the tool.
 - The same repository and the same tests produce the same bytes. Fixed order, no timestamps, Minitest `--seed 1`, a worktree root written as `{worktree}` in messages and dropped from frames. Every command prints that document as JSON with `--json`.
 - Exit status 0 is success, 1 is a usage error, 2 is a git error, and 3 means `run` tested nothing: a side failed its setup check, no candidate file loaded on either side, or every row timed out or found no database on a side (`Assessor.untested_run?`). Finding candidates still exits 0. The tool does not decide that something is a regression.
+
+## Releasing
+
+A release, a gem push, and a change of the repository's visibility are the owner's to run. A commit that changes `lib/jitcatch/version.rb` and lands on `main` starts `.github/workflows/release.yml`, and [docs/releasing.md](docs/releasing.md) has the steps. Every change that a gem user can notice adds a line under `## [Unreleased]` in `CHANGELOG.md`.

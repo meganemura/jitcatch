@@ -1,0 +1,130 @@
+name: Release
+
+# GitHub does not start workflows from a push made with the workflow's own
+# token, so a merge that changes the version starts the release and the tag is
+# created last, after the gem is out.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - lib/jitcatch/version.rb
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Find a gem version with no tag
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      notes: ${{ steps.notes.outputs.notes }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The API answers an empty list for a missing tag, so a failed request
+      # stops the run instead of reading as "no tag yet" and publishing again.
+      - id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(ruby -Ilib -e 'require "jitcatch/version"; puts JitCatch::VERSION')
+          tag="v$version"
+          found=$(gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/$tag" --jq "map(select(.ref == \"refs/tags/$tag\")) | length")
+          if [ "$found" != 0 ]; then
+            echo "$tag already exists, so this run releases nothing"
+          else
+            echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          fi
+      # Read before the gem is pushed, so a missing section stops the release
+      # while nothing is published yet.
+      - id: notes
+        if: steps.version.outputs.tag != ''
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          awk -v v="${TAG#v}" 'index($0, "## [" v "]") == 1 {in_version=1; next} /^## /{in_version=0} in_version' CHANGELOG.md > notes.md
+          if ! grep -q '[^[:space:]]' notes.md; then
+            echo "CHANGELOG.md has no section for ${TAG#v}" >&2
+            exit 1
+          fi
+          delimiter="notes_$(openssl rand -hex 16)"
+          { echo "notes<<$delimiter"; cat notes.md; echo "$delimiter"; } >> "$GITHUB_OUTPUT"
+
+  test:
+    name: Run CI on the release commit
+    needs: check
+    if: needs.check.outputs.tag != ''
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yml
+
+  # The release environment's approval is the last gate, and only this job
+  # holds the RubyGems OIDC token. It runs no test code.
+  publish:
+    name: Publish the gem
+    needs: [check, test]
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
+        with:
+          ruby-version: "4.0"
+          bundler: none
+      - name: Build the gem
+        env:
+          TAG: ${{ needs.check.outputs.tag }}
+        run: |
+          gem build jitcatch.gemspec
+          test -f "jitcatch-${TAG#v}.gem"
+      - uses: rubygems/configure-rubygems-credentials@dc5a8d8553e6ee01fc26761a49e99e733d17954a # v2.1.0
+      # A rerun after a successful push gets "Repushing of gem versions is not
+      # allowed"; that is the only failure worth skipping.
+      - name: Push the gem to RubyGems
+        env:
+          TAG: ${{ needs.check.outputs.tag }}
+        run: |
+          if output=$(gem push "jitcatch-${TAG#v}.gem" 2>&1); then
+            echo "$output"
+          elif echo "$output" | grep -q "Repushing of gem versions is not allowed"; then
+            echo "$output"
+          else
+            echo "$output"
+            exit 1
+          fi
+
+  release:
+    name: Create the tag and the GitHub release
+    needs: [check, publish]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      # A rerun finds the release already created, so it updates it instead.
+      - name: Create the tag and the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.check.outputs.tag }}
+          NOTES: ${{ needs.check.outputs.notes }}
+        run: |
+          printf '%s\n' "$NOTES" > notes.md
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file notes.md
+          else
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "$TAG" --notes-file notes.md
+          fi
