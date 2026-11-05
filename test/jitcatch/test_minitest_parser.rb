@@ -41,6 +41,11 @@ class TestMinitestParser < Minitest::Test
     assert_equal 21, error["backtrace"].first["line"]
   end
 
+  def test_bytes_that_are_not_utf8_read_as_question_marks
+    report = minitest_report(["BTest#test_\xFF".b, "E", "Error:\nBTest#test_\xFF:\nRuntimeError: x \xFF y\n".b])
+    assert_equal({ "BTest#test_?" => ["RuntimeError", "x ? y"] }, JitCatch::MinitestParser.parse(report, "", "")["tests"].transform_values { |result| result.values_at("error_class", "message") })
+  end
+
   def test_load_error_without_a_report
     stderr = "/tmp/work/head/.jitcatch/bad_test.rb:1:in `require': cannot load such file -- nope (LoadError)\n"
     parsed = JitCatch::MinitestParser.parse(nil, "", stderr, normalizer: ->(text) { text.gsub("/tmp/work/head/", "{worktree}/") })
@@ -59,6 +64,8 @@ class TestMinitestParser < Minitest::Test
     assert_equal ["DemoTest#test_ok", "DemoTest#test_long"], parsed["tests"].keys
     refute parsed["summary"]
     assert_equal "SignalException", parsed["file_error"]["error_class"]
+    cut = JitCatch::MinitestParser.parse(report + report.lines.last[0, 9], "", "killed (SignalException)\n")
+    assert_equal parsed, cut
   end
 
   def test_file_errors_from_each_stream

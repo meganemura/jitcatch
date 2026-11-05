@@ -25,10 +25,14 @@ module JitCatch
     def parse
       tests = {}
       summary = false
-      @report.each_line(chomp: true) do |line|
+      @report.each_line do |raw|
+        # A process killed while it wrote leaves its last line cut.
+        next unless raw.end_with?("\n")
+
+        line = raw.chomp
         next summary = true if line == FINISHED
 
-        name, code, text = line.split("\t", 3).map(&:undump)
+        name, code, text = line.split("\t", 3).map { |field| readable(field.undump) }
         tests[name] = result(code, @normalizer.call(text.to_s))
       end
 
@@ -40,6 +44,13 @@ module JitCatch
     end
 
     private
+
+    # A message can hold bytes that are not UTF-8; they read as "?", as in the
+    # streams the runner reads.
+    def readable(text)
+      text = text.dup.force_encoding(Encoding::UTF_8)
+      text.valid_encoding? ? text : text.scrub("?")
+    end
 
     # The text is what Minitest prints for a result in its summary: the
     # failure's label line, the test's location, then the message.

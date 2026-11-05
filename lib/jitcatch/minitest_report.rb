@@ -33,8 +33,8 @@ else
     define_method(:initialize) { @io = File.open(File.expand_path(".jitcatch-report.json"), "wb").tap { |io| io.sync = true } }
 
     def record(result)
-      text = result.passed? && !result.skipped? ? "" : result.to_s
-      @io.write([result.class_name, result.name].join("#").dump, "\t", result.result_code.dump, "\t", text.dump, "\n")
+      text = result.passed? ? "" : result.to_s
+      @io.write("#{[[result.class_name, result.name].join("#"), result.result_code, text].map(&:dump).join("\t")}\n")
     end
 
     def report
