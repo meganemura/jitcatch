@@ -26,20 +26,20 @@ else
   end)
 
   # One line per result: the test's name, its result code, and the text
-  # Minitest prints for it, each as a String#dump literal and joined by
-  # tabs, then a last line once the run finished.
+  # Minitest prints for it (a passing test's location), each as a
+  # String#dump literal and joined by tabs, then a last line once the run
+  # finished. Each line is written as it comes, so a run that is killed
+  # keeps the results it reported.
   jitcatch_report = Class.new(Minitest::AbstractReporter) do
     # Framework::REPORT, resolved before a test can change the directory.
     define_method(:initialize) { @io = File.open(File.expand_path(".jitcatch-report.json"), "wb").tap { |io| io.sync = true } }
 
     def record(result)
-      text = result.passed? ? "" : result.to_s
-      @io.write("#{[[result.class_name, result.name].join("#"), result.result_code, text].map(&:dump).join("\t")}\n")
+      @io.write("#{[[result.class_name, result.name].join("#"), result.result_code, result.to_s].map(&:dump).join("\t")}\n")
     end
 
     def report
       @io.write("finished\n")
-      @io.close
     end
   end
 
