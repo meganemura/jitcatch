@@ -3,6 +3,7 @@
 require "json"
 require "rbconfig"
 
+require_relative "jitcatch/version"
 require_relative "jitcatch/git_repo"
 require_relative "jitcatch/source_index"
 require_relative "jitcatch/factories"
@@ -18,8 +19,6 @@ require_relative "jitcatch/render"
 require_relative "jitcatch/cli"
 
 module JitCatch
-  VERSION = "0.1.0"
-
   class Error < StandardError; end
   class UsageError < Error; end
   class GitError < Error; end
