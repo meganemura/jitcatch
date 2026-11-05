@@ -263,7 +263,7 @@ class TestRender < Minitest::Test
           rerun 1: fail Minitest::Assertion Expected: 1
           rerun 2: pass
         t02 discarded b_test.rb#timeout b_test.rb
-          hint: base and head timed out after 7s; raise --timeout if the file needs longer, as a Rails app's first run in a new checkout can (it loads db/schema.rb)
+          hint: base and head timed out after 7s; raise --timeout if the file needs longer
         t03 no_signal C#test_c c_test.rb
         t04 fail_on_base D#test_d d_test.rb
           base: error NoMethodError undefined method 'coupon' for an instance of Cart
@@ -274,21 +274,42 @@ class TestRender < Minitest::Test
     TEXT
   end
 
-  # The names the children did not get are the run's, not a row's, so the
-  # line prints once however many rows timed out.
-  def test_run_text_names_what_the_children_did_not_get_once_per_run
+  # A name the child did not get is a likelier cause of a wait than a slow
+  # file, so every timed-out row says it before it says to wait longer.
+  def test_each_timed_out_row_names_what_the_child_did_not_get_before_the_timeout
     timed_out = ->(id) { { "id" => id, "file" => "#{id}_test.rb", "name" => "#{id}_test.rb#timeout", "classification" => "candidate", "base" => { "status" => "timeout" }, "head" => { "status" => "timeout" } } }
     run = { "version" => "0.1.0", "base" => "b", "head" => "h", "reruns" => 0, "timeout_s" => 10, "env_not_passed" => %w[HTTPS_PROXY QUINT] }
     passing = { "id" => "t03", "file" => "a_test.rb", "name" => "A#test_a", "classification" => "no_signal", "base" => { "status" => "pass" }, "head" => { "status" => "pass" } }
     text = JitCatch::Render.run_text(JitCatch::Assessor.apply(run.merge("tests" => [timed_out.("t01"), timed_out.("t02"), passing])))
 
-    assert_includes text, "  t02 discarded t02_test.rb#timeout t02_test.rb\n" \
-      "    hint: base and head timed out after 10s; raise --timeout if the file needs longer, as a Rails app's first run in a new checkout can (it loads db/schema.rb)\n" \
-      "  t03 no_signal A#test_a a_test.rb\n" \
-      "not passed: HTTPS_PROXY QUINT (add --env HTTPS_PROXY --env QUINT if a timed-out file needs them)\n" \
-      "counts generated=3"
-    assert_equal [2, 1], [text.scan("hint: ").size, text.scan("not passed: ").size]
-    refute_includes JitCatch::Render.run_text(JitCatch::Assessor.apply(run.merge("tests" => [passing]))), "not passed"
+    hint = "    hint: base and head timed out after 10s; jitcatch did not pass HTTPS_PROXY QUINT, so add --env HTTPS_PROXY --env QUINT if the file needs them, then raise --timeout if it needs longer\n"
+    assert_includes text, "  t01 discarded t01_test.rb#timeout t01_test.rb\n#{hint}  t02 discarded t02_test.rb#timeout t02_test.rb\n#{hint}  t03 no_signal A#test_a a_test.rb\ncounts generated=3"
+    refute_includes text, "Rails"
+    refute_includes JitCatch::Render.run_text(JitCatch::Assessor.apply(run.merge("tests" => [passing]))), "--env"
+  end
+
+  # Only a Rails app loads db/schema.rb in each new checkout, so only there
+  # does a slow first boot explain a timeout.
+  def test_a_timed_out_row_names_the_rails_first_boot_only_for_a_rails_app
+    row = { "id" => "t01", "file" => "a_test.rb", "name" => "a_test.rb#timeout", "classification" => "candidate", "base" => { "status" => "pass" }, "head" => { "status" => "timeout" } }
+    hint = ->(doc) { JitCatch::Render.run_text(JitCatch::Assessor.apply({ "version" => "0.1.0", "base" => "b", "head" => "h", "reruns" => 0, "timeout_s" => 10, "tests" => [row] }.merge(doc))).lines.grep(/hint:/).first }
+
+    assert_equal "    hint: head timed out after 10s; raise --timeout if the file needs longer\n", hint.({})
+    assert_equal "    hint: head timed out after 10s; raise --timeout if the file needs longer, as a Rails app's first run in a new checkout can (it loads db/schema.rb)\n", hint.("rails_app" => true)
+    assert_equal "    hint: head timed out after 10s; jitcatch did not pass DATABASE_URL, so add --env DATABASE_URL if the file needs it, then raise --timeout if it needs longer, as a Rails app's first run in a new checkout can (it loads db/schema.rb)\n",
+      hint.("rails_app" => true, "env_not_passed" => %w[DATABASE_URL])
+  end
+
+  # The first line of a run that tested nothing names only what happened,
+  # so a gem with no database does not read as one that lacked it.
+  def test_an_untested_run_names_only_the_causes_its_rows_show
+    timed_out = { "id" => "t01", "file" => "a_test.rb", "name" => "a_test.rb#timeout", "classification" => "candidate", "base" => { "status" => "timeout" }, "head" => { "status" => "timeout" } }
+    no_database = { "id" => "t02", "file" => "b_test.rb", "name" => "B#test_b", "classification" => "candidate", "base" => { "status" => "pass" }, "head" => { "status" => "error", "error_class" => "ActiveRecord::NoDatabaseError" } }
+    first = ->(tests) { JitCatch::Render.run_text(JitCatch::Assessor.apply({ "version" => "0.1.0", "base" => "b", "head" => "h", "reruns" => 0, "timeout_s" => 10, "tests" => tests })).lines.first }
+
+    assert_equal "jitcatch: no row ran to a result on both sides (1 of 1 timed out), so this run cannot tell base from head\n", first.([timed_out])
+    assert_equal "jitcatch: no row ran to a result on both sides (1 of 1 found no database), so this run cannot tell base from head\n", first.([no_database])
+    assert_equal "jitcatch: no row ran to a result on both sides (2 of 2 timed out or found no database), so this run cannot tell base from head\n", first.([timed_out, no_database])
   end
 
   def test_context_text_lists_dependencies_only_when_one_changed

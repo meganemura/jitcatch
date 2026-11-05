@@ -72,11 +72,10 @@ module JitCatch
         doc["tests"].each do |test|
           lines << "  #{test_line(test)}"
           lines.concat(rerun_lines(test)) if test["disposition"] == "flaky"
-          lines.concat(timeout_lines(test, doc["timeout_s"]))
+          lines.concat(timeout_lines(test, doc))
           lines.concat(base_failure_lines(test))
         end
       end
-      lines.concat(not_passed_lines(doc))
       lines << counts_line(doc["counts"])
       lines.concat(assess_body(doc))
       finish(lines)
@@ -268,29 +267,29 @@ module JitCatch
     end
 
     def untested_line(doc)
-      "jitcatch: no row ran to a result on both sides (#{doc["untested"]} of #{doc["tests"].size} timed out or found no database), so this run cannot tell base from head"
-    end
-
-    def timeout_lines(test, seconds)
-      sides = timed_out_sides(test)
-      return [] if sides.empty?
-
-      ["    hint: #{sides.join(" and ")} timed out after #{seconds}s; raise --timeout if the file needs longer, as a Rails app's first run in a new checkout can (it loads db/schema.rb)"]
+      results = doc["tests"].flat_map { |test| [test["base"], test["head"]].compact }
+      causes = []
+      causes << "timed out" if results.any? { |result| result["status"] == "timeout" || result["error_class"] == "Timeout" }
+      causes << "found no database" if results.any? { |result| Assessor::NO_DATABASE.include?(result["error_class"]) }
+      "jitcatch: no row ran to a result on both sides (#{doc["untested"]} of #{doc["tests"].size} #{causes.join(" or ")}), so this run cannot tell base from head"
     end
 
     # A child that waits on the network or on a command an environment
-    # variable names often lacks a name the parent has. Every child got the
-    # same environment, so the names are the run's and print once, after
-    # the rows whose hint they explain.
-    def not_passed_lines(doc)
+    # variable names often lacks a name the parent has, which a longer
+    # timeout does not fix, so the row names those first. Only a Rails app
+    # loads db/schema.rb in each new checkout.
+    def timeout_lines(test, doc)
+      sides = %w[base head].select { |side| test.dig(side, "status") == "timeout" }
+      return [] if sides.empty?
+
       names = Array(doc["env_not_passed"])
-      return [] if names.empty? || doc["tests"].all? { |test| timed_out_sides(test).empty? }
-
-      ["not passed: #{names.join(" ")} (add #{names.map { |name| "--env #{name}" }.join(" ")} if a timed-out file needs them)"]
-    end
-
-    def timed_out_sides(test)
-      %w[base head].select { |side| test.dig(side, "status") == "timeout" }
+      wait = if names.empty?
+        "raise --timeout if the file needs longer"
+      else
+        "jitcatch did not pass #{names.join(" ")}, so add #{names.map { |name| "--env #{name}" }.join(" ")} if the file needs #{names.one? ? "it" : "them"}, then raise --timeout if it needs longer"
+      end
+      rails = ", as a Rails app's first run in a new checkout can (it loads db/schema.rb)" if doc["rails_app"]
+      ["    hint: #{sides.join(" and ")} timed out after #{doc["timeout_s"]}s; #{wait}#{rails}"]
     end
 
     def counts_line(counts)

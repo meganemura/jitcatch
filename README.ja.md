@@ -545,20 +545,23 @@ Run that command with that Ruby in a checkout of that side, fix what it says (of
 どの行も変更について何も言えないまま、行を出して終わる `run` もある。
 すべての行が、ある側でタイムアウトしたか、ある側でデータベースが見つからなかった（base か head での `NoDatabaseError`、`ConnectionNotEstablished`、`DatabaseConnectionError`）場合である。
 このような `run` は何もテストしていないので、やはり終了コード 3 で終わり、指摘の無い変更のようには読めない。
-テキストは `jitcatch: no row ran to a result on both sides (6 of 6 timed out or found no database), so this run cannot tell base from head` の行で始まり、そのあとにいつもの報告が続くので、各行のヒントも残る。
+テキストは `jitcatch: no row ran to a result on both sides (6 of 6 timed out), so this run cannot tell base from head` の行で始まり、そのあとにいつもの報告が続くので、各行のヒントも残る。
+括弧の中は、行に現れた原因だけを `timed out`、`found no database`、`timed out or found no database` のどれかで示す。
 `--json` はいつもの run の文書を出し、その `untested` は、どの run でもそのような行の数を数える。
 終了コード 3 は、`untested` が行の数と等しいことを意味する。
 
 テストのプロセスは決まった環境変数と `--env` で名指しした変数だけを受け取るので、シェルにある名前が無いために、届かないコマンドやネットワークを待ち続けることがある。
-ある行がタイムアウトすると、行の一覧のあとの 1 行の `not passed:` が、今の環境にあり、`--env` で渡しておらず、子プロセスが必要としそうな変数を名指しする。
+ある行がタイムアウトすると、その行の `hint:` が、`--timeout` を延ばすよう言う前に、今の環境にあり、`--env` で渡しておらず、子プロセスが必要としそうな変数を名指しする。
 それはネットワークの設定（大文字でも小文字でも `HTTPS_PROXY`、`NO_PROXY`、`ALL_PROXY`、`HTTP_PROXY`、そして `SSL_CERT_FILE`、`SSL_CERT_DIR`、`NODE_EXTRA_CA_CERTS`）か、head の Ruby ファイルか候補がリテラルで読む名前（`ENV["QUINT"]`、`ENV.fetch("QUINT")`、`ENV.key?("QUINT")`）である。
 ネットワークの設定を名指しするのは、head の Ruby ファイルか候補が HTTP クライアント（`net/http`、`open-uri`、`faraday`、`httparty`、`excon`、`http`、`httpx`、`httpclient`、`rest-client`、`typhoeus`）を require するか、head の `Gemfile.lock` にそのどれかがあるか、その中の文字列、バッククォート、引数の並びがネットワークから取ってくるコマンドで始まるときだけである。
 そのコマンドは `"npx `、`"npm `、`"curl `、`"wget `、そして `bundle`、`gem`、`git` のあとに `install`、`update`、`clone`、`fetch`、`pull` が続くもの（`system("bundle", "install")` など）である。
 スクリプトファイルが走らせるコマンドは見ない。
 そのため、ローカルの SQLite だけを使うアプリのスペックでは名指ししない。
-たとえば `not passed: HTTPS_PROXY QUINT (add --env HTTPS_PROXY --env QUINT if a timed-out file needs them)` となる。
-どの子プロセスも同じ環境を受け取るので、この行はタイムアウトした行ごとではなく、実行ごとに 1 回だけ出る。
-`--json` では `env_not_passed` に並び、タイムアウトした行が無ければ空である。
+たとえば `hint: base and head timed out after 10s; jitcatch did not pass HTTPS_PROXY QUINT, so add --env HTTPS_PROXY --env QUINT if the file needs them, then raise --timeout if it needs longer` となる。
+そのような名前が無ければ、ヒントは `hint: head timed out after 10s; raise --timeout if the file needs longer` である。
+head に `config/application.rb` があるときだけ、ヒントの最後に `, as a Rails app's first run in a new checkout can (it loads db/schema.rb)` が付く。
+`--json` では名前が `env_not_passed` に並び、タイムアウトした行が無ければ空である。
+`rails_app` は、head に `config/application.rb` があるとき true になる。
 
 実行されるのは `*_test.rb`、`test_*.rb`、`*_spec.rb` である。
 その名前が 1 つも無いときは、すべての `.rb` を実行する。

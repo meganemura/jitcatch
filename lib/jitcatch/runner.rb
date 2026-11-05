@@ -123,6 +123,7 @@ module JitCatch
         "serial" => @serial,
         "env" => @env_names,
         "env_unset" => @env_names.reject { |name| ENV.key?(name) },
+        "rails_app" => rails_app,
         "env_not_passed" => rows.any? { |row| %w[base head].any? { |side| row.dig(side, "status") == "timeout" } } ? env_not_passed(change["head"], files) : [],
         "bundle" => bundle,
         "tests_dir" => tests_from_root,

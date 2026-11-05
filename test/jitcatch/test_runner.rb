@@ -1229,7 +1229,7 @@ class TestRunner < Minitest::Test
       assert_equal "pass", row["base"]["status"]
       assert_equal "timeout", row["head"]["status"]
       assert_equal "slow_test.rb#timeout", row["name"]
-      assert_includes JitCatch::Render.run_text(doc), "slow_test.rb#timeout slow_test.rb\n    hint: head timed out after 1s; raise --timeout if the file needs longer, as a Rails app's first run in a new checkout can (it loads db/schema.rb)\n"
+      assert_includes JitCatch::Render.run_text(doc), "slow_test.rb#timeout slow_test.rb\n    hint: head timed out after 1s; raise --timeout if the file needs longer\n"
     end
   end
 
@@ -1237,6 +1237,7 @@ class TestRunner < Minitest::Test
   # Rails app that loads its schema in each new checkout can.
   def test_discards_a_timeout_on_both_sides
     with_repo do |repo|
+      repo.write("config/application.rb", "module App; end\n")
       repo.write("lib/flag.rb", "module Flag; def self.ok; true; end; end\n")
       repo.commit("base", date: "2026-02-11T00:00:00Z")
       repo.branch("base")
@@ -1252,6 +1253,7 @@ class TestRunner < Minitest::Test
       assert_equal %w[slow_test.rb#timeout discarded timeout timeout], [row["name"], row["disposition"], row.dig("base", "status"), row.dig("head", "status")]
       assert_nil row["reruns"], "a timeout is not rerun"
       assert_includes row["tags"], "discard:timeout"
+      assert doc["rails_app"], "head has config/application.rb"
       assert_includes JitCatch::Render.run_text(doc), "    hint: base and head timed out after 1s; raise --timeout if the file needs longer, as a Rails app's first run in a new checkout can (it loads db/schema.rb)\n"
     end
   end
