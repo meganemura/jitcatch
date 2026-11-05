@@ -431,6 +431,8 @@ head での `LoadError`、どちらかの側でのタイムアウト、データ
 `run` の `--json` はそのパスを `tests_dir` に書き、`assess` はその下のフレームをテスト自身のものとして読む。
 `__FILE__` のような相対の `.jitcatch/` はそのまま残す。
 テストが比べる文字列と見分けられないからである。
+ただし、読み込めなかったファイルについて Ruby が出すエラー報告の行頭の `.jitcatch/x_test.rb:2:in` は、`rerun:` の行と同じく `TESTS_DIR` の下の名前に書き換える。
+`TESTS_DIR` を絶対パスで書くときは、`{worktree}/` を付けない。
 Ruby 自身の prefix は `{ruby}/` と書く。
 
 `assess:` の下の候補の行は、それぞれ `rerun:` の行で終わる。

@@ -19,13 +19,20 @@ class TestTextProperty < Minitest::Test
   # A name that only starts like the copy, such as `.jitcatch-report.json`,
   # is another file of the worktree and stays. `tests` is the tests
   # directory from the repository root, which a message writes after
-  # `{worktree}/` and a frame writes as it is.
+  # `{worktree}/` and a frame writes as it is. Ruby's error report names
+  # the file it was started on by the relative path it was given, and an
+  # absolute `tests` stands alone, so each names the file as the rerun line
+  # does. A relative path elsewhere may be what a test compared, and stays.
   def test_naming_tests_names_the_tests_directory_for_each_copy_and_nothing_else
     Hegel.test do |tc|
-      tests = tc.draw(sampled_from(["candidates", "../c d/specs"]))
+      tests = tc.draw(sampled_from(["candidates", "../c d/specs", "/tmp/c d/specs"]))
+      in_message = tests.start_with?("/") ? tests : "{worktree}/#{tests}"
       pieces = tc.draw(arrays(one_of(
-        from_regex('\A\{worktree\}/\.jitcatch(/[a-z_.]{1,6})?\z').map { |text| [text, text.sub(".jitcatch", tests)] },
+        from_regex('\A\{worktree\}/\.jitcatch(/[a-z_.]{1,6})?\z').map { |text| [text, text.sub("{worktree}/.jitcatch", in_message)] },
         from_regex('\A\{worktree\}/\.jitcatch[-_.a-z][a-z.]{0,5}\z').map { |text| [text, text] },
+        from_regex('\A\n(\tfrom )?\.jitcatch/[a-z_]{1,6}\.rb:[1-9]:in x\z').map { |text| [text, text.sub(".jitcatch", tests)] },
+        from_regex('\A\.jitcatch/[a-z_]{1,6}\.rb:[1-9]\z').map { |text| [text, text] },
+        from_regex('\A\.jitcatch[-_.a-z][a-z.]{0,5}\z').map { |text| [text, text] },
         from_regex('\A[a-z .:/\n]{0,8}\z').map { |text| [text, text] }
       ), max_size: 5))
       frames = tc.draw(arrays(one_of(

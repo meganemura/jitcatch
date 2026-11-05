@@ -980,7 +980,7 @@ class TestRunner < Minitest::Test
         ["broken_test.rb#load", "fail_on_base", "fail", "error"],
         ["guard_test.rb#load", "reported", "pass", "error"]
       ], rows.sort
-      assert_match(/\A\.jitcatch\/guard_test\.rb:3:in .<main>.: double moved \(RuntimeError\)\z/, doc["tests"].find { |test| test["name"] == "guard_test.rb#load" }["head"]["message"])
+      assert_match(/\Acandidates\/guard_test\.rb:3:in .<main>.: double moved \(RuntimeError\)\z/, doc["tests"].find { |test| test["name"] == "guard_test.rb#load" }["head"]["message"])
       assert_equal 0, doc["test_files_omitted"]
     end
   end

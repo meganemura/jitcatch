@@ -13,6 +13,10 @@ module JitCatch
     # Where the runner copies the tests directory in each worktree.
     TESTS_COPY = /#{Regexp.escape(WORKTREE)}\.jitcatch(?![\w.-])/.freeze
     COPY_FRAME = %r{\A\.jitcatch/}.freeze
+    # Ruby names the file it was started on by the path it was given, so the
+    # error report of a file that fails to load starts a line with the copy's
+    # relative path. Elsewhere a relative path may be what a test compared.
+    COPY_PATH = %r{^(\s*(?:from )?)\.jitcatch/(?=\S+?:\d+:in )}.freeze
     MESSAGE_LINES = 20
     FRAMES = 15
 
@@ -33,11 +37,12 @@ module JitCatch
     # A test reads its own files from the copy, and the rerun line names
     # +tests+, the tests directory from the repository root, so a message
     # names it after the root, and a frame names it, where either named the
-    # copy.
+    # copy. An absolute +tests+ is outside every worktree, so it stands alone.
     def naming_tests(result, tests)
       return nil if result.nil?
 
-      named = ->(text) { text.to_s.gsub(TESTS_COPY) { "#{WORKTREE}#{tests}" } }
+      rooted = tests.start_with?("/") ? tests : "#{WORKTREE}#{tests}"
+      named = ->(text) { text.to_s.gsub(TESTS_COPY) { rooted }.gsub(COPY_PATH) { "#{$1}#{tests}/" } }
       message = named.call(result["message"])
       cause = result["cause"] && result["cause"].merge("message" => named.call(result["cause"]["message"]))
       backtrace = Array(result["backtrace"]).map { |frame| frame.merge("file" => frame["file"].sub(COPY_FRAME) { "#{tests}/" }) }
