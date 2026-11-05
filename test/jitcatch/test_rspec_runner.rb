@@ -344,9 +344,11 @@ class TestRSpecRunner < Minitest::Test
       write_tests(tests, { "a_spec.rb" => %(require "a"\n\nRSpec.describe A do\n  it("raises a key error") { expect { A.f }.to raise_error(KeyError) }\nend\n) })
       lib = File.expand_path("../../lib", __dir__)
 
-      row = with_env("RUBYLIB" => lib) {
-        JitCatch::Assessor.apply(JitCatch::Runner.run(repo.dir, "base", "HEAD", tests, reruns: 0, timeout: 20, env: ["RUBYLIB"]))
-      }["tests"].fetch(0)
+      run = ->(env) { with_env("RUBYLIB" => lib) { JitCatch::Assessor.apply(JitCatch::Runner.run(repo.dir, "base", "HEAD", tests, reruns: 0, timeout: 20, env: env)) }["tests"].fetch(0) }
+      # The launcher is tried with the variables a candidate gets, so one
+      # that --env does not pass cannot make the line plain rspec.
+      assert_equal JitCatch::Framework::RSpec.rerun("candidates/a_spec.rb", nil, 4, pin_root: false), run.call([])["rerun"]
+      row = run.call(["RUBYLIB"])
 
       assert_equal "reported", row["disposition"], row["head"]["message"]
       assert_equal "rspec -I. -r jitcatch/rspec candidates/a_spec.rb:4", row["rerun"]
