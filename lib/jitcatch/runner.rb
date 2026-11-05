@@ -93,14 +93,15 @@ module JitCatch
         head_setup = setup_status("head", change["head"], first.head, normalizer, frameworks)
         setups = [base_setup.value, head_setup]
         failed = setups.filter_map { |setup| setup["failure"] }
-        raise EnvironmentError, setup_failed_doc(change, failed) unless failed.empty?
+        rails_app = File.file?(File.join(first.head, "config", "application.rb"))
+        raise EnvironmentError, setup_failed_doc(change, failed, rails_app: rails_app) unless failed.empty?
 
         bundle = { "base" => setups[0]["bundle"], "head" => setups[1]["bundle"] }
         rows = classify_files(files, pairs, normalizer, Known.new(names: mention_names(change), constants: changes.head_constants, unsaved: unsaved_mentions(change)))
         bundled = gemfile?(first.head)
         spec_root = File.exist?(File.join(first.head, "spec"))
         rows.each { |row| row["rerun"] = rerun_command(row, bundled, !spec_root) }
-        unloaded = load_failure_doc(change, rows, bundled)
+        unloaded = load_failure_doc(change, rows, bundled, rails_app)
         raise EnvironmentError, unloaded if unloaded
       ensure
         pairs.each do |pair|
@@ -394,7 +395,7 @@ module JitCatch
     # A side that loads its bundle can still fail to boot what every
     # candidate requires, such as a Rails app whose database does not exist.
     # When no file loaded on either side, no row can tell base from head.
-    def load_failure_doc(change, rows, bundled)
+    def load_failure_doc(change, rows, bundled, rails_app)
       return nil if rows.empty?
       return nil unless rows.all? { |row| load_row?(row) && row["base"]["status"] == "error" && row["head"]["status"] == "error" }
 
@@ -412,15 +413,18 @@ module JitCatch
           "not_passed" => bundled ? unpassed_bundler_settings : []
         }
       }
-      setup_failed_doc(change, failed, stage: "load")
+      setup_failed_doc(change, failed, stage: "load", rails_app: rails_app)
     end
 
-    def setup_failed_doc(change, failed, stage: "setup")
+    # rails_app: the head has config/application.rb, so a credential that
+    # git ignores, such as config/master.key, is a likely cause.
+    def setup_failed_doc(change, failed, rails_app:, stage: "setup")
       {
         "version" => VERSION,
         "command" => "run",
         "error" => "setup_failed",
         "stage" => stage,
+        "rails_app" => rails_app,
         "base" => change["base"],
         "head" => change["head"],
         "setup_failed" => failed

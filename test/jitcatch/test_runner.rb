@@ -1980,7 +1980,13 @@ class TestRunner < Minitest::Test
       # Ruby 3.3 quotes the frame label with a backtick, Ruby 3.4 and later with '.
       quote = RUBY_VERSION < "3.4" ? "`" : "'"
       assert_equal [["{worktree}/candidates/support.rb:1:in #{quote}<top (required)>': connection to server at 127.0.0.1 port 1 failed (IOError)"]] * 2, err.doc["setup_failed"].map { |failure| failure["stderr"] }
-      assert_includes JitCatch::Render.setup_failed_text(err.doc), "jitcatch: every candidate file failed to load on both sides, so no row can tell base from head\n"
+      text = JitCatch::Render.setup_failed_text(err.doc)
+      assert_includes text, "jitcatch: every candidate file failed to load on both sides, so no row can tell base from head\n"
+      refute_includes text, "master.key", "a repository with no config/application.rb is not a Rails app"
+
+      repo.write("config/application.rb", "\n")
+      repo.commit("Add the Rails application file.", date: "2026-02-12T12:00:00Z")
+      err = assert_raises(JitCatch::EnvironmentError) { JitCatch::Runner.run(repo.dir, "base", "HEAD", tests, reruns: 0) }
       assert_includes JitCatch::Render.setup_failed_text(err.doc), "is not in the checkouts jitcatch makes; pass its value with --env, such as RAILS_MASTER_KEY.\n"
 
       repo.write("lib/booted.rb", "\n")

@@ -378,8 +378,10 @@ Run that command in a checkout of that side, fix what it says (often `bundle ins
 そのときの最初の行は `jitcatch: every candidate file failed to load on both sides, so no row can tell base from head` で、側ごとに最初のファイルの再実行コマンドを示す `load base failed:` の行と、その下にエラーが出る。
 
 この文は、終了コード 3 の報告がどれもそうであるように stdout に出て、stderr には何も出ない。
-`--json` のときは、代わりに stdout に `{"command": "run", "error": "setup_failed", "stage", "base", "head", "setup_failed": [{"side", "commit", "command", "stderr", "not_passed"}]}` を出す。
+`--json` のときは、代わりに stdout に `{"command": "run", "error": "setup_failed", "stage", "rails_app", "base", "head", "setup_failed": [{"side", "commit", "command", "stderr", "not_passed"}]}` を出す。
 `stage` は `setup` か `load` である。
+`rails_app` は head に `config/application.rb` があるときに true になる。
+そのときだけ、`load` の報告に `config/master.key` と `RAILS_MASTER_KEY` の助言を足す。
 `assess` はこの文書を受け付けない。
 失敗した側は、今の環境にあって `--env` で渡していない Bundler の設定（`BUNDLE_WITHOUT`、`BUNDLE_PATH` などの `BUNDLE_` で始まる変数）を `not passed:` の行（`--json` では `not_passed`）で名指しする。
 
