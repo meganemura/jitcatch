@@ -16,12 +16,16 @@ module JitCatch
     # The classes and modules head defines, after `build`.
     attr_reader :head_constants
 
-    def self.between(repo, base_ref, head_ref, coverage: nil)
-      new(repo, base_ref, head_ref, coverage: coverage).build
+    def self.between(repo, base_ref, head_ref, coverage: nil, setup: nil, databases: [])
+      new(repo, base_ref, head_ref, coverage: coverage, setup: setup, databases: databases).build
     end
 
-    def initialize(repo, base_ref, head_ref, coverage: nil)
+    # `setup` is the command `run --setup` runs in each checkout, and
+    # `databases` the numbered test databases, base and head in turn.
+    def initialize(repo, base_ref, head_ref, coverage: nil, setup: nil, databases: [])
       @git = repo.is_a?(GitRepo) ? repo : GitRepo.new(repo)
+      @setup = setup
+      @databases = databases
       @base_ref = base_ref
       @head_ref = head_ref
       @coverage = coverage.nil? ? nil : CoverageFile.load(coverage)
@@ -60,7 +64,7 @@ module JitCatch
         "base" => base,
         "head" => head,
         "existing_tests_via" => @coverage ? "coverage" : "grep",
-        "warnings" => warnings(base, head),
+        "warnings" => warnings(base, head) + schema_warnings(head, files),
         "intent" => intent_lines(base, head),
         "files" => files,
         "dependencies" => dependencies(base, head),
@@ -89,6 +93,32 @@ module JitCatch
         "The two revisions share no history."
       end
       ["base is not an ancestor of head: the diff also undoes the #{commits} only base has. #{fix}"]
+    end
+
+    # Rails keeps a schema in db/schema.rb or db/structure.sql, and a
+    # second database's in db/<name>_schema.rb, beside db/<name>_migrate/.
+    SCHEMA_FILE = %r{\Adb/(?:\w+_)?(?:schema\.rb|structure\.sql)\z|\Adb/(?:\w+_)?migrate/}
+    TEST_HELPERS = %w[spec/rails_helper.rb spec/spec_helper.rb test/test_helper.rb].freeze
+
+    # A test database made once from one schema holds neither side's after
+    # a change to it, so a row can fail on a missing column and read as a
+    # regression. A helper that calls maintain_test_schema! loads the
+    # schema of the checkout it boots in; without one, only --setup can.
+    def schema_warnings(head, files)
+      changed = files.map { |file| file["file"] }.grep(SCHEMA_FILE).sort
+      return [] if changed.empty?
+
+      warning = "head changes the database schema (#{changed.join(", ")}), so each side's test database must hold that side's schema, " \
+                "or a row can fail on the database and not on the code."
+      return ["#{warning} `--setup` ran `#{@setup}` in each checkout before the candidates."] if @setup
+
+      helpers = TEST_HELPERS.select { |path| @git.show(head, path) }
+      return [warning] if helpers.empty? || helpers.any? { |path| @git.show(head, path).include?("maintain_test_schema!") }
+
+      databases = @databases.each_slice(2).map { |base, head_db| "base #{base}, head #{head_db}" }
+      into = databases.empty? ? "its own test database" : "its own test database (#{databases.join("; ")})"
+      ["#{warning} #{helpers.join(" and ")} #{helpers.one? ? "does" : "do"} not call `ActiveRecord::Migration.maintain_test_schema!`, so no candidate loads either schema: " \
+       "pass `--setup 'bin/rails db:schema:load'` to `jitcatch run` to load each side's schema into #{into} before the candidates run."]
     end
 
     # Each spec line in a lockfile is four spaces, a name, and the version

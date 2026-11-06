@@ -410,6 +410,24 @@ class TestRender < Minitest::Test
     assert_includes unnumbered, "warning: 1 of 2 rows found no table on a side, so it checked nothing; load the schema into each side's test database: "
   end
 
+  # A Rails app rescues the error behind a 500 and writes it to its log,
+  # so the failure message alone never names the cause.
+  def test_a_reported_row_whose_head_answered_500_names_the_test_log
+    row = ->(message) {
+      { "id" => "t01", "file" => "things_spec.rb", "name" => "Things refresh", "classification" => "candidate", "mentions" => [],
+        "base" => { "status" => "pass" }, "head" => { "status" => "fail", "error_class" => "RSpec::Expectations::ExpectationNotMetError", "message" => message } }
+    }
+    run = { "version" => "0.1.0", "base" => "b", "head" => "h", "reruns" => 0, "timeout_s" => 60, "rails_app" => true, "methods" => [], "constants" => [] }
+    hints = ->(message, extra = {}) { JitCatch::Render.run_text(JitCatch::Assessor.apply(run.merge(extra).merge("tests" => [row.(message)]))).lines.grep(/hint:/) }
+    hint = "    hint: head answered 500, and a Rails app writes the error behind it to log/test.log; run the row's rerun line and read that log\n"
+
+    assert_equal [hint], hints.("\nexpected: [201, {\"id\" => \"1\"}]\n     got: [500, nil]\n")
+    assert_equal [hint], hints.("expected the response to have status code :created (201) but it was :internal_server_error (500)")
+    assert_equal [hint], hints.("Expected response to be a <201: created>, but was a <500: Internal Server Error>")
+    assert_equal [], hints.("expected: 500\n     got: 450")
+    assert_equal [], hints.("\nexpected: [201, nil]\n     got: [500, nil]\n", "rails_app" => false)
+  end
+
   def test_context_text_lists_dependencies_only_when_one_changed
     doc = {
       "version" => "0.1.0", "base" => "b", "head" => "h", "existing_tests_via" => "grep",

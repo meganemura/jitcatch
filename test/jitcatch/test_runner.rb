@@ -2301,6 +2301,40 @@ class TestRunner < Minitest::Test
     JitCatch::Runner.const_set(:FILE_CAP, saved)
   end
 
+  # A schema the change edits has to be in each side's database before its
+  # candidates run, so --setup runs once in each checkout with that side's
+  # TEST_ENV_NUMBER, and with RAILS_ENV=test unless --env passes one, so a
+  # schema load never reaches the development database.
+  def test_setup_runs_once_in_each_checkout_before_the_candidates
+    with_repo do |repo|
+      repo.write("lib/calc.rb", "class Calc\n  def self.one\n    1\n  end\nend\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("README.md", "head\n")
+      repo.commit("Touch readme.", date: "2026-02-12T00:00:00Z")
+      tests = File.join(repo.dir, "candidates")
+      check = %(assert_equal "\#{File.basename(Dir.pwd) == "base" ? 1 : 2} test\\n", File.read(".setup_out"))
+      write_tests(tests, { "setup_test.rb" => candidate_source("SetupTest", "test_setup", check) })
+      setup = %(echo "$TEST_ENV_NUMBER $RAILS_ENV" >> .setup_out)
+
+      doc = JitCatch::Runner.run(repo.dir, "base", "HEAD", tests, reruns: 0, setup: setup)
+
+      assert_equal [%w[SetupTest#test_setup no_signal]], doc["tests"].map { |test| test.values_at("name", "classification") }
+      assert_equal setup, doc["setup"]
+      assert_includes JitCatch::Render.run_text(JitCatch::Assessor.apply(doc)), "\ntimeout_s 10\nsetup #{setup}\n"
+      assert_nil JitCatch::Runner.run(repo.dir, "base", "HEAD", tests, reruns: 0)["setup"]
+
+      err = assert_raises(JitCatch::EnvironmentError) { JitCatch::Runner.run(repo.dir, "base", "HEAD", tests, reruns: 0, setup: "echo broke >&2; exit 7") }
+      assert_equal "setup_command", err.doc["stage"]
+      assert_equal [["base", "echo broke >&2; exit 7", ["broke"]], ["head", "echo broke >&2; exit 7", ["broke"]]],
+        err.doc["setup_failed"].map { |failure| failure.values_at("side", "command", "stderr") }
+      text = JitCatch::Render.setup_failed_text(err.doc)
+      assert_includes text, "jitcatch: --setup failed, so no test ran\n"
+      assert_includes text, "\nsetup base failed: echo broke >&2; exit 7\n  broke\n"
+      assert_includes text, "Run that command in a checkout of that side, with its TEST_ENV_NUMBER and the variables --env passes, fix what it says, and run jitcatch again.\n"
+    end
+  end
+
   def execute(repo, tests, reruns: 0, timeout: 10, env: [], finished_in_time: nil)
     raw = JitCatch::Runner.run(repo.dir, "base", "HEAD", tests, reruns: reruns, timeout: timeout, env: env, finished_in_time: finished_in_time)
     JitCatch::Assessor.apply(raw)

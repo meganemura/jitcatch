@@ -61,6 +61,7 @@ module JitCatch
       lines.concat(no_table_warning_lines(doc))
       lines << "reruns #{doc["reruns"]}"
       lines << "timeout_s #{doc["timeout_s"]}"
+      lines << "setup #{doc["setup"]}" if doc["setup"]
       lines << "serial" if doc["serial"]
       lines << "numbered_databases #{doc["numbered_databases"].join(" ")}" unless doc["numbered_databases"].to_a.empty?
       lines << "env #{doc["env"].join(" ")}" unless doc["env"].to_a.empty?
@@ -76,6 +77,7 @@ module JitCatch
           lines.concat(rerun_lines(test)) if test["disposition"] == "flaky"
           lines.concat(timeout_lines(test, doc))
           lines.concat(base_failure_lines(test, doc))
+          lines.concat(server_error_lines(test, doc))
         end
       end
       lines << counts_line(doc["counts"])
@@ -89,7 +91,14 @@ module JitCatch
 
     def setup_failed_text(doc)
       load = doc["stage"] == "load"
-      lines = [load ? "jitcatch: every candidate file failed to load on both sides, so no row can tell base from head" : "jitcatch: setup failed, so no test ran; a test cannot pass or fail on a side that cannot load"]
+      command = doc["stage"] == "setup_command"
+      lines = [if load
+        "jitcatch: every candidate file failed to load on both sides, so no row can tell base from head"
+      elsif command
+        "jitcatch: --setup failed, so no test ran"
+      else
+        "jitcatch: setup failed, so no test ran; a test cannot pass or fail on a side that cannot load"
+      end]
       lines << "base #{doc["base"]}"
       lines << "head #{doc["head"]}"
       lines << "ruby #{doc.dig("ruby", "version")} #{doc.dig("ruby", "path")}"
@@ -99,7 +108,9 @@ module JitCatch
         names = failure["not_passed"]
         lines << "  not passed: #{names.join(" ")} (add #{env_flags(names)})" unless names.empty?
       end
-      lines << if load
+      lines << if command
+        "Run that command in a checkout of that side, with its TEST_ENV_NUMBER and the variables --env passes, fix what it says, and run jitcatch again."
+      elsif load
         rails = " A file git ignores, such as config/master.key, is not in the checkouts jitcatch makes; pass its value with --env, such as RAILS_MASTER_KEY." if doc["rails_app"]
         "Run that command from the repository root with that side checked out, fix what it says (often a database, a credential, or a service the app needs at boot), and run jitcatch again.#{rails}"
       else
@@ -265,6 +276,19 @@ module JitCatch
         cut_line("    base rerun #{index + 1}: #{outcome.join(" ")}")
       end
       reruns + base
+    end
+
+    # The ways RSpec's `eq` on a status, rspec-rails' have_http_status, and
+    # Minitest's assert_response say a response was a 500.
+    SERVER_ERROR = /\A\s*got: \[?500\b|\binternal_server_error \(500\)|<500: Internal Server Error>/
+
+    # A Rails app rescues the error behind a 500 and logs it, so the
+    # failure message alone never names the cause.
+    def server_error_lines(test, doc)
+      return [] unless doc["rails_app"] && test["disposition"] == "reported"
+      return [] unless test.dig("head", "message").to_s.lines.any? { |line| SERVER_ERROR.match?(line) }
+
+      ["    hint: head answered 500, and a Rails app writes the error behind it to log/test.log; run the row's rerun line and read that log"]
     end
 
     # A row that failed on base is no candidate, so nothing else in the

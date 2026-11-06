@@ -445,6 +445,40 @@ class TestChanges < Minitest::Test
     end
   end
 
+  # A test database made once from one schema holds neither side's
+  # schema after a change to it, so a row can fail on a missing column
+  # and read as a regression. Only a helper that calls
+  # maintain_test_schema! loads each side's schema as its candidates boot.
+  def test_a_change_to_the_database_schema_is_named_in_a_warning
+    with_repo do |repo|
+      repo.write("db/schema.rb", "ActiveRecord::Schema[8.0].define(version: 1) do\nend\n")
+      repo.write("spec/rails_helper.rb", "ENV[\"RAILS_ENV\"] ||= \"test\"\n")
+      repo.write("db/animals_migrate/20261101000000_add_animals.rb", "class AddAnimals < ActiveRecord::Migration[8.0]\nend\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.write("db/migrate/20261106000000_add_notify.rb", "class AddNotify < ActiveRecord::Migration[8.0]\nend\n")
+      repo.write("db/schema.rb", "ActiveRecord::Schema[8.0].define(version: 2) do\nend\n")
+      repo.write("db/animals_structure.sql", "CREATE TABLE animals ();\n")
+      repo.write("db/seeds.rb", "\n")
+      repo.commit("head", date: "2026-02-12T00:00:00Z")
+
+      changed = "head changes the database schema (db/animals_structure.sql, db/migrate/20261106000000_add_notify.rb, db/schema.rb), " \
+                "so each side's test database must hold that side's schema, or a row can fail on the database and not on the code."
+      assert_equal [
+        "#{changed} spec/rails_helper.rb does not call `ActiveRecord::Migration.maintain_test_schema!`, so no candidate loads either schema: " \
+        "pass `--setup 'bin/rails db:schema:load'` to `jitcatch run` to load each side's schema into its own test database before the candidates run."
+      ], JitCatch::Changes.between(repo.dir, "HEAD~1", "HEAD")["warnings"]
+      assert_includes JitCatch::Changes.between(repo.dir, "HEAD~1", "HEAD", databases: %w[app_test_1 app_test_2])["warnings"].first,
+        "load each side's schema into its own test database (base app_test_1, head app_test_2) before the candidates run."
+      assert_equal ["#{changed} `--setup` ran `bin/rails db:prepare` in each checkout before the candidates."],
+        JitCatch::Changes.between(repo.dir, "HEAD~1", "HEAD", setup: "bin/rails db:prepare")["warnings"]
+
+      repo.write("spec/rails_helper.rb", "ENV[\"RAILS_ENV\"] ||= \"test\"\nActiveRecord::Migration.maintain_test_schema!\n")
+      repo.commit("Maintain the schema.", date: "2026-02-13T00:00:00Z")
+      assert_equal [changed], JitCatch::Changes.between(repo.dir, "HEAD~2", "HEAD")["warnings"]
+      assert_equal [], JitCatch::Changes.between(repo.dir, "HEAD~1", "HEAD")["warnings"]
+    end
+  end
+
   def test_dependencies_come_from_the_gemfile_lock_diff
     lock = lambda do |specs|
       "GEM\n  remote: https://rubygems.org/\n  specs:\n#{specs.map { |spec| "    #{spec}\n      dep (>= 0)\n" }.join}\nPLATFORMS\n  ruby\n\nBUNDLED WITH\n   2.6.0\n"

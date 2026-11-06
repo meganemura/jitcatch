@@ -60,7 +60,7 @@ module JitCatch
     end
 
     def command_run(argv)
-      opts, positional = parse_options(argv, %i[repo reruns timeout env workers serial number_database_url])
+      opts, positional = parse_options(argv, %i[repo reruns timeout env workers serial number_database_url setup])
       return write_help if opts[:help]
       raise UsageError, "usage: jitcatch run BASE HEAD TESTS_DIR" unless positional.size == 3
 
@@ -75,6 +75,7 @@ module JitCatch
         workers: opts.fetch(:workers, 1),
         serial: opts.fetch(:serial, false),
         number_database_url: opts.fetch(:number_database_url, false),
+        setup: opts[:setup],
         finished_in_time: @finished_in_time
       )
       doc = Assessor.apply(raw)
@@ -176,7 +177,7 @@ module JitCatch
 
         Usage:
           jitcatch context [--json] [--repo DIR] [--coverage FILE] BASE HEAD
-          jitcatch run [--json] [--repo DIR] [--reruns N] [--timeout SEC] [--workers N | --serial] [--env NAME]... [--number-database-url] BASE HEAD TESTS_DIR
+          jitcatch run [--json] [--repo DIR] [--reruns N] [--timeout SEC] [--workers N | --serial] [--env NAME]... [--number-database-url] [--setup CMD] BASE HEAD TESTS_DIR
           jitcatch assess [--json] RUN.json
           jitcatch --version
 

@@ -769,6 +769,24 @@ test:
 for n in 1 2; do RAILS_ENV=test TEST_ENV_NUMBER=$n bin/rails db:create; done
 ```
 
+一度だけ作ったデータベースは、1 つのスキーマしか持たない。
+`db/schema.rb`、`db/structure.sql`、`db/migrate/`（または 2 つ目のデータベースの `db/<name>_schema.rb`、`db/<name>_structure.sql`、`db/<name>_migrate/`）が変わると、列の無いデータベースの側は、コードではなくデータベースで失敗する。
+知らない属性のせいで 500 を受け取るリクエストスペックがその例である。
+そのとき `context` と `run` は `warning: head changes the database schema (db/migrate/20261106000000_add_notify.rb, db/schema.rb), so each side's test database must hold that side's schema, or a row can fail on the database and not on the code.` を出す。
+head に `spec/rails_helper.rb`、`spec/spec_helper.rb`、`test/test_helper.rb` のどれかがあり、どれも `maintain_test_schema!` を呼ばないときは、警告はそのファイルを名指しし、`pass --setup 'bin/rails db:schema:load' to jitcatch run` と続ける。
+`--number-database-url` のときは、各側のデータベースも名指しする（`base app_test_wt1_1, head app_test_wt1_2`）。
+
+`run --setup CMD` は、バンドルの確認のあと、どの候補よりも前に、各チェックアウトで `CMD` を `/bin/sh` で一度ずつ、1 つずつ走らせる。
+`CMD` は、その側の `TEST_ENV_NUMBER`、番号付きの `DATABASE_URL`、`--env` で渡した変数を受け取る。
+`--env RAILS_ENV` で別の値を渡さない限り `RAILS_ENV=test` も受け取るので、スキーマの読み込みが開発用のデータベースに届くことは無い。
+報告は `setup CMD` を出し（`--json` では `setup` で、フラグが無ければ `null`）、スキーマの警告は `` `--setup` ran `CMD` in each checkout before the candidates. `` となる。
+コマンドが失敗するか `--timeout` を過ぎると、実行は終了コード 3 で止まる。
+標準出力は `jitcatch: --setup failed, so no test ran` で始まり、各側のコマンドと、その標準エラーの最後の行を示す。
+1 つのテスト用データベースを共有する 2 つの側は、それぞれのスキーマを持てないので、先にデータベースを分ける。
+
+Rails アプリで head が 500 を返した報告行には、`hint: head answered 500, and a Rails app writes the error behind it to log/test.log; run the row's rerun line and read that log` のヒントが付く。
+チェックアウトは実行の終わりに消えるので、そのログも残らない。
+
 head のデータベースが無いときは、その行は `discard:no_database` になり、テーブルが無いときは `discard:no_table` になる。
 `database.yml` がこの変数を使っていないことは、`run` が候補を動かす前に見つける。
 `run` は各側の `config/database.yml` を、その側の `TEST_ENV_NUMBER` と、`--env` で渡した `DATABASE_URL` があればそれも使って、Active Record と同じように読む。

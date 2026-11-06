@@ -59,16 +59,19 @@ module JitCatch
     # record calls that make it run that callback.
     Known = Data.define(:names, :constants, :unsaved)
 
-    def self.run(repo, base_ref, head_ref, tests_dir, reruns: 2, timeout: nil, env: [], workers: 1, serial: false, number_database_url: false, finished_in_time: nil)
+    def self.run(repo, base_ref, head_ref, tests_dir, reruns: 2, timeout: nil, env: [], workers: 1, serial: false, number_database_url: false, setup: nil, finished_in_time: nil)
       new(repo, base_ref, head_ref, tests_dir, reruns: reruns, timeout: timeout, env: env, workers: workers, serial: serial,
-        number_database_url: number_database_url, finished_in_time: finished_in_time).run
+        number_database_url: number_database_url, setup: setup, finished_in_time: finished_in_time).run
     end
 
     # `finished_in_time` takes the thread that waits on a child and says
     # whether the child ended before the timeout. A test passes its own so
     # that which child times out does not depend on the machine's load.
-    def initialize(repo, base_ref, head_ref, tests_dir, reruns:, timeout:, env:, workers: 1, serial: false, number_database_url: false, finished_in_time: nil)
+    # `setup` is a shell command run once in each checkout before its
+    # candidates, such as a schema load into that checkout's database.
+    def initialize(repo, base_ref, head_ref, tests_dir, reruns:, timeout:, env:, workers: 1, serial: false, number_database_url: false, setup: nil, finished_in_time: nil)
       @git = repo.is_a?(GitRepo) ? repo : GitRepo.new(repo)
+      @setup = setup
       @base_ref = base_ref
       @head_ref = head_ref
       @tests_dir = File.expand_path(tests_dir)
@@ -121,12 +124,13 @@ module JitCatch
     end
 
     def run
-      changes = Changes.new(@git, @base_ref, @head_ref)
-      change = changes.build
       files, omitted = candidate_files
       @frameworks = files.to_h { |relative| [relative, Framework.for(relative, read_candidate(relative))] }
+      @pair_count = [@workers, files.size].min.clamp(1, nil)
+      changes = Changes.new(@git, @base_ref, @head_ref, setup: @setup, databases: numbered_databases)
+      change = changes.build
       parent = Dir.mktmpdir("jitcatch-")
-      pairs = (1..[@workers, files.size].min.clamp(1, nil)).map { |n|
+      pairs = (1..@pair_count).map { |n|
         Pair.new(base: File.join(parent, n.to_s, "base"), head: File.join(parent, n.to_s, "head"))
       }
       # The variable parallel_tests sets: a Rails database.yml that appends
@@ -147,6 +151,9 @@ module JitCatch
         setups = [base_setup.value, head_setup]
         failed = setups.filter_map { |setup| setup["failure"] }
         raise EnvironmentError, setup_failed_doc(change, failed, rails_app: rails_app) unless failed.empty?
+
+        ran = run_setup(pairs, change, normalizer)
+        raise EnvironmentError, setup_failed_doc(change, ran, rails_app: rails_app, stage: "setup_command") unless ran.empty?
 
         bundle = { "base" => setups[0]["bundle"], "head" => setups[1]["bundle"] }
         shared = shared_test_database(first)
@@ -176,6 +183,7 @@ module JitCatch
         "reruns" => @reruns,
         "timeout_s" => @timeout,
         "serial" => @serial,
+        "setup" => @setup,
         "numbered_databases" => numbered_databases,
         "env" => @env_names,
         "env_unset" => @env_names.reject { |name| ENV.key?(name) },
@@ -489,7 +497,7 @@ module JitCatch
     def numbered_databases
       return [] unless @number_database_url
 
-      @test_env_numbers.values.sort_by(&:to_i).map { |number| URI.parse(numbered_database_url(ENV["DATABASE_URL"], number)).path.delete_prefix("/") }
+      (1..2 * @pair_count).map { |number| URI.parse(numbered_database_url(ENV["DATABASE_URL"], number.to_s)).path.delete_prefix("/") }
     end
 
     # One line says what happened, and one says how to run both sides at
@@ -545,6 +553,34 @@ module JitCatch
         "not_passed" => bundled ? unpassed_bundler_settings : []
       }
       { "bundle" => bundle, "failure" => failure }
+    end
+
+    # Every checkout, so a worker's pair holds the same schemas as the
+    # first. One at a time: two loads into one shared database would race.
+    # RAILS_ENV is test unless --env passes one, so a schema load never
+    # reaches the development database.
+    def run_setup(pairs, change, normalizer)
+      return [] unless @setup
+
+      pairs.flat_map { |pair| [["base", pair.base], ["head", pair.head]] }.filter_map do |side, worktree|
+        env = { "RAILS_ENV" => "test" }.merge(child_env(worktree))
+        status, _stdout, stderr, timed_out = run_process(
+          ["/bin/sh", "-c", @setup],
+          chdir: worktree,
+          stdout_path: File.join(worktree, ".jitcatch-stdout"),
+          stderr_path: File.join(worktree, ".jitcatch-stderr"),
+          env: env
+        )
+        next if !timed_out && status&.success?
+
+        {
+          "side" => side,
+          "commit" => change[side],
+          "command" => @setup,
+          "stderr" => timed_out ? ["timed out after #{@timeout}s"] : Text.message_lines(normalizer.call(stderr)).last(SETUP_STDERR_LINES),
+          "not_passed" => []
+        }
+      end.uniq { |failure| failure["side"] }
     end
 
     # A side that loads its bundle can still fail to boot what every
