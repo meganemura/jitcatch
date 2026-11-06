@@ -245,6 +245,7 @@ class TestRender < Minitest::Test
             "counts" => { "generated" => 0, "no_signal" => 0, "fail_on_base" => 0, "candidates" => 0, "flaky" => 0, "discarded" => 0, "reported" => 0 } }
 
     assert_includes JitCatch::Render.run_text(doc), "timeout_s 60\nnumbered_databases app_test_1 app_test_2\nenv DATABASE_URL\n"
+    assert_includes JitCatch::Render.run_text(doc.merge("setup" => "bin/rails db:schema:load")), "timeout_s 60\nsetup bin/rails db:schema:load\nnumbered_databases app_test_1"
   end
 
   def test_run_text_prints_reruns_under_a_flaky_row_and_a_hint_under_a_timeout
@@ -397,6 +398,7 @@ class TestRender < Minitest::Test
     hidden_rows = (1..6).map { |n| hidden.("t0#{n}") }
 
     mixed = text.(hidden_rows + [wrong])
+    refute_includes mixed, "warning:", "the first two lines already say to load the schema"
     assert_equal "jitcatch: no row compared base with head (6 of 7 found no table, and 1 failed on base), so this run cannot tell base from head\n", mixed.lines.first
     assert_includes mixed, "  t01 fail_on_base Loan t01 loan_spec.rb\n    base: error ActiveRecord::StatementInvalid PG::UndefinedTable: ERROR:  relation \"loans\" does not exist\n" \
                            "    hint: base found no table, so this row checked nothing; load base's schema into app_test_1\n"
