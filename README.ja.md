@@ -465,6 +465,11 @@ gem の中から始まったエラーには `touches:changed_method` を付け�
 `touches:unchanged_caller` は、diff が編集していない入口を通り、その入口から変更メソッドへ届いている。
 `discard:signature_change`、`discard:load_error`、`discard:timeout`、`discard:no_database`、`discard:no_table` は、候補を除いたルールの名前である。
 `discard:signature_change` は、削除したメソッドや新しいシグネチャが壊した呼び出しを、テスト自身がしているときだけ使う。
+メンバーが変わった `Data` や `Struct` のクラスの `new` をテストが呼ぶときも使う。
+たとえば `Record.new(...)` が `missing keyword: :media` で失敗するときである。
+そうした行は発見ではなく、次の行が何が変わったかを示す。
+たとえば `candidate is out of date with head: CatalogService::Record (k07) changed its definition; update the call at ../cand/stale_spec.rb:5 to head's code, or drop the test` となる。
+`--json` では `out_of_date` が `id`、`name`、`change` (`removed`、`parameters`、`definition`)、`call` を持つ。
 変更されていないコードがその呼び出しをしているときは、行を報告する。
 たとえば `class B < A` が、head で削除した `A#helper` をまだ呼んでいるときである。
 その行には、呼び出しの位置を示す `caller:unchanged:lib/b.rb:5` を付ける（diff が書いた行か、変更メソッドの中の行なら `caller:changed:`。`--json` の `changed_lines` は、各ファイルの hunk が書いた head の行を並べる）。

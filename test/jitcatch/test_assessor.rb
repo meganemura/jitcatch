@@ -510,6 +510,44 @@ class TestAssessor < Minitest::Test
     }, out)
   end
 
+  # A Data or Struct class takes its members as keywords, and Ruby defines
+  # that `new` in C, so a member the change added fails the test's own
+  # call with no frame of the class. That row says the candidate predates
+  # head, not that head regressed; a call from the app's code still might.
+  def test_a_call_the_test_wrote_to_a_changed_data_class_is_out_of_date_with_head
+    doc = {
+      "base" => "1111111111111111", "head" => "2222222222222222",
+      "methods" => [method("m01", "removed", "removed", "label", [], 1), method("m02", "modified", "changed", "add", [], 10)],
+      "constants" => [{ "id" => "k01", "change" => "modified", "name" => "Calc::Record", "bare_name" => "Record", "file" => "lib/calc.rb", "start_line" => 30 }],
+      "tests_dir" => "candidates",
+      "tests" => [
+        candidate("t01", "RecordTest#test_a", %w[Record], error("ArgumentError", "missing keyword: :media"), frames("candidates/recordtest.rb", 5) * 2),
+        candidate("t02", "RecordTest#test_b", %w[Record build], error("ArgumentError", "missing keyword: :media"), frames("lib/build.rb", 7) + frames("candidates/recordtest.rb", 9)),
+        candidate("t03", "RecordTest#test_c", %w[Record], failure("Expected: 1\n  Actual: 2")),
+        candidate("t04", "LabelTest#test_a", ["label"], error("NoMethodError", "undefined method 'label' for an instance of Calc"), frames("candidates/labeltest.rb", 3)),
+        candidate("t05", "AddTest#test_a", ["add"], error("ArgumentError", "wrong number of arguments (given 2, expected 3)"), frames("lib/calc.rb", 11) + frames("candidates/addtest.rb", 5))
+      ]
+    }
+
+    out = JitCatch::Assessor.apply(doc)
+    rows = out["tests"].to_h { |test| [test["id"], [test["disposition"], test["out_of_date"]]] }
+
+    assert_equal({
+      "t01" => ["discarded", { "id" => "k01", "name" => "Calc::Record", "change" => "definition", "call" => "candidates/recordtest.rb:5" }],
+      "t02" => ["reported", nil],
+      "t03" => ["reported", nil],
+      "t04" => ["discarded", { "id" => "m01", "name" => "Calc#label", "change" => "removed", "call" => "candidates/labeltest.rb:3" }],
+      "t05" => ["discarded", { "id" => "m02", "name" => "Calc#add", "change" => "parameters", "call" => "candidates/addtest.rb:5" }]
+    }, rows)
+    text = JitCatch::Render.assess_text(out)
+    assert_includes text, "  c01 RecordTest#test_a base=pass head=error - discard:signature_change,error:ArgumentError,touches:changed_constant\n" \
+                          "    candidate is out of date with head: Calc::Record (k01) changed its definition; update the call at candidates/recordtest.rb:5 to head's code, or drop the test\n" \
+                          "    missing keyword: :media\n"
+    assert_includes text, "    candidate is out of date with head: Calc#label (m01) was removed; update the call at candidates/labeltest.rb:3 to head's code, or drop the test\n"
+    assert_includes text, "    candidate is out of date with head: Calc#add (m02) changed its parameters; update the call at candidates/addtest.rb:5 to head's code, or drop the test\n"
+    assert_equal 3, text.scan("out of date").size, "a row head broke from the app's own code is not out of date"
+  end
+
   def test_a_keyword_or_arity_error_inside_assert_raises_is_a_signature_change
     raised = ->(message) { failure("[Unsupported] exception expected, not\nClass: <ArgumentError>\nMessage: <#{message.inspect}>") }
     at_scale = frames("candidates/scale_test.rb", 4) + frames("lib/calc.rb", 40) + frames("candidates/scale_test.rb", 4)

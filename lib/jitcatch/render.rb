@@ -418,6 +418,7 @@ module JitCatch
         method = row["method_id"] || "-"
         lines << "  #{row["candidate_id"]} #{row["name"]} base=#{row["base_status"]} head=#{row["head_status"]} #{method} #{row["tags"].join(",")}"
         lines << "    #{guess_line(row, names, doc)}" if row["method_ids"].size > 1
+        lines << "    #{out_of_date_line(row["out_of_date"])}" if row["out_of_date"]
         if (dynamic = row["dynamic_call"])
           lines << "    related: none, #{dynamic["from"]} sends #{dynamic["name"]} to a receiver the source does not name"
         end
@@ -444,6 +445,13 @@ module JitCatch
         "Next: find what makes head's value in them, or in a changed file that holds no method, such as a view: git diff --stat #{shas}"
     end
 
+    OUT_OF_DATE = { "removed" => "was removed", "parameters" => "changed its parameters", "definition" => "changed its definition" }.freeze
+
+    def out_of_date_line(stale)
+      at = stale["call"] ? "the call at #{stale["call"]}" : "the call"
+      "candidate is out of date with head: #{stale["name"]} (#{stale["id"]}) #{OUT_OF_DATE.fetch(stale["change"])}; update #{at} to head's code, or drop the test"
+    end
+
     def candidate_rows(doc)
       doc["tests"].select { |test| test["classification"] == "candidate" }.sort_by { |test| test["id"] }.map { |test|
         {
@@ -458,6 +466,7 @@ module JitCatch
           "method_id" => test["method_id"],
           "method_ids" => Array(test["method_ids"]),
           "dynamic_call" => test["dynamic_call"],
+          "out_of_date" => test["out_of_date"],
           "tags" => test["tags"],
           "disposition" => test["disposition"],
           "message_first_line" => test.dig("head", "message_first_line").to_s,

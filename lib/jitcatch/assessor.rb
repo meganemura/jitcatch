@@ -44,8 +44,10 @@ module JitCatch
       tests.each do |test|
         if test["classification"] == "candidate"
           method, pool, tied = related_method(test)
-          call = broken_call(test, method)
+          broken = broken_call(test, method)
+          call = broken&.frame
           reason = discard_reason(test, call)
+          test["out_of_date"] = reason == "signature_change" ? out_of_date(broken) : nil
           test["method_id"] = tied ? nil : method&.dig("id")
           test["method_ids"] = pool.map { |item| item["id"] }.sort
           test["disposition"] = reason ? "discarded" : "reported"
@@ -57,6 +59,7 @@ module JitCatch
           test["method_id"] = nil
           test["method_ids"] = []
           test["dynamic_call"] = nil
+          test["out_of_date"] = nil
           test["disposition"] = test["classification"]
           test["tags"] = []
         end
@@ -115,7 +118,7 @@ module JitCatch
     private
 
     def strip(test)
-      test.reject { |key, _| %w[method_id method_ids dynamic_call tags disposition candidate_id].include?(key) }
+      test.reject { |key, _| %w[method_id method_ids dynamic_call tags disposition candidate_id out_of_date].include?(key) }
     end
 
     def assign_candidate_ids(tests)
@@ -151,24 +154,49 @@ module JitCatch
       nil
     end
 
-    # The frame that made a call the change broke: a call to a removed name,
-    # or one whose arguments no longer fit. Nil when no call broke, and an
-    # empty hash when the error kept no frame.
+    # A call the change broke: the frame that made it (an empty hash when the
+    # error kept none), the changed method or constant it called, and what
+    # changed about it.
+    Broken = Data.define(:frame, :subject, :change)
+
+    # A call to a removed name, or one whose arguments no longer fit. Nil
+    # when no call broke.
     def broken_call(test, method)
       error = raised(test)
       symbol = missing_symbol(error)
-      if symbol && removed_symbol?(symbol)
-        return error.frames.first || {}
+      if symbol && (subject = removed_subject(symbol))
+        return Broken.new(error.frames.first || {}, subject, "removed")
       end
       return nil unless arity_error?(error)
 
       target = method_from_backtrace(test) || method
       # A removed method leaves the inherited one, whose arity differs.
-      return nil unless target && %w[changed removed].include?(target["signature"])
+      return changed_class_call(test, error) unless target && %w[changed removed].include?(target["signature"])
 
       # The first frame is the callee's own line when Ruby defines it, so
       # the caller is the next one.
-      error.frames.first(2).find { |frame| test_frame?(frame) } || error.frames[1] || error.frames.first || {}
+      frame = error.frames.first(2).find { |item| test_frame?(item) } || error.frames[1] || error.frames.first || {}
+      Broken.new(frame, target, target["signature"] == "removed" ? "removed" : "parameters")
+    end
+
+    # Ruby defines `new` of a Data or Struct class in C, so a member the
+    # change added or dropped fails the test's own call with no frame of the
+    # class: the first frame is the test's, and the test names the class.
+    def changed_class_call(test, error)
+      frame = error.frames.first
+      return nil unless frame && test_frame?(frame)
+
+      mentions = Array(test["mentions"])
+      constant = lowest(@constants.select { |item| item["change"] == "modified" && mentions.include?(item["bare_name"]) })
+      constant && Broken.new(frame, constant, "definition")
+    end
+
+    def out_of_date(broken)
+      return nil if broken.nil?
+
+      frame = broken.frame
+      { "id" => broken.subject["id"], "name" => broken.subject["name"], "change" => broken.change,
+        "call" => frame["file"] && [frame["file"], frame["line"]].compact.join(":") }
     end
 
     Raised = Data.define(:error_class, :message, :frames)
@@ -388,12 +416,13 @@ module JitCatch
       end
     end
 
-    def removed_symbol?(symbol)
+    def removed_subject(symbol)
       removed_methods = @methods.select { |item| item["change"] == "removed" || item["signature"] == "removed" }
-      return true if removed_methods.any? { |item| item["bare_name"] == symbol }
+      method = lowest(removed_methods.select { |item| item["bare_name"] == symbol })
+      return method if method
 
       removed_constants = @constants.select { |item| item["change"] == "removed" }
-      removed_constants.any? { |item| item["bare_name"] == symbol || item["name"] == symbol || symbol.end_with?("::#{item["bare_name"]}") }
+      lowest(removed_constants.select { |item| item["bare_name"] == symbol || item["name"] == symbol || symbol.end_with?("::#{item["bare_name"]}") })
     end
 
     # A catching test passed on the old code, so a method that already existed
