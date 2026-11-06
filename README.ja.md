@@ -512,6 +512,15 @@ id が最も小さいものだけを見るのではない。
 `enum :status, { draft: 0, live: 1 }` は値ごとに `Post#draft?`、`Post#draft!`、`Post.draft`、`Post.not_draft` を定義し、`prefix:`、`suffix:`、`scopes: false`、`instance_methods: false` も反映する。
 ソースはその値一つの形（`enum :status, draft: 0`）なので、一つの値を変えるとその値の四つのメソッドだけが変わる。
 Rails 8 で取り除かれた `enum status: {...}` の形は読まない。
+Grape のエンドポイントもメソッドになる。
+スーパークラスが `Grape::API`（またはアプリ自身の基底クラスのように `API` か `Api` で終わる名前）のクラスでは、`resource :things do` の中の `post "/refresh" do ... end` は `Things#POST /things/refresh` になる。
+そのパスは、クラスの `prefix` と、`resource`、`resources`、`namespace`、`group`、`segment`、`route_param :id`（`:id`）の区切りをつないだものである。
+ソースはそのブロックで、直前の `desc` と `params` の文も含む。
+ブロックの中の呼び出しはエンドポイントからの呼び出しになるので、そこから呼ばれるメソッドの `reachable_from` にエンドポイントが出る。
+テストが送るリクエスト（`post "/api/things/7/refresh"` など）は、動詞が同じで、パスの末尾がエンドポイントの区切りと一致するエンドポイントを名指しする。
+`:param` は任意の一つの区切りに一致し、その前の区切りはマウント先として扱う。
+そのテストは `tests:` と `entry_point_tests:` に並び、それを送る候補には `touches:changed_method` が付く。
+`things_path` のようにソースが計算するパスは読まない。
 クラス本体の条件分岐の中にある `def` や読み出しメソッド（`attr_reader :x if cond`）も数える。
 分岐はすべてが順に走ったものとして読むので、分岐の中の引数のない `private` は条件分岐の後にも効く。
 Concern の `included do`、`prepended do`、`class_methods do` ブロックの中にあるものも数える。

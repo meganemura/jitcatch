@@ -500,6 +500,33 @@ class TestRSpecRunner < Minitest::Test
     end
   end
 
+  # The request spec of a Grape API names its endpoint only by the verb and
+  # path it sends, so that example is tied to the endpoint, as in Minitest.
+  def test_a_request_an_example_sends_mentions_the_endpoint_it_reaches
+    with_repo do |repo|
+      api = ->(args) { %(class Things < Grape::API\n  resource :things do\n    route_param :id do\n      post "/refresh" do\n        RefreshWorker.perform_async(#{args})\n      end\n    end\n  end\nend\n) }
+      repo.write("app/apis/things.rb", api.(%({ "id" => params[:id] })))
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("app/apis/things.rb", api.(%({ "id" => params[:id], "notify" => true })))
+      repo.commit("Notify on refresh.", date: "2026-02-12T00:00:00Z")
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, { "things_spec.rb" => <<~RUBY })
+        RSpec.describe "Things" do
+          def post(path) = File.read("app/apis/things.rb").include?("notify") ? 500 : 201
+
+          it("refreshes") { expect(post("/api/things/7/refresh")).to eq(201) }
+          it("lists") { expect(1).to eq(1) }
+        end
+      RUBY
+
+      doc = execute(repo, tests)
+
+      rows = doc["tests"].to_h { |test| [test["name"], test.values_at("disposition", "method_id")] }
+      assert_equal({ "Things refreshes" => ["reported", "m01"], "Things lists" => ["no_signal", nil] }, rows)
+    end
+  end
+
   def test_an_example_named_like_a_load_row_is_rerun
     with_repo do |repo|
       cart_history(repo)

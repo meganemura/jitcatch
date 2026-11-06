@@ -433,6 +433,8 @@ module JitCatch
           # the word only reads or names the method.
           if constructor?(node)
             merge_hits(call_hits(test_sources.keys, ["#{node.qualifier}.new", *method["builders"]], "builder", base_idx, head_idx), [])
+          elsif node.kind == "endpoint"
+            request_hits(test_sources, node.bare_name)
           else
             merge_hits(call_hits(test_sources.keys, method["run_by"], "callback", base_idx, head_idx), grep_hits(test_sources, node.bare_name))
           end
@@ -456,6 +458,8 @@ module JitCatch
         owner = qualifier.split("::").last
         call = /\.#{called(bare)}/
         named = owner && /\b#{Regexp.escape(owner)}\b(?!::)/
+        # A request names its endpoint by verb and path, never by class.
+        call, named = request_pattern(bare), nil if SourceIndex.endpoint?(bare)
         test_sources.each do |file, source|
           found[file] << name if source.match?(call) && (named.nil? || source.match?(named))
         end
@@ -474,6 +478,23 @@ module JitCatch
 
         { "file" => test["file"].to_s, "test" => test["id"].to_s, "via" => "coverage" }
       }.sort_by { |hit| [hit["file"], hit["test"]] }.first(TEST_CAP)
+    end
+
+    # A test file that sends the endpoint's verb to a path ending in its
+    # segments, as a request spec does.
+    def request_hits(test_sources, bare)
+      pattern = request_pattern(bare)
+      test_sources.filter_map { |file, source| { "file" => file, "via" => "grep" } if source.match?(pattern) }
+        .sort_by { |hit| hit["file"] }.first(TEST_CAP)
+    end
+
+    # `post "/v1/things/#{thing.id}/refresh"` for `POST /things/:id/refresh`:
+    # any segments before the endpoint's, a `:param` matching any one.
+    def request_pattern(bare)
+      verb, path = bare.split(" ", 2)
+      segment = %q{[^"'?/\s]+}
+      parts = path.split("/").reject(&:empty?).map { |part| part.start_with?(":") ? segment : Regexp.escape(part) }
+      Regexp.new(%Q{\\b#{verb.downcase}[\\s(]+["'](?:/#{segment})*/#{parts.join("/")}/?["'?]})
     end
 
     def grep_hits(test_sources, bare)

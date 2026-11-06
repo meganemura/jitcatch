@@ -2301,6 +2301,40 @@ class TestRunner < Minitest::Test
     JitCatch::Runner.const_set(:FILE_CAP, saved)
   end
 
+  # A request a candidate sends names the endpoint its verb and path reach,
+  # ids and mount point aside, so the row is tied to that endpoint.
+  def test_a_request_a_candidate_sends_mentions_the_endpoint_it_reaches
+    with_repo do |repo|
+      api = ->(args) { %(class Things < Grape::API\n  resource :things do\n    route_param :id do\n      post "/refresh" do\n        RefreshWorker.perform_async(#{args})\n      end\n    end\n  end\nend\n) }
+      repo.write("app/apis/things.rb", api.(%({ "id" => params[:id] })))
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("app/apis/things.rb", api.(%({ "id" => params[:id], "notify" => true })))
+      repo.commit("Notify on refresh.", date: "2026-02-12T00:00:00Z")
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, { "things_test.rb" => <<~RUBY })
+        require "minitest/autorun"
+
+        class ThingsTest < Minitest::Test
+          def post(path)
+            File.read("app/apis/things.rb").include?("notify") ? 500 : 201
+          end
+
+          def test_refresh
+            assert_equal 201, post("/v1/api/things/7/refresh")
+          end
+        end
+      RUBY
+
+      doc = execute(repo, tests)
+
+      row = doc["tests"].fetch(0)
+      assert_equal ["reported", "m01"], row.values_at("disposition", "method_id")
+      assert_includes row["tags"], "touches:changed_method"
+      assert_includes row["mentions"], "POST /things/:id/refresh"
+    end
+  end
+
   # A schema the change edits has to be in each side's database before its
   # candidates run, so --setup runs once in each checkout with that side's
   # TEST_ENV_NUMBER, and with RAILS_ENV=test unless --env passes one, so a

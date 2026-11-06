@@ -690,6 +690,65 @@ class TestSourceIndexExamples < Minitest::Test
     ], index.methods.map { |method| [method.qualified, method.source, method.start_line] }.sort
   end
 
+  # A Grape endpoint is a block the router runs, so it is the change unit a
+  # diff inside it edits, named by its verb and the path its prefix and
+  # namespaces build, and the calls in it are its own. The `desc` and
+  # `params` statements before it describe it, so they are part of it.
+  GRAPE_API = <<~RUBY
+    class Things < Grape::API
+      prefix :api
+      resource :things do
+        route_param :id do
+          desc "Refresh one thing"
+          params do
+            requires :id, type: String
+          end
+          post "/refresh" do
+            RefreshWorker.perform_async({ "id" => params[:id] })
+            status :accepted
+          end
+        end
+        get do
+          Thing.recent
+        end
+      end
+    end
+  RUBY
+
+  def test_a_grape_api_endpoint_is_a_method_named_by_verb_and_path
+    index = JitCatch::SourceIndex.parse(GRAPE_API, file: "app/apis/things.rb")
+
+    assert_equal [["Things#POST /api/things/:id/refresh", "POST /api/things/:id/refresh", "endpoint", 5, 12], ["Things#GET /api/things", "GET /api/things", "endpoint", 14, 16]],
+      index.methods.map { |method| [method.qualified, method.bare_name, method.kind, method.start_line, method.end_line] }
+    assert_equal [["perform_async", "Things#POST /api/things/:id/refresh"], ["recent", "Things#GET /api/things"]],
+      index.calls.select { |call| %w[perform_async recent].include?(call.bare_name) }.map { |call| [call.bare_name, call.enclosing] }
+    plain = JitCatch::SourceIndex.parse("class Router < Base\n  post \"/refresh\" do\n    run\n  end\nend\n", file: "app/router.rb")
+    assert_equal [], plain.methods, "a class whose superclass names no API"
+  end
+
+  # A request spec reaches an endpoint by the verb and the path it sends,
+  # whatever ids fill the path and whatever mount point comes before it.
+  def test_a_request_names_the_endpoint_its_verb_and_path_reach
+    spec = <<~RUBY
+      RSpec.describe "Things" do
+        it "refreshes" do
+          post "/v1/api/things/abc-1/refresh?force=1", params: { notify: true }
+        end
+      end
+    RUBY
+    index = JitCatch::SourceIndex.parse(spec, file: "spec/requests/things_spec.rb")
+
+    assert_includes index.example_references(2), "POST /v1/api/things/abc-1/refresh"
+    endpoint = "POST /api/things/:id/refresh"
+    assert JitCatch::SourceIndex.endpoint_call?("POST /v1/api/things/abc-1/refresh", endpoint)
+    assert JitCatch::SourceIndex.endpoint_call?("POST /api/things/7/refresh", endpoint)
+    refute JitCatch::SourceIndex.endpoint_call?("GET /api/things/7/refresh", endpoint), "another verb"
+    refute JitCatch::SourceIndex.endpoint_call?("POST /api/things/refresh", endpoint), "a segment short"
+    refute JitCatch::SourceIndex.endpoint_call?("POST /api/others/7/refresh", endpoint)
+    refute JitCatch::SourceIndex.endpoint_call?("POST /api/things/7/refresh/now", endpoint)
+    assert JitCatch::SourceIndex.endpoint_call?("GET /api/things", "GET /api/things")
+  end
+
   def test_an_enum_defines_a_predicate_a_bang_and_two_scopes_for_each_value
     source = <<~RUBY
       class Post < ApplicationRecord

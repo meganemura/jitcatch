@@ -22,6 +22,15 @@ module JitCatch
     ATTRIBUTE_MACROS = { attr_reader: [""], attr: [""], attr_writer: ["="], attr_accessor: ["", "="] }.freeze
     # The constant a member list is given to, and whether its members get writers.
     MEMBER_BUILDERS = { %i[Struct new] => true, %i[Data define] => false }.freeze
+    # Grape's route verbs, and the blocks that add a segment to the path of
+    # the endpoints inside them. `route_param :id` adds `:id`.
+    ENDPOINT_VERBS = %i[get post put patch delete head options].freeze
+    PATH_BLOCKS = %i[resource resources namespace group segment route_param].freeze
+    # `desc` and `params` describe the endpoint that follows them.
+    ENDPOINT_DESCRIPTIONS = %i[desc params].freeze
+    # A class is an API when its superclass is Grape's, or an app's own base
+    # class named like one (`BaseAPI`, `Api::Base` is not).
+    API_SUPERCLASS = /(?:\A|::)(?:Grape::API(?:::Instance)?|\w*(?:API|Api))\z/
     # ActiveSupport::Concern blocks that define methods on the including
     # class, and whether those are class methods.
     CONCERN_BLOCKS = { included: false, prepended: false, class_methods: true }.freeze
@@ -194,6 +203,7 @@ module JitCatch
       @symbol_lists = {}
       @paths = Hash.new { |hash, key| hash[key] = [] }
       @factory_calls = Hash.new { |hash, key| hash[key] = [] }
+      @endpoints = {}
     end
 
     def parse
@@ -268,6 +278,26 @@ module JitCatch
     # The model Rails names a record after: `line_item` is a LineItem.
     def self.model_name(snake)
       snake.split("_").map(&:capitalize).join
+    end
+
+    # Whether a request a test sends (`POST /v1/things/7/refresh`) reaches
+    # an endpoint (`POST /things/:id/refresh`): the same verb, and the
+    # request's path ends in the endpoint's segments, a `:param` matching
+    # any one. Leading segments are a mount point the API class does not name.
+    def self.endpoint_call?(written, endpoint)
+      verb, path = written.split(" ", 2)
+      endpoint_verb, endpoint_path = endpoint.split(" ", 2)
+      return false unless verb == endpoint_verb && path && endpoint_path
+
+      sent = path.split("/").reject(&:empty?)
+      wanted = endpoint_path.split("/").reject(&:empty?)
+      return false if sent.size < wanted.size
+
+      sent.last(wanted.size).zip(wanted).all? { |part, want| want.start_with?(":") || part == want }
+    end
+
+    def self.endpoint?(name)
+      name.match?(%r{\A[A-Z]+ /})
     end
 
     def self.split_qualified(qname)
@@ -423,6 +453,7 @@ module JitCatch
         parent = stmt.is_a?(Prism::ClassNode) && name && const_name(stmt.superclass)
         @superclasses << Superclass.new(qualified: nested, written: parent, scope: qualifier.to_s) if parent
         scan_body(stmt, nested, :public, false)
+        record_endpoints(stmt, nested, api_prefix(stmt)) if parent && API_SUPERCLASS.match?(parent)
         visibility
       when Prism::SingletonClassNode
         scan_body(stmt, qualifier, :public, true)
@@ -650,6 +681,60 @@ module JitCatch
         params: params&.location&.slice.to_s.gsub(/\s+/, ""),
         macro: "scope"
       )
+    end
+
+    # `prefix :api` puts its segment before every path of the class.
+    def api_prefix(body)
+      call = statements(body).find { |stmt| stmt.is_a?(Prism::CallNode) && stmt.receiver.nil? && stmt.name == :prefix }
+      call ? [path_segment(call.arguments&.arguments&.first)].compact : []
+    end
+
+    def record_endpoints(body, qualifier, path)
+      described = nil
+      statements(body).each do |stmt|
+        call = stmt if stmt.is_a?(Prism::CallNode) && stmt.receiver.nil?
+        if call && ENDPOINT_DESCRIPTIONS.include?(call.name)
+          described ||= call.location.start_line
+          next
+        end
+        block = call&.block.is_a?(Prism::BlockNode)
+        segment = path_segment(call.arguments&.arguments&.first) if block
+        if block && PATH_BLOCKS.include?(call.name)
+          record_endpoints(call.block, qualifier, [*path, *(call.name == :route_param && segment ? ":#{segment}" : segment)])
+        elsif block && ENDPOINT_VERBS.include?(call.name)
+          record_endpoint(call, qualifier, [*path, *segment], described || call.location.start_line)
+        end
+        described = nil
+      end
+    end
+
+    def record_endpoint(stmt, qualifier, path, start_line)
+      bare = "#{stmt.name.upcase} /#{path.join("/")}"
+      qualified = self.class.qualify(qualifier, bare, false)
+      @endpoints[stmt.location.start_offset] = qualified
+      @methods << self.class::Method.new(
+        file: @file, bare_name: bare, qualifier: qualifier.to_s, qualified: qualified, kind: "endpoint", visibility: "public",
+        start_line: start_line, end_line: stmt.location.end_line, source: extract_lines(start_line, stmt.location.end_line), params: "", macro: nil
+      )
+    end
+
+    # A path argument's segments with no slash at either end, or nil for
+    # none. A path the source computes is not followed.
+    def path_segment(node)
+      text = node.unescaped if node.is_a?(Prism::StringNode) || node.is_a?(Prism::SymbolNode)
+      trimmed = text.to_s.gsub(%r{\A/+|/+\z}, "")
+      trimmed.empty? ? nil : trimmed
+    end
+
+    # A request a test sends, as `post "/things/1/refresh"`, by verb and
+    # path, with no query string.
+    def request_name(node)
+      return nil unless node.receiver.nil? && ENDPOINT_VERBS.include?(node.name)
+
+      path = node.arguments&.arguments&.first
+      return nil unless path.is_a?(Prism::StringNode) && path.unescaped.start_with?("/")
+
+      "#{node.name.upcase} #{path.unescaped.sub(/[?#].*/m, "")}"
     end
 
     # `delegate :name, to: :author, prefix: true` defines `author_name`, and
@@ -962,6 +1047,9 @@ module JitCatch
       when Prism::CallNode
         return walk_spec_block(node, qualifier, singleton_context, enclosing) if spec_block?(node)
 
+        endpoint = @endpoints[node.location.start_offset]
+        return walk(node.block, qualifier, false, endpoint) if endpoint
+
         if enclosing.nil? && !singleton_context && scope?(node)
           scope = self.class.qualify(qualifier, node.arguments.arguments.first.unescaped, true)
           return walk(scope_body(node), qualifier, true, scope)
@@ -992,6 +1080,8 @@ module JitCatch
           named = reflective_name(node)
           refer(enclosing, named) if named
           refer(enclosing, "to_s") if MESSAGE_CALLS.include?(node.name)
+          request = request_name(node)
+          refer(enclosing, request) if request
           factory = factory_built(node)
           @factory_calls[enclosing] << [node.name.to_s, factory, factory_traits(node)] if factory
         end

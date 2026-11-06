@@ -707,6 +707,12 @@ module JitCatch
       referenced -= foreign_calls(index, test_name, line, known.constants)
       referenced += script_names(index.paths_named(test_name, line), relative, head_dir)
       names = known.names
+      # A request names the path it sends, which an endpoint's names only
+      # through a pattern, so each one becomes the endpoints it reaches.
+      endpoints = names.select { |name| SourceIndex.endpoint?(name) }
+      referenced = referenced.flat_map { |name|
+        SourceIndex.endpoint?(name) ? [name, *endpoints.select { |endpoint| SourceIndex.endpoint_call?(name, endpoint) }] : [name]
+      }.uniq
       referenced.select { |name|
         next false if known.unsaved.key?(name) && !SourceIndex.saves_or_validates?(referenced, known.unsaved[name])
 

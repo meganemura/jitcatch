@@ -479,6 +479,44 @@ class TestChanges < Minitest::Test
     end
   end
 
+  # An edit inside a Grape endpoint changes that endpoint, a request spec
+  # that sends its verb and path is its test, and a method the endpoint
+  # calls is reachable from it, so a request spec reaches that method too.
+  def test_a_grape_endpoint_is_a_change_unit_that_request_specs_reach
+    api = lambda do |args|
+      <<~RUBY
+        class Things < Grape::API
+          resource :things do
+            route_param :id do
+              post "/refresh" do
+                RefreshWorker.perform_async(#{args})
+                status :accepted
+              end
+            end
+          end
+        end
+      RUBY
+    end
+    worker = ->(body) { "class RefreshWorker\n  def self.perform_async(args)\n    #{body}\n  end\nend\n" }
+    with_repo do |repo|
+      repo.write("app/apis/things.rb", api.(%({ "id" => params[:id] })))
+      repo.write("app/workers/refresh_worker.rb", worker.("args"))
+      repo.write("spec/requests/things_spec.rb", %(RSpec.describe "Things" do\n  it "refreshes" do\n    post "/api/things/\#{thing.id}/refresh"\n  end\nend\n))
+      repo.write("spec/requests/others_spec.rb", %(RSpec.describe "Others" do\n  it "lists" do\n    get "/api/things/1/refresh"\n    post "/api/things/refresh"\n  end\nend\n))
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.write("app/apis/things.rb", api.(%({ "id" => params[:id], "notify" => true })))
+      repo.commit("Notify on refresh.", date: "2026-02-12T00:00:00Z")
+      repo.write("app/workers/refresh_worker.rb", worker.("args.merge(\"at\" => 1)"))
+      repo.commit("Stamp the job.", date: "2026-02-13T00:00:00Z")
+
+      endpoint = JitCatch::Changes.between(repo.dir, "HEAD~2", "HEAD~1")["methods"].map { |method| method.values_at("name", "change", "existing_tests") }
+      assert_equal [["Things#POST /things/:id/refresh", "modified", [{ "file" => "spec/requests/things_spec.rb", "via" => "grep" }]]], endpoint
+      worker_change = JitCatch::Changes.between(repo.dir, "HEAD~1", "HEAD")["methods"].fetch(0)
+      assert_equal ["RefreshWorker.perform_async", ["Things#POST /things/:id/refresh"]], worker_change.values_at("name", "reachable_from")
+      assert_equal [{ "file" => "spec/requests/things_spec.rb", "entry_points" => ["Things#POST /things/:id/refresh"] }], worker_change["entry_point_tests"]
+    end
+  end
+
   def test_dependencies_come_from_the_gemfile_lock_diff
     lock = lambda do |specs|
       "GEM\n  remote: https://rubygems.org/\n  specs:\n#{specs.map { |spec| "    #{spec}\n      dep (>= 0)\n" }.join}\nPLATFORMS\n  ruby\n\nBUNDLED WITH\n   2.6.0\n"
