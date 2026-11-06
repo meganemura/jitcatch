@@ -517,6 +517,36 @@ class TestChanges < Minitest::Test
     end
   end
 
+  # A controller action's tests are the files whose requests the routes
+  # send to it, by helper or by path, and the controller tests that name
+  # the controller and call the action; a file that only calls a method of
+  # the same name, as `create(:book)` does, is not one. With no route to
+  # the action, the name is grepped, so no test is hidden.
+  def test_a_controller_action_takes_the_tests_its_routes_send_to_it
+    controller = ->(body) { "class BooksController < ApplicationController\n  def create\n    #{body}\n  end\n\n  def archive\n    #{body}\n  end\nend\n" }
+    with_repo do |repo|
+      repo.write("config/routes.rb", "Rails.application.routes.draw do\n  resources :books, only: :create\n  resources :people, only: :create, controller: :books\nend\n")
+      repo.write("app/controllers/books_controller.rb", controller.("1"))
+      repo.write("spec/requests/books_spec.rb", %(RSpec.describe "Books" do\n  it "creates" do\n    post books_path, params: { title: "dune" }\n  end\nend\n))
+      repo.write("spec/requests/people_spec.rb", %(RSpec.describe "People" do\n  it "creates" do\n    post "/people"\n  end\nend\n))
+      repo.write("spec/controllers/books_controller_spec.rb", %(RSpec.describe BooksController do\n  it "creates" do\n    post :create\n  end\nend\n))
+      repo.write("spec/models/book_spec.rb", %(RSpec.describe Book do\n  it "saves" do\n    create(:book)\n    archive\n  end\nend\n))
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.write("app/controllers/books_controller.rb", controller.("2"))
+      repo.commit("Answer 2.", date: "2026-02-12T00:00:00Z")
+
+      tests = JitCatch::Changes.between(repo.dir, "HEAD~1", "HEAD")["methods"].to_h { |method| [method["name"], method["existing_tests"]] }
+      assert_equal [
+        { "file" => "spec/controllers/books_controller_spec.rb", "via" => "route", "calls" => ["post :create"] },
+        { "file" => "spec/requests/books_spec.rb", "via" => "route", "calls" => ["POST books_path"] },
+        { "file" => "spec/requests/people_spec.rb", "via" => "route", "calls" => ["POST /people"] }
+      ], tests["BooksController#create"]
+      assert_equal [{ "file" => "spec/models/book_spec.rb", "via" => "grep" }], tests["BooksController#archive"]
+      assert_includes JitCatch::Render.context_text(JitCatch::Changes.between(repo.dir, "HEAD~1", "HEAD")),
+        "    tests: spec/controllers/books_controller_spec.rb via post :create; spec/requests/books_spec.rb via POST books_path; spec/requests/people_spec.rb via POST /people\n"
+    end
+  end
+
   # A request spec that builds its path from a mount point it computes
   # still names the endpoint by the rest of the path. An endpoint whose path
   # the source computes cannot be matched to a request, and the warning

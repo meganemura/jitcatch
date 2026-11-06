@@ -46,6 +46,10 @@ module JitCatch
       @routes = []
     end
 
+    def drawn?(action)
+      @routes.any? { |route| route.action == action }
+    end
+
     def helper?(name)
       bare = name.delete_suffix("_path")
       @routes.any? { |route| route.helper == bare }

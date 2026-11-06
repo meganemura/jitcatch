@@ -434,6 +434,7 @@ module JitCatch
     def decorate_tests(methods, base_idx, head_idx, builders)
       test_sources = test_sources_for(base_idx, head_idx)
       public_names = (base_idx["methods"] + head_idx["methods"]).filter_map { |node| [node.qualified, true] if node.visibility == "public" }.to_h
+      routes = requests = nil
       methods.each do |method|
         node = method["new"] || method["old"]
         method["builders"] = constructor?(node) ? builders.fetch(node.qualifier) : []
@@ -446,6 +447,8 @@ module JitCatch
             merge_hits(call_hits(test_sources.keys, ["#{node.qualifier}.new", *method["builders"]], "builder", base_idx, head_idx), [])
           elsif node.kind == "endpoint"
             request_hits(test_sources, node.bare_name)
+          elsif controller_action?(node.qualified) && (routes ||= app_routes(head_idx)).drawn?(node.qualified)
+            route_hits(test_sources, node.qualified, requests ||= test_requests(test_sources, routes, base_idx, head_idx))
           else
             merge_hits(call_hits(test_sources.keys, method["run_by"], "callback", base_idx, head_idx), grep_hits(test_sources, node.bare_name))
           end
@@ -513,6 +516,33 @@ module JitCatch
       full = "(?:/#{segment})*/#{parts.join("/")}"
       computed_mount = "#{interpolation}(?:#{suffixes.map { |suffix| "/#{suffix}" }.join("|")})"
       Regexp.new(%Q{\\b#{verb.downcase}[\\s(]+["'](?:#{full}|#{computed_mount})/?["'?]})
+    end
+
+    def app_routes(idx)
+      Routes.parse(idx["sources"]["config/routes.rb"], Inflections.read(idx["sources"]["config/initializers/inflections.rb"]))
+    end
+
+    # The files whose requests the routes send to the action, as `run`
+    # reads them, and the controller tests that name the controller and
+    # call the action by its symbol (`post :create`). A bare-name grep
+    # matched `create(:book)` and missed `post books_path`.
+    def route_hits(test_sources, action, requests)
+      owner, _sep, bare = SourceIndex.split_qualified(action)
+      controller_call = /\b(?:#{SourceIndex::ENDPOINT_VERBS.join("|")})[\s(]+:#{called(bare)}/
+      named = /\b#{Regexp.escape(owner.split("::").last)}\b/
+      test_sources.filter_map { |file, source|
+        calls = requests[file].filter_map { |request, actions| request if actions.include?(action) }
+        calls += source.scan(controller_call).map { |call| call.sub(/[\s(]+/, " ") }.uniq if source.match?(named)
+        { "file" => file, "via" => "route", "calls" => calls.sort } unless calls.empty?
+      }.first(TEST_CAP)
+    end
+
+    # Each test file's requests, with the controller actions they reach.
+    def test_requests(test_sources, routes, base_idx, head_idx)
+      test_sources.keys.to_h { |file|
+        index = head_idx["indexes"][file] || base_idx["indexes"][file]
+        [file, index.referenced_names("").select { |name| SourceIndex.request?(name) }.to_h { |request| [request, routes.actions(request)] }]
+      }
     end
 
     def grep_hits(test_sources, bare)

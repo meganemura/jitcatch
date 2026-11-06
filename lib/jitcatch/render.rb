@@ -229,7 +229,7 @@ module JitCatch
       tests.map { |test|
         if test["via"] == "coverage"
           "#{test["file"]} coverage #{test["test"]}"
-        elsif %w[builder callback].include?(test["via"])
+        elsif %w[builder callback route].include?(test["via"])
           "#{test["file"]} via #{test["calls"].join(", ")}"
         else
           "#{test["file"]} grep"
