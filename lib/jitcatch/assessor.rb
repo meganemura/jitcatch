@@ -193,6 +193,7 @@ module JitCatch
       tags << (reason ? "discard:#{reason}" : "report")
       tags << caller_tag(call)
       tags << "assertion" if head["status"] == "fail"
+      tags << "message_varies" if test["message_varies"]
       if head["error_class"] && head["status"] != "fail"
         tags << "error:#{head["error_class"]}"
       end

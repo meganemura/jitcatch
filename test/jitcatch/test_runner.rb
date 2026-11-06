@@ -271,7 +271,41 @@ class TestRunner < Minitest::Test
 
       row = doc["tests"].fetch(0)
       assert_equal "flaky", row["disposition"], row["reruns"].inspect
-      assert_includes JitCatch::Render.run_text(doc), "    rerun 1: fail Minitest::Assertion Actual: 2\n"
+      text = JitCatch::Render.run_text(doc)
+      assert_includes text, "    rerun 1: fail Minitest::Assertion (same outcome, message differs) Actual: 2\n"
+      assert_includes text, "    base rerun 1: fail Minitest::Assertion Expected: 0\n"
+    end
+  end
+
+  def test_a_failure_whose_message_holds_a_random_value_is_kept_when_base_passes_each_time
+    with_repo do |repo|
+      repo.write("lib/price.rb", "module Price\n  def self.of(_sku) = 100\nend\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/price.rb", "module Price\n  def self.of(_sku) = 120\nend\n")
+      repo.commit("Raise the price.", date: "2026-02-12T00:00:00Z")
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, {
+        "price_test.rb" => <<~RUBY
+          require "minitest/autorun"
+          require "securerandom"
+          require "price"
+
+          class PriceTest < Minitest::Test
+            def test_price_of_an_item
+              item = { sku: "A", request_id: SecureRandom.hex(4), price: Price.of("A") }
+              assert_equal({ sku: "A", request_id: item[:request_id], price: 100 }, item)
+            end
+          end
+        RUBY
+      })
+
+      doc = execute(repo, tests, reruns: 2)
+
+      rows = doc["tests"].to_h { |row| [row["name"], row] }
+      price = rows.fetch("PriceTest#test_price_of_an_item")
+      assert_equal ["reported", true, 2], [price["disposition"], price["message_varies"], price["base_reruns"].size], price.inspect
+      assert_includes price["tags"], "message_varies"
     end
   end
 

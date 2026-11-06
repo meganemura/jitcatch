@@ -483,6 +483,8 @@ gem の中から始まったエラーには `touches:changed_method` を付け�
 その行は `related guess: none of m01,m02,m03` となり、id の位置に `-` が出て、`method_id` は `null` になる。
 この行には、テストが `method_ids` のどれか一つの名前を含めば `touches:changed_method` を付ける。
 id が最も小さいものだけを見るのではない。
+`message_varies` は、head が再実行のたびに同じ落ち方をしてメッセージだけが動き、base が再実行のたびに通ったことを言う。
+レコード全体ではなく、テストが決めるフィールドを比べるとよい。
 `related:dynamic` は、関連する変更メソッドはないが、テストが `dynamic_callers:` のメソッドを呼んでいる。
 その行の次の行が `related: none, Emit.looked_up sends render to a receiver the source does not name` のようにそれを言う。
 
@@ -650,8 +652,13 @@ base は時間があれば通ったかもしれないので、後で述べるタ
 比べるのは失敗メッセージの全体である。
 比べる前に一時ディレクトリ直下の名前、オブジェクトのアドレス（`#<Class:0x00007f...>`）、日付つきの時刻（`created_at: "2026-11-04 19:02:03.212197000 +0000"`）を伏せるので、メッセージにある `Dir.mktmpdir` のパス、新しい無名クラス、レコードを保存した時刻は違いにならない。
 日付だけなら伏せない。
+再実行が同じ失敗かエラーで、例外のクラスも同じで、メッセージだけが違うときは、まだ食い違いとしない。
+印字したレコードの中のランダムな ID がこれにあたる。
+このときは base でもテストを `--reruns` 回実行し、毎回通れば行は候補のまま残り、`message_varies` タグが付く（`--json` では `message_varies: true` と `base_reruns`）。
+base の再実行が一度でも通らなければ行は `flaky` になる。
 再実行の行には、メッセージのうち変わった最初の行が出る。
-テキストの報告は `flaky` の行の下に各再実行の結果を出し、JSON の行は `reruns` に持つ。
+メッセージだけが変わったときは、その前に `(same outcome, message differs)` が付き、base の再実行は `base rerun 1:` として続く。
+テキストの報告は `flaky` の行の下に各再実行の結果を、行と同じく 300 文字で切って出し、JSON の行は `reruns` に持つ。
 タイムアウトは再実行しない。
 
 候補を `discarded` にするルールは 4 つある。

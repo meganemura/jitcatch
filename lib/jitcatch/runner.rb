@@ -211,11 +211,35 @@ module JitCatch
 
           again = rerun.tests[row["name"]] || missing_result
           (row["reruns"] ||= []) << again.slice("status", "error_class", "message_first_line", "message")
-          row["classification"] = "flaky" if failure_key(again) != failure_key(row["head"])
+          next if failure_key(again) == failure_key(row["head"])
+
+          if outcome_key(again) == outcome_key(row["head"]) && row.dig("base", "status") == "pass"
+            row["message_varies"] = true
+          else
+            row["classification"] = "flaky"
+          end
         end
         break if rows.none? { |row| row["classification"] == "candidate" }
       end
+      confirm_on_base(rows.select { |row| row["classification"] == "candidate" && row["message_varies"] }, base_dir, relative, normalizer)
       rows
+    end
+
+    # A test whose head fails the same way each time, with a value in the
+    # message that moves, such as a random id, still caught the change when
+    # base passes each time too. A test that fails at random is caught here
+    # instead: its base fails once in a while as well.
+    def confirm_on_base(rows, base_dir, relative, normalizer)
+      return if rows.empty?
+
+      @reruns.times do
+        rerun = execute(base_dir, relative, normalizer)
+        rows.each do |row|
+          again = rerun.tests[row["name"]] || missing_result
+          (row["base_reruns"] ||= []) << again.slice("status", "error_class", "message_first_line", "message")
+          row["classification"] = "flaky" unless again["status"] == "pass"
+        end
+      end
     end
 
     def rows_for(relative, base_run, head_run, index, known, head_dir)
@@ -298,6 +322,10 @@ module JitCatch
       lines = result["message"].to_s.lines.map(&:strip).reject(&:empty?).join("\n")
       message = Text.mask_times(Text.mask_addresses(temp_roots.reduce(lines) { |text, root| Text.mask_temp_names(text, root) }))
       [result["status"], result["error_class"].to_s, message].join("\x1f")
+    end
+
+    def outcome_key(result)
+      [result["status"], result["error_class"].to_s]
     end
 
     # A symlinked temp directory (macOS /tmp) can appear under either name.

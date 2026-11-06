@@ -12,5 +12,6 @@ First release. jitcatch keeps the Ruby tests that pass on the parent of a change
 - A symlinked `.rb` file is not indexed, so it no longer shows up under `parse_errors`. git stores a symlink as the path it points at; the target file is indexed on its own.
 - A row shows the `got` line of a failed RSpec `be` or `equal`, and the `expected:` and `got:` arguments of an rspec-mocks failure on unexpected arguments, under `assess:` and under a `fail_on_base` row's `base:`.
 - An Active Record `scope` is a changed class method (`Post.recent`) when its statement changes, a `delegate` line defines instance methods, and an `enum :status, {...}` value defines its predicate, bang, and two scopes. Each then gets call sites, tests, and an `entrypoints` line, and `run` counts the names as mentions.
+- A candidate that fails the same way on every head rerun, with only its message moving (a random id in a printed record), is kept with the tag `message_varies` when base also passes on `--reruns` reruns, instead of turning `flaky`. A flaky row's rerun line says `(same outcome, message differs)` when only the message moved, lists the base reruns, and is cut at 300 characters.
 - An agent skill in `skills/jitcatch/`.
 - Ruby 3.3 or newer. No runtime dependency. On an older Ruby, `jitcatch` exits 1 and names the version it needs and the Ruby it ran on.

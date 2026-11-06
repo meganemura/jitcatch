@@ -440,4 +440,18 @@ constants: (none)
 
     assert_equal ["    rerun 1: fail Minitest::Assertion Actual: 2"], JitCatch::Render.rerun_lines(test)
   end
+
+  def test_a_rerun_line_says_when_only_the_message_moved_and_cuts_a_long_line
+    long = "x" * 500
+    test = { "head" => { "status" => "fail", "error_class" => "E", "message" => "Expected: 0\n  Actual: 1" },
+             "reruns" => [{ "status" => "fail", "error_class" => "E", "message_first_line" => "Expected: 0", "message" => "Expected: 0\n  Actual: #{long}" },
+                          { "status" => "error", "error_class" => "F", "message_first_line" => "boom", "message" => "boom" }],
+             "base_reruns" => [{ "status" => "fail", "error_class" => "E", "message_first_line" => "Expected: 0", "message" => "Expected: 0\n  Actual: 2" }] }
+
+    lines = JitCatch::Render.rerun_lines(test)
+
+    assert_match(/\A    rerun 1: fail E \(same outcome, message differs\) Actual: x+\.\.\. \(\+\d+ characters; the whole message is in --json\) \.\.\.x+\z/, lines[0])
+    assert_operator lines[0].length, :<, 400
+    assert_equal ["    rerun 2: error F boom", "    base rerun 1: fail E Expected: 0"], lines.drop(1)
+  end
 end

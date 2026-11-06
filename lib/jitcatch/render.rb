@@ -245,14 +245,24 @@ module JitCatch
       "#{test["id"]} #{test["disposition"]} #{test["name"]} #{place}#{method}"
     end
 
+    # A flaky row says which run moved and how: the outcome, or only the
+    # message, as a random id in a printed record does. Base reruns only
+    # when head failed the same way each time.
     def rerun_lines(test)
-      head = Text.message_lines(test.dig("head", "message"))
-      Array(test["reruns"]).each_with_index.map do |rerun, index|
+      head = test["head"] || {}
+      head_lines = Text.message_lines(head["message"])
+      reruns = Array(test["reruns"]).each_with_index.map do |rerun, index|
         # The first line that moved says why the row is flaky.
-        moved = Text.message_lines(rerun["message"]).find { |line| !head.include?(line) }
-        outcome = [rerun["status"], rerun["error_class"], moved || rerun["message_first_line"]].reject { |part| part.to_s.empty? }
-        "    rerun #{index + 1}: #{outcome.join(" ")}"
+        moved = Text.message_lines(rerun["message"]).find { |line| !head_lines.include?(line) }
+        same = rerun.values_at("status", "error_class") == head.values_at("status", "error_class") && moved
+        outcome = [rerun["status"], rerun["error_class"], ("(same outcome, message differs)" if same), moved || rerun["message_first_line"]]
+        cut_line("    rerun #{index + 1}: #{outcome.reject { |part| part.to_s.empty? }.join(" ")}")
       end
+      base = Array(test["base_reruns"]).each_with_index.map do |rerun, index|
+        outcome = [rerun["status"], rerun["error_class"], rerun["message_first_line"]].reject { |part| part.to_s.empty? }
+        cut_line("    base rerun #{index + 1}: #{outcome.join(" ")}")
+      end
+      reruns + base
     end
 
     # A row that failed on base is no candidate, so nothing else in the
