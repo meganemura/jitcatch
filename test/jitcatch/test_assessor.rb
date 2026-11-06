@@ -336,7 +336,7 @@ class TestAssessor < Minitest::Test
     text = JitCatch::Render.assess_text(JitCatch::Assessor.apply(doc))
     assert_includes text,
       "  c01 ChangesTest#test_visibility base=pass head=fail m02 assertion,related:guess,report,touches:unchanged_caller\n" \
-      "    related guess: m02 of m01,m02,m03\n"
+      "    related guess: Calc#changed_namespaces (m02), ranked first of 3: Calc#changed_constants (m01), Calc#changed_namespaces (m02), Calc#index_ref (m03)\n"
     assert_equal 1, text.scan("related guess:").size, "a row with one related method prints no guess line"
   end
 
@@ -387,6 +387,7 @@ class TestAssessor < Minitest::Test
     decode = method("m02", "modified", "same", "decode", ["Trace.replay"], 10).merge("caller_depths" => { "Trace.replay" => 2 })
     near = method("m03", "modified", "same", "check", ["Trace.replay"], 20).merge("caller_depths" => { "Trace.replay" => 1 })
     doc = {
+      "base" => "1111111111111111", "head" => "2222222222222222",
       "methods" => [plumbing, decode, near],
       "constants" => [],
       "tests_dir" => "candidates",
@@ -398,7 +399,8 @@ class TestAssessor < Minitest::Test
     assert_equal [nil, %w[m01 m02 m03], true], [row["method_id"], row["method_ids"], row["tags"].include?("related:guess")]
     assert_includes JitCatch::Render.assess_text(out),
       "  c01 FramesTest#test_frames base=pass head=fail - assertion,related:guess,report,touches:unchanged_caller\n" \
-      "    related guess: none of m01,m02,m03\n"
+      "    related guess: none; the test reaches 3 changed methods equally and no frame of head's failure is in one: Calc#drive (m01), Calc#decode (m02), Calc#check (m03). " \
+      "Next: find what makes head's value in them, or in a changed file that holds no method, such as a view: git diff --stat 111111111111 222222222222\n"
     deeper = doc.merge("methods" => [plumbing, decode.merge("caller_depths" => { "Trace.replay" => 3 }), near])
     assert_equal "m02", JitCatch::Assessor.apply(deeper)["tests"].fetch(0)["method_id"]
   end

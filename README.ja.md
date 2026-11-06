@@ -308,7 +308,7 @@ intent:
 counts generated=13 no_signal=8 fail_on_base=3 candidates=2 flaky=0 discarded=0 reported=2
 assess:
   c01 ThresholdTotalTest#test_at_threshold_total_includes_the_volume_discount base=pass head=fail m05 assertion,related:guess,report,touches:unchanged_caller
-    related guess: m05 of m02,m04,m05
+    related guess: Shop::Cart#volume_discount_cents (m05), ranked first of 3: Shop::Cart#coupon_discount_cents (m02), Shop::Cart#taxable_cents (m04), Shop::Cart#volume_discount_cents (m05)
     Expected: 9720
     Actual: 10800
   c02 VolumeBoundaryTest#test_threshold_is_inclusive base=pass head=fail m05 assertion,report,touches:changed_method
@@ -474,7 +474,9 @@ gem の中から始まったエラーには `touches:changed_method` を付け�
 外側のフレームはそれを呼んだだけなので、この選択は推測ではない。
 `related:guess` は、id を選んだ根拠が複数の変更メソッドを指している。
 たとえば、テストが変更されていない呼び出し元だけを含み、その呼び出し元から複数の変更メソッドへ届くときである。
-その行の次の行 `related guess: m05 of m02,m04,m05` が候補をすべて並べ、`--json` では `method_ids` が同じものを持つ。
+その行の次の行は、候補をすべて名前と id で並べる。
+たとえば `related guess: Shop::Cart#volume_discount_cents (m05), ranked first of 3: Shop::Cart#coupon_discount_cents (m02), Shop::Cart#taxable_cents (m04), Shop::Cart#volume_discount_cents (m05)` となる。
+`--json` では `method_ids` が同じものを持つ。
 この選択は、diff が追加したメソッドより base にあったメソッドを選ぶ。
 ただし、追加したメソッドの呼び出しを足しただけの編集（`--json` の `forwards_to_added`）は、その追加したメソッドより下に置く。
 `net - volume` が `net - volume - coupon(n)` になる編集がその例で、新しい値は追加したメソッドから来る。
@@ -482,7 +484,9 @@ gem の中から始まったエラーには `touches:changed_method` を付け�
 たとえば、リクエストスペックが 1 回下の `LoansController#officer` と 5 回下の `Borrower#approved_cents` に届くときは `Borrower#approved_cents` を選ぶ。
 `--json` の `caller_depths` がその回数を持つ。
 上位の二つを id でしか並べられないときは、どれも選ばない。
-その行は `related guess: none of m01,m02,m03` となり、id の位置に `-` が出て、`method_id` は `null` になる。
+その行は `related guess: none; the test reaches 7 changed methods equally and no frame of head's failure is in one: Book#apply_catalog_record (m02), LoanRules.for (m03), ...` となり、id の位置に `-` が出て、`method_id` は `null` になる。
+その行は次の一手で終わる。
+それらのメソッドか、メソッドを持たない変更されたファイル (ビューなど) のどれが head の値を作るかを、行に出る `git diff --stat BASE HEAD` から探す。
 この行には、テストが `method_ids` のどれか一つの名前を含めば `touches:changed_method` を付ける。
 id が最も小さいものだけを見るのではない。
 `message_varies` は、head が再実行のたびに同じ落ち方をしてメッセージだけが動き、base が再実行のたびに通ったことを言う。

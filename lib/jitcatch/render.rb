@@ -413,10 +413,11 @@ module JitCatch
         lines << "  (none)"
         return lines
       end
+      names = Array(doc["methods"]).to_h { |item| [item["id"], item["name"]] }
       rows.each do |row|
         method = row["method_id"] || "-"
         lines << "  #{row["candidate_id"]} #{row["name"]} base=#{row["base_status"]} head=#{row["head_status"]} #{method} #{row["tags"].join(",")}"
-        lines << "    related guess: #{row["method_id"] || "none"} of #{row["method_ids"].join(",")}" if row["method_ids"].size > 1
+        lines << "    #{guess_line(row, names, doc)}" if row["method_ids"].size > 1
         if (dynamic = row["dynamic_call"])
           lines << "    related: none, #{dynamic["from"]} sends #{dynamic["name"]} to a receiver the source does not name"
         end
@@ -426,6 +427,21 @@ module JitCatch
         lines << env_line if row["rerun"] && env_line
       end
       lines
+    end
+
+    # An id alone sends the reader to the context brief to find what it
+    # names. With no pick, no frame of head's failure is in a changed
+    # method, so the value can come from a file the brief lists no method
+    # for, such as a view.
+    def guess_line(row, names, doc)
+      pool = row["method_ids"].map { |id| "#{names[id] || id} (#{id})" }
+      if row["method_id"]
+        return "related guess: #{names[row["method_id"]] || row["method_id"]} (#{row["method_id"]}), ranked first of #{pool.size}: #{pool.join(", ")}"
+      end
+
+      shas = %w[base head].map { |side| doc[side].to_s[0, 12] }.join(" ")
+      "related guess: none; the test reaches #{pool.size} changed methods equally and no frame of head's failure is in one: #{pool.join(", ")}. " \
+        "Next: find what makes head's value in them, or in a changed file that holds no method, such as a view: git diff --stat #{shas}"
     end
 
     def candidate_rows(doc)

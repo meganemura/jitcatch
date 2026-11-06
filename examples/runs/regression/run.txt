@@ -24,7 +24,7 @@ tests:
 counts generated=13 no_signal=8 fail_on_base=3 candidates=2 flaky=0 discarded=0 reported=2
 assess:
   c01 ThresholdTotalTest#test_at_threshold_total_includes_the_volume_discount base=pass head=fail m05 assertion,related:guess,report,touches:unchanged_caller
-    related guess: m05 of m02,m04,m05
+    related guess: Shop::Cart#volume_discount_cents (m05), ranked first of 3: Shop::Cart#coupon_discount_cents (m02), Shop::Cart#taxable_cents (m04), Shop::Cart#volume_discount_cents (m05)
     Expected: 9720
     Actual: 10800
     rerun: ruby -Ilib -I. candidates/regression/threshold_total_test.rb -n ThresholdTotalTest#test_at_threshold_total_includes_the_volume_discount
