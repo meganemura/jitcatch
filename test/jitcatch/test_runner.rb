@@ -1937,19 +1937,69 @@ class TestRunner < Minitest::Test
         if shared
           assert_equal [["number=1", "number=2"]] * 2, sides, config
           assert doc["serial"], config
+          remedy = if passed.include?("DATABASE_URL")
+            "To run them at once, add --number-database-url: each checkout then adds its TEST_ENV_NUMBER to the database name in DATABASE_URL " \
+              "(#{shared}_1, #{shared}_2, #{shared}_3, #{shared}_4), and you create those databases once. " \
+              "Numbering database: in config/database.yml does not split it, because a DATABASE_URL that names a database wins over database:."
+          else
+            "To run them at once, end the test database name in config/database.yml with <%= ENV[\"TEST_ENV_NUMBER\"] %> " \
+              "and create the numbered databases: for n in 1 2 3 4; do RAILS_ENV=test TEST_ENV_NUMBER=$n bin/rails db:create; done. " \
+              "This helps only when BASE and HEAD both have that line."
+          end
           assert_equal [
-            "base and head use one test database, #{shared}, so jitcatch ran one process at a time. " \
-            "To run them at once, #{"pass no --env DATABASE_URL, which names it for every checkout, " if passed.include?("DATABASE_URL")}" \
-            "end the test database name in config/database.yml with <%= ENV[\"TEST_ENV_NUMBER\"] %> " \
-            "and create the numbered databases: for n in 1 2; do RAILS_ENV=test TEST_ENV_NUMBER=$n bin/rails db:create; done"
-          ], warning, config
-          # The READMEs quote the line the sample app printed.
-          %w[README.md README.ja.md].each { |name| assert_includes File.read(File.expand_path("../../#{name}", __dir__), encoding: "UTF-8"), "warning: #{warning.first}\n" } if shared == "lending_test"
+            "base and head use one test database, #{shared}, so jitcatch ran one process at a time; that changes how long the run takes, not its results.",
+            remedy
+          ], doc["warnings"], config
+          # The READMEs quote the lines the sample app printed, with one worker.
+          if shared == "lending_test"
+            text = doc["warnings"].map { |line| "warning: #{line.sub("1 2 3 4", "1 2")}\n" }.join
+            %w[README.md README.ja.md].each { |name| assert_includes File.read(File.expand_path("../../#{name}", __dir__), encoding: "UTF-8"), text }
+          end
         else
           assert_equal [["number=1", "number=2"], ["number=3", "number=4"]], sides, config
           refute doc["serial"], config
           assert_empty warning, config
         end
+      end
+    end
+  end
+
+  # Two git worktrees of one app each pass their own DATABASE_URL. Numbering
+  # it per checkout gives base and head databases of their own, apart from
+  # the other worktree's too, without a change to a past database.yml.
+  def test_number_database_url_gives_each_checkout_its_own_database
+    skip "activerecord is not installed for #{RUBY_VERSION}" if Gem::Specification.find_all_by_name("activerecord").empty?
+
+    with_repo do |repo|
+      repo.write("lib/calc.rb", "class Calc; end\n")
+      repo.write("config/database.yml", %(test:\n  adapter: postgresql\n  database: app_test\n  url: <%= ENV["DATABASE_URL"] || "postgresql://localhost/app_test" %>\n))
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("README.md", "head\n")
+      repo.commit("Touch readme.", date: "2026-02-12T00:00:00Z")
+      tests = File.join(repo.dir, "candidates")
+      url = %(flunk "url=\#{ENV.fetch("DATABASE_URL", "unset")}")
+      write_tests(tests, {
+        "a_url_test.rb" => candidate_source("AUrlTest", "test_url", url),
+        "b_url_test.rb" => candidate_source("BUrlTest", "test_url", url)
+      })
+      env = { "DATABASE_URL" => "postgresql://app:secret@db.example:5432/app_test_wt1?sslmode=disable" }
+
+      doc = with_env(env) { JitCatch::Runner.run(repo.dir, "base", "HEAD", tests, reruns: 0, workers: 2, env: ["DATABASE_URL"], number_database_url: true) }
+
+      sides = doc["tests"].map { |test| [test["base"]["message_first_line"], test["head"]["message_first_line"]] }.sort
+      numbered = ->(n) { "url=postgresql://app:secret@db.example:5432/app_test_wt1_#{n}?sslmode=disable" }
+      assert_equal [[numbered[1], numbered[2]], [numbered[3], numbered[4]]], sides
+      refute doc["serial"]
+      assert_empty doc["warnings"]
+      assert_equal %w[app_test_wt1_1 app_test_wt1_2 app_test_wt1_3 app_test_wt1_4], doc["numbered_databases"]
+      assert_includes JitCatch::Render.run_text(JitCatch::Assessor.apply(doc)), "\nnumbered_databases app_test_wt1_1 app_test_wt1_2 app_test_wt1_3 app_test_wt1_4\n"
+
+      [[[], env, "--number-database-url numbers the DATABASE_URL that --env passes, so pass --env DATABASE_URL"],
+       [["DATABASE_URL"], { "DATABASE_URL" => nil }, "--number-database-url needs DATABASE_URL to name a database, as postgresql://localhost/app_test does; it is not set"],
+       [["DATABASE_URL"], { "DATABASE_URL" => "postgresql://localhost" }, "--number-database-url needs DATABASE_URL to name a database, as postgresql://localhost/app_test does; it names none"]].each do |passed, given, message|
+        error = assert_raises(JitCatch::UsageError) { with_env(given) { JitCatch::Runner.run(repo.dir, "base", "HEAD", tests, reruns: 0, env: passed, number_database_url: true) } }
+        assert_equal message, error.message
       end
     end
   end

@@ -61,6 +61,7 @@ module JitCatch
       lines << "reruns #{doc["reruns"]}"
       lines << "timeout_s #{doc["timeout_s"]}"
       lines << "serial" if doc["serial"]
+      lines << "numbered_databases #{doc["numbered_databases"].join(" ")}" unless doc["numbered_databases"].to_a.empty?
       lines << "env #{doc["env"].join(" ")}" unless doc["env"].to_a.empty?
       lines << "env_unset #{doc["env_unset"].join(" ")}" unless doc["env_unset"].to_a.empty?
       doc.fetch("bundle", {}).each { |side, bundle| lines << "bundle #{side} #{bundle}" unless bundle == "none" }

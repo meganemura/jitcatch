@@ -5,6 +5,7 @@ require "open3"
 require "pathname"
 require "rbconfig"
 require "tmpdir"
+require "uri"
 
 module JitCatch
   # Runs each candidate file on base and head worktrees and classifies it.
@@ -57,14 +58,15 @@ module JitCatch
     # record calls that make it run that callback.
     Known = Data.define(:names, :constants, :unsaved)
 
-    def self.run(repo, base_ref, head_ref, tests_dir, reruns: 2, timeout: nil, env: [], workers: 1, serial: false, finished_in_time: nil)
-      new(repo, base_ref, head_ref, tests_dir, reruns: reruns, timeout: timeout, env: env, workers: workers, serial: serial, finished_in_time: finished_in_time).run
+    def self.run(repo, base_ref, head_ref, tests_dir, reruns: 2, timeout: nil, env: [], workers: 1, serial: false, number_database_url: false, finished_in_time: nil)
+      new(repo, base_ref, head_ref, tests_dir, reruns: reruns, timeout: timeout, env: env, workers: workers, serial: serial,
+        number_database_url: number_database_url, finished_in_time: finished_in_time).run
     end
 
     # `finished_in_time` takes the thread that waits on a child and says
     # whether the child ended before the timeout. A test passes its own so
     # that which child times out does not depend on the machine's load.
-    def initialize(repo, base_ref, head_ref, tests_dir, reruns:, timeout:, env:, workers: 1, serial: false, finished_in_time: nil)
+    def initialize(repo, base_ref, head_ref, tests_dir, reruns:, timeout:, env:, workers: 1, serial: false, number_database_url: false, finished_in_time: nil)
       @git = repo.is_a?(GitRepo) ? repo : GitRepo.new(repo)
       @base_ref = base_ref
       @head_ref = head_ref
@@ -81,6 +83,30 @@ module JitCatch
 
       @serial = serial
       raise UsageError, "tests directory not found: #{tests_dir}" unless File.directory?(@tests_dir)
+
+      @number_database_url = number_database_url
+      check_database_url if number_database_url
+    end
+
+    def check_database_url
+      raise UsageError, "--number-database-url numbers the DATABASE_URL that --env passes, so pass --env DATABASE_URL" unless @env_names.include?("DATABASE_URL")
+      return if ENV["DATABASE_URL"] && numbered_database_url(ENV["DATABASE_URL"], "1")
+
+      raise UsageError, "--number-database-url needs DATABASE_URL to name a database, as postgresql://localhost/app_test does; it #{ENV["DATABASE_URL"] ? "names none" : "is not set"}"
+    end
+
+    # `postgresql://host/app_test_wt1?sslmode=disable` with number 2 is
+    # `postgresql://host/app_test_wt1_2?sslmode=disable`. Nil when the URL
+    # names no database.
+    def numbered_database_url(url, number)
+      uri = URI.parse(url)
+      name = uri.path.to_s.delete_prefix("/")
+      return nil if name.empty? || name.include?("/")
+
+      uri.path = "/#{name}_#{number}"
+      uri.to_s
+    rescue URI::InvalidURIError
+      nil
     end
 
     def run
@@ -135,10 +161,11 @@ module JitCatch
         "command" => "run",
         "base" => change["base"],
         "head" => change["head"],
-        "warnings" => change["warnings"] + require_warnings(files) + [*(shared_database_warning(shared) if shared)],
+        "warnings" => change["warnings"] + require_warnings(files) + [*(shared_database_warnings(shared) if shared)],
         "reruns" => @reruns,
         "timeout_s" => @timeout,
         "serial" => @serial,
+        "numbered_databases" => numbered_databases,
         "env" => @env_names,
         "env_unset" => @env_names.reject { |name| ENV.key?(name) },
         "rails_app" => rails_app,
@@ -401,6 +428,7 @@ module JitCatch
       env = (PASSED_ENV + @env_names).to_h { |key| [key, ENV[key]] }.compact
       env["BUNDLE_GEMFILE"] = File.join(worktree, "Gemfile") if gemfile?(worktree)
       env["TEST_ENV_NUMBER"] = @test_env_numbers.fetch(worktree)
+      env["DATABASE_URL"] = numbered_database_url(env["DATABASE_URL"], env["TEST_ENV_NUMBER"]) if @number_database_url
       env.merge(FIXED_ENV)
     end
 
@@ -437,12 +465,32 @@ module JitCatch
       nil
     end
 
-    # A DATABASE_URL that --env passes names the database over database.yml.
-    def shared_database_warning(name)
-      url = "pass no --env DATABASE_URL, which names it for every checkout, " if @env_names.include?("DATABASE_URL")
-      "base and head use one test database, #{name}, so jitcatch ran one process at a time. " \
-        "To run them at once, #{url}end the test database name in config/database.yml with <%= ENV[\"TEST_ENV_NUMBER\"] %> " \
-        "and create the numbered databases: for n in 1 2; do RAILS_ENV=test TEST_ENV_NUMBER=$n bin/rails db:create; done"
+    # The names to create, without the rest of the URL, which can hold a
+    # password.
+    def numbered_databases
+      return [] unless @number_database_url
+
+      @test_env_numbers.values.sort_by(&:to_i).map { |number| URI.parse(numbered_database_url(ENV["DATABASE_URL"], number)).path.delete_prefix("/") }
+    end
+
+    # One line says what happened, and one says how to run both sides at
+    # once. Rails reads a DATABASE_URL that names a database over the
+    # `database:` of database.yml, so with --env DATABASE_URL only the URL
+    # can split it. A past commit's database.yml cannot change, so for it the
+    # run one process at a time is the one to keep.
+    def shared_database_warnings(name)
+      numbers = @test_env_numbers.values.sort_by(&:to_i)
+      happened = "base and head use one test database, #{name}, so jitcatch ran one process at a time; that changes how long the run takes, not its results."
+      remedy = if @env_names.include?("DATABASE_URL")
+        "To run them at once, add --number-database-url: each checkout then adds its TEST_ENV_NUMBER to the database name in DATABASE_URL " \
+          "(#{numbers.map { |number| "#{name}_#{number}" }.join(", ")}), and you create those databases once. " \
+          "Numbering database: in config/database.yml does not split it, because a DATABASE_URL that names a database wins over database:."
+      else
+        "To run them at once, end the test database name in config/database.yml with <%= ENV[\"TEST_ENV_NUMBER\"] %> " \
+          "and create the numbered databases: for n in #{numbers.join(" ")}; do RAILS_ENV=test TEST_ENV_NUMBER=$n bin/rails db:create; done. " \
+          "This helps only when BASE and HEAD both have that line."
+      end
+      [happened, remedy]
     end
 
     # One check per side, so a side that cannot load its bundle or a

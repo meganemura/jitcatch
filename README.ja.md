@@ -389,6 +389,7 @@ jitcatch run --repo DIR BASE HEAD TESTS_DIR
 | `--reruns N` | `run` | base で通り head で落ちたあとの、head での追加実行回数。既定は 2。`0` でフレーク検査をしない。 |
 | `--timeout SEC` | `run` | テストファイルを止めるまでの秒数。head に `config/application.rb` があれば既定は 60 で、それ以外は 10。Rails アプリは新しいチェックアウトごとに起動して `db/schema.rb` を読み込むからである。最小は 1。 |
 | `--workers N` | `run` | 同時に実行するテストファイルの数。ワーカーごとに base と head の worktree を持つ。既定は 1。1 つのワーカーは Ruby プロセスを 2 つ同時に動かすので、ワーカーを増やして速くなるのは CPU が空いているときだけである。N によらずレポートは同じになる。 |
+| `--number-database-url` | `run` | `--env` で渡した `DATABASE_URL` のデータベース名に各チェックアウトの `TEST_ENV_NUMBER` を足し、base と head にそれぞれのデータベースを持たせる（Rails アプリの節を参照）。`--env DATABASE_URL` が要る。 |
 | `--serial` | `run` | Ruby プロセスを 1 つずつ動かす。ファイルの base 側を走らせてから head 側を走らせる。worktree の外の決まったパスに書く候補や、決まったポートで待ち受ける候補のためのものである。`--workers` に 1 より大きい値は渡せない。Rails アプリの base と head が 1 つのテスト用データベースを共有するときも、`run` は `warning:` を出してこのように動かす（Rails アプリの節を参照）。テキストのレポートは `serial` と出し、`--json` は `"serial": true` を記録する。 |
 | `--env NAME` | `run` | この環境変数を今の環境からテストのプロセスへ渡す。複数の名前は繰り返して渡す。実行結果には値ではなく名前を記録する。設定されていない名前は `env_unset` 行に出す。 |
 
@@ -740,13 +741,25 @@ head のデータベースが無いときは、その行は `discard:no_database
 `database.yml` がこの変数を使っていないことは、`run` が候補を動かす前に見つける。
 `run` は各側の `config/database.yml` を、その側の `TEST_ENV_NUMBER` と、`--env` で渡した `DATABASE_URL` があればそれも使って、Active Record と同じように読む。
 base と head がサーバー上の 1 つのデータベース、または絶対パスの 1 つの SQLite ファイルを指すとき、`--workers` の値にかかわらず、`--serial` と同じく一度に 1 つのプロセスだけを動かす。
-そのときテキストの報告は `serial` と次の行を出す。
+そのときテキストの報告は `serial` と次の 2 行を出す。
 
 ```text
-warning: base and head use one test database, lending_test, so jitcatch ran one process at a time. To run them at once, end the test database name in config/database.yml with <%= ENV["TEST_ENV_NUMBER"] %> and create the numbered databases: for n in 1 2; do RAILS_ENV=test TEST_ENV_NUMBER=$n bin/rails db:create; done
+warning: base and head use one test database, lending_test, so jitcatch ran one process at a time; that changes how long the run takes, not its results.
+warning: To run them at once, end the test database name in config/database.yml with <%= ENV["TEST_ENV_NUMBER"] %> and create the numbered databases: for n in 1 2; do RAILS_ENV=test TEST_ENV_NUMBER=$n bin/rails db:create; done. This helps only when BASE and HEAD both have that line.
 ```
 
-`--env DATABASE_URL` を渡したときは、URL がすべてのチェックアウトのデータベースを決めるので、この行はまず `DATABASE_URL` を渡さないように言う。
+過去のコミットの `database.yml` は変えられないので、そのコミットどうしでは 1 つずつ動かす実行のままでよい。
+`--env DATABASE_URL` を渡したときは、2 行目は代わりに `--number-database-url` を挙げる。
+Rails はデータベース名を含む `DATABASE_URL` を `database.yml` の `database:` より優先するので、`database:` に番号を付けても分かれないからである。
+
+`--number-database-url` は、ワークツリーごとに自分の `DATABASE_URL` を渡すアプリに合う。
+たとえば git が無視する `.env.test.local` から渡していて、チェックアウトにはそのファイルがない場合である。
+ワークツリーの URL を `--env DATABASE_URL` で渡し、このフラグを付ける。
+すると各チェックアウトは URL のデータベース名に自分の `TEST_ENV_NUMBER` を足すので、`postgresql://localhost/app_test_wt1` は base では `app_test_wt1_1`、head では `app_test_wt1_2` になり、ほかのワークツリーのものとも分かれ、どのコミットの `database.yml` も変わらない。
+報告は URL の残りを除いた名前を `numbered_databases app_test_wt1_1 app_test_wt1_2` と出す（`--json` では `numbered_databases`）。
+これらは同じサーバーに一度だけ作る。
+たとえば `for n in 1 2; do DATABASE_URL=postgresql://localhost/app_test_wt1_$n RAILS_ENV=test bin/rails db:create; done` とする。
+このフラグを付けて `--env DATABASE_URL` を渡さないとき、または URL のパスがデータベースを指さないとき、`run` は 1 で終わる。
 `Rails.application` を呼ぶもののように、起動したアプリの中でしか読めない `database.yml` からは答えが出ないので、実行は本来のプロセス数のまま進む。
 PostgreSQL 16 を使うサンプルアプリで `db/schema.rb` も変える変更では、6 つのファイルが、ロードアベレージ 11 から 18 では 1 つずつで 40 秒から 50 秒、番号付きのデータベースで 18 秒、ロードアベレージ 2 ではそれぞれ 32 秒と 9 秒かかった。
 1 つのデータベースを共有したまま `--workers 3` で動かすと、2 回のうち 1 回、変更が原因でない `loan_spec.rb#load` の行が報告された。
