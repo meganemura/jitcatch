@@ -57,4 +57,28 @@ class TestEdgesProperty < Minitest::Test
       assert_equal expected.sort, edges.map { |edge| edge["to"] }.sort, caller_src
     end
   end
+
+  # A request reaches an endpoint whatever fills its params, whatever mount
+  # point comes before it, and when the test computes any one segment or
+  # its whole mount point. Another verb, or one literal segment changed,
+  # reaches it no more.
+  def test_a_request_reaches_an_endpoint_however_the_test_fills_its_path
+    Hegel.test do |tc|
+      segments = tc.draw(arrays(one_of(from_regex("\A[a-z]{1,4}\z"), from_regex("\A:[a-z]{1,3}\z")), min_size: 1, max_size: 5))
+      endpoint = "POST /#{segments.join("/")}"
+      filled = segments.map { |part| part.start_with?(":") ? tc.draw(sampled_from(["7", "abc-1", "*"])) : part }
+      mount = tc.draw(arrays(from_regex("\A[a-z0-9]{1,3}\z"), max_size: 2))
+      assert JitCatch::SourceIndex.endpoint_call?("POST /#{[*mount, *filled].join("/")}", endpoint)
+      computed = tc.draw(integers(min_value: 0, max_value: filled.size - 1))
+      assert JitCatch::SourceIndex.endpoint_call?("POST /#{[*mount, *filled].tap { |parts| parts[mount.size + computed] = "*" }.join("/")}", endpoint)
+      kept = tc.draw(integers(min_value: 1, max_value: filled.size))
+      assert JitCatch::SourceIndex.endpoint_call?("POST */#{filled.last(kept).join("/")}", endpoint)
+      refute JitCatch::SourceIndex.endpoint_call?("GET /#{[*mount, *filled].join("/")}", endpoint)
+      literal = segments.each_index.reject { |index| segments[index].start_with?(":") }
+      unless literal.empty?
+        index = tc.draw(sampled_from(literal))
+        assert_equal false, JitCatch::SourceIndex.endpoint_call?("POST /#{filled.dup.tap { |parts| parts[index] = "#{parts[index]}x" }.join("/")}", endpoint)
+      end
+    end
+  end
 end
