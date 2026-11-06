@@ -160,7 +160,8 @@ module JitCatch
         shared = shared_test_database(first)
         @serial ||= !shared.nil?
         routes_file = File.join(first.head, "config", "routes.rb")
-        routes = Routes.parse(File.file?(routes_file) ? read_text(routes_file) : nil)
+        inflections_file = File.join(first.head, "config", "initializers", "inflections.rb")
+        routes = Routes.parse(File.file?(routes_file) ? read_text(routes_file) : nil, Inflections.read(File.file?(inflections_file) ? read_text(inflections_file) : nil))
         helper_warnings = File.file?(routes_file) ? route_helper_warnings(files, routes) : []
         known = Known.new(names: mention_names(change), constants: changes.head_constants, unsaved: unsaved_mentions(change), routes: routes)
         rows = classify_files(files, shared ? [first] : pairs, normalizer, known)

@@ -51,6 +51,45 @@ class TestRoutes < Minitest::Test
     end
   end
 
+  # Each action is the one `bin/rails routes` printed for these files on
+  # Rails 8.1.4.1.
+  def test_a_route_takes_its_names_from_the_inflections_and_the_options_rails_reads
+    routes = JitCatch::Routes.parse(<<~RUBY, JitCatch::Inflections.read(%(ActiveSupport::Inflector.inflections(:en) do |inflect|\n  inflect.acronym "API"\n  inflect.irregular "cactus", "cacti"\nend\n)))
+      Rails.application.routes.draw do
+        resources :news, only: %i[index show]
+        resources :people, only: %i[index show]
+        resources :cacti, only: :show
+        resources :equipment, only: %i[index show]
+        resources :api_keys, only: :index
+        resources :shelves, controller: "racks", only: :show
+        resources :photos, as: "images", only: :show
+        resources :posts, module: "blog", only: :index
+        resource :child, only: :show
+        scope "/manage", module: "staff", as: "manage" do
+          resources :shifts, only: :create
+        end
+        scope controller: :pages do
+          get "about", action: :about
+          get "faq", action: :faq, as: :help
+        end
+        get "health", controller: :status, action: :check
+      end
+    RUBY
+
+    {
+      "GET news_index_path" => ["NewsController#index"], "GET news_path" => ["NewsController#show"],
+      "GET people_path" => ["PeopleController#index"], "GET person_path" => ["PeopleController#show"],
+      "GET cactus_path" => ["CactiController#show"], "GET equipment_index_path" => ["EquipmentController#index"],
+      "GET equipment_path" => ["EquipmentController#show"], "GET api_keys_path" => ["APIKeysController#index"],
+      "GET shelf_path" => ["RacksController#show"], "GET image_path" => ["PhotosController#show"],
+      "GET posts_path" => ["Blog::PostsController#index"], "POST manage_shifts_path" => ["Staff::ShiftsController#create"],
+      "GET about_path" => ["PagesController#about"], "GET help_path" => ["PagesController#faq"], "GET /faq" => ["PagesController#faq"],
+      "GET health_path" => ["StatusController#check"], "GET /people/7" => ["PeopleController#show"], "GET child_path" => ["ChildrenController#show"]
+    }.each do |request, actions|
+      assert_equal actions, routes.actions(request), request
+    end
+  end
+
   # A helper the file does not draw, as one a `draw` file or a loop draws,
   # cannot be read, so the run says so instead of tying the row to nothing.
   def test_a_helper_the_routes_file_does_not_draw_is_unknown

@@ -7,13 +7,15 @@ module JitCatch
   # app, so a request a test sends to a path or a path helper names the
   # controller action that serves it. It reads `resources`, `resource`,
   # `namespace`, `scope`, `member`, `collection`, `root`, and a verb with
-  # `to:` or `=>`. A route that a `draw` file, a loop, a concern, or the
-  # app's inflections decide is not read, so its helper stays unknown.
+  # `to:`, `=>`, or `controller:` and `action:`, and names helpers and
+  # controllers with the app's inflections. A route that a `draw` file, a
+  # loop, or a concern draws is not read, so its helper stays unknown.
   class Routes
     Route = Data.define(:verb, :path, :helper, :action)
     # `resource` is the resource whose block the statements are in: the
-    # path and helper of one member, and its controller.
-    Scope = Data.define(:path, :helper, :modules, :resource)
+    # path and helper of one member, and its controller. `controller` is
+    # the one `scope controller:` names.
+    Scope = Data.define(:path, :helper, :modules, :resource, :controller)
     Resource = Data.define(:member_path, :collection_path, :member_helper, :collection_helper, :controller)
 
     VERBS = %i[get post put patch delete].freeze
@@ -32,14 +34,15 @@ module JitCatch
     # Blocks whose routes keep the scope around them.
     PASS_THROUGH = %i[constraints defaults].freeze
 
-    def self.parse(source)
-      routes = new
+    def self.parse(source, inflections = Inflections.rails)
+      routes = new(inflections)
       result = source ? Prism.parse(source) : nil
-      routes.read(result.value, Scope.new(path: "", helper: "", modules: [], resource: nil)) if result&.success?
+      routes.read(result.value, Scope.new(path: "", helper: "", modules: [], resource: nil, controller: nil)) if result&.success?
       routes
     end
 
-    def initialize
+    def initialize(inflections)
+      @inflections = inflections
       @routes = []
     end
 
@@ -93,11 +96,12 @@ module JitCatch
           name = symbol_names(args).first
           next unless name && stmt.block
 
-          read(stmt.block.body, scope.with(path: "#{scope.path}/#{name}", helper: "#{scope.helper}#{name}_", modules: [*scope.modules, name], resource: nil))
+          read(stmt.block.body, scope.with(path: "#{scope.path}/#{name}", helper: "#{scope.helper}#{name}_", modules: [*scope.modules, name], resource: nil, controller: nil))
         when :scope
           path = string_of(args.first) || string_of(options["path"])
-          modules = (module_name = string_of(options["module"])) ? [*scope.modules, module_name] : scope.modules
-          read(stmt.block&.body, scope.with(path: path ? "#{scope.path}/#{path.delete_prefix("/")}" : scope.path, modules: modules))
+          as = string_of(options["as"])
+          read(stmt.block&.body, scope.with(path: path ? "#{scope.path}/#{path.delete_prefix("/")}" : scope.path, modules: modules_of(scope, options),
+            helper: as ? "#{scope.helper}#{as}_" : scope.helper, controller: string_of(options["controller"]) || scope.controller))
         when :member, :collection
           resource = scope.resource
           next unless resource && stmt.block
@@ -105,7 +109,7 @@ module JitCatch
           member = stmt.name == :member
           read_actions(stmt.block.body, scope, member ? resource.member_path : resource.collection_path, member ? resource.member_helper : resource.collection_helper, resource.controller)
         when :root
-          target = string_of(args.first) || string_of(options["to"])
+          target = string_of(args.first) || target_of(options, scope, nil)
           add("GET", scope.path.empty? ? "/" : scope.path, "#{scope.helper}root", target, scope)
         when *VERBS
           read_verb(stmt.name, args, options, scope)
@@ -117,17 +121,21 @@ module JitCatch
 
     private
 
+    # Rails names the helpers after `as:` when it is given, and adds
+    # `_index` to the collection's when the name has one form for both.
     def read_resource(name, plural, options, block, scope)
       only = symbol_list(options["only"])
       except = symbol_list(options["except"]) || []
       segment = string_of(options["path"]) || name
-      singular = plural ? Routes.singular(name) : name
-      controller = string_of(options["controller"]) || (plural ? name : "#{name}s")
+      named = string_of(options["as"]) || name
+      singular = plural ? @inflections.singularize(named) : named
+      controller = string_of(options["controller"]) || (plural ? name : @inflections.pluralize(name))
+      scope = scope.with(modules: modules_of(scope, options))
       collection_path = "#{scope.path}/#{segment}"
       member_path = plural ? "#{collection_path}/:id" : collection_path
-      collection_helper = "#{scope.helper}#{name}"
+      collection_helper = "#{scope.helper}#{plural && singular == named ? "#{named}_index" : named}"
       member_helper = "#{scope.helper}#{singular}"
-      action_of = ->(action) { Routes.action(scope.modules, controller, action) }
+      action_of = ->(action) { action(scope.modules, controller, action) }
       (plural ? PLURAL_ACTIONS : SINGULAR_ACTIONS).each do |action, verb, suffix, helper_kind|
         next if (only && !only.include?(action.to_s)) || except.include?(action.to_s)
 
@@ -158,7 +166,7 @@ module JitCatch
     end
 
     def add_action(verb, path, helper, controller, action, scope)
-      @routes << Route.new(verb: verb.to_s.upcase, path: path, helper: helper, action: Routes.action(scope.modules, controller, action))
+      @routes << Route.new(verb: verb.to_s.upcase, path: path, helper: helper, action: action(scope.modules, controller, action))
     end
 
     def read_verb(verb, args, options, scope)
@@ -179,47 +187,51 @@ module JitCatch
         return add_action(verb, "#{scope.path}/#{action}", "#{scope.helper}#{action}", resource.controller, action, scope)
       end
 
-      path, target = path_and_target(args, options)
+      path, target = path_and_target(args, options, scope)
       return unless path && target
 
       helper = string_of(options["as"]) || (path.match?(%r{\A[\w/]+\z}) ? path.delete_prefix("/").tr("/", "_") : nil)
       add(verb.to_s.upcase, "#{scope.path}/#{path.delete_prefix("/")}", helper && "#{scope.helper}#{helper}", target, scope)
     end
 
-    # `get "about", to: "pages#about"` and `get "about" => "pages#about"`.
-    def path_and_target(args, options)
+    # `get "about", to: "pages#about"`, `get "about" => "pages#about"`, and
+    # `get "about", controller: :pages, action: :about`, whose controller
+    # can come from `scope controller:` and whose action defaults to the
+    # path.
+    def path_and_target(args, options, scope)
       first = args.first
       if first.is_a?(Prism::KeywordHashNode)
         pair = first.elements.grep(Prism::AssocNode).find { |assoc| assoc.key.is_a?(Prism::StringNode) }
         return [pair.key.unescaped, string_of(pair.value)] if pair
       end
-      [string_of(first), string_of(options["to"])]
+      path = string_of(first)
+      [path, target_of(options, scope, path)]
+    end
+
+    def target_of(options, scope, path)
+      to = string_of(options["to"])
+      return to if to
+
+      controller = string_of(options["controller"]) || scope.controller
+      action = string_of(options["action"]) || (path if path&.match?(/\A\w+\z/))
+      "#{controller}##{action}" if controller && action
+    end
+
+    def modules_of(scope, options)
+      (module_name = string_of(options["module"])) ? [*scope.modules, module_name] : scope.modules
     end
 
     def add(verb, path, helper, target, scope)
       controller, action = target.to_s.split("#", 2)
       return unless controller && action
 
-      @routes << Route.new(verb: verb, path: path, helper: helper, action: Routes.action(scope.modules, controller, action))
+      @routes << Route.new(verb: verb, path: path, helper: helper, action: action(scope.modules, controller, action))
     end
 
-    def self.action(modules, controller, action)
+    # Rails camelizes `admin/api_keys` with the app's acronyms.
+    def action(modules, controller, action)
       names = [*modules, *controller.split("/")]
-      "#{names[0...-1].map { |name| camel(name) }.push("#{camel(names.last)}Controller").join("::")}##{action}"
-    end
-
-    def self.camel(name)
-      name.split("_").map(&:capitalize).join
-    end
-
-    # The English plurals a resource name takes most often; an app's own
-    # inflections are not read.
-    def self.singular(name)
-      case name
-      when /ies\z/ then name.sub(/ies\z/, "y")
-      when /(ss|us|x|ch|sh)es\z/ then name.sub(/es\z/, "")
-      else name.delete_suffix("s")
-      end
+      "#{names[0...-1].map { |name| @inflections.camelize(name) }.push("#{@inflections.camelize(names.last)}Controller").join("::")}##{action}"
     end
 
     def statements(node)
