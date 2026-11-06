@@ -132,7 +132,7 @@ test:
   database: app_test<%= ENV["TEST_ENV_NUMBER"] %>
 ```
 
-Create those databases once, two for each worker you will pass, before the first run. When the test helper calls `ActiveRecord::Migration.maintain_test_schema!`, Rails loads each revision's schema into them when it boots. Without that call, run `db:prepare` in place of `db:create`, which also loads the schema; a database that `db:create` alone made has no tables:
+Create those databases once, two for each worker you will pass, before the first run. When the test helper calls `ActiveRecord::Migration.maintain_test_schema!`, Rails loads each revision's schema into them when it boots. Without that call, a database that `db:create` alone made has no tables, so also pass `run --setup 'bin/rails db:create db:schema:load'`, which loads each side's own schema:
 
 ```sh
 for n in 1 2; do RAILS_ENV=test TEST_ENV_NUMBER=$n bin/rails db:create; done

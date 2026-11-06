@@ -790,8 +790,8 @@ test:
 
 最初の実行の前に、ワーカー 1 つにつき 2 つのデータベースを一度だけ作る。
 `spec/rails_helper.rb`（または `test/test_helper.rb`）が `ActiveRecord::Migration.maintain_test_schema!` を呼ぶなら、スキーマは Rails が起動するときにそれぞれのリビジョンのものを読み込む。
-呼ばないなら、`db:create` の代わりに、スキーマも読み込む `db:prepare` を走らせる。
-`db:create` だけで作ったデータベースにはテーブルが無く、どの行もテーブルを見つけられない。
+呼ばないなら、`db:create` だけで作ったデータベースにはテーブルが無く、どの行もテーブルを見つけられない。
+そこで `run --setup 'bin/rails db:create db:schema:load'` も渡し、それぞれの側に自分のスキーマを読み込ませる（後述）。
 
 ```sh
 for n in 1 2; do RAILS_ENV=test TEST_ENV_NUMBER=$n bin/rails db:create; done
@@ -843,7 +843,7 @@ Rails はデータベース名を含む `DATABASE_URL` を `database.yml` の `d
 報告は URL の残りを除いた名前を `numbered_databases app_test_wt1_1 app_test_wt1_2` と出す（`--json` では `numbered_databases`）。
 これらは同じサーバーに一度だけ作る。
 たとえば `for n in 1 2; do DATABASE_URL=postgresql://localhost/app_test_wt1_$n RAILS_ENV=test bin/rails db:create; done` とする。
-テストヘルパーが `ActiveRecord::Migration.maintain_test_schema!` を呼ばないなら、`db:create` の代わりに `db:prepare` を使う。
+テストヘルパーが `ActiveRecord::Migration.maintain_test_schema!` を呼ばないなら、`--setup 'bin/rails db:create db:schema:load'` も渡し、それぞれの側に自分のスキーマを読み込ませる。
 このフラグを付けて `--env DATABASE_URL` を渡さないとき、または URL のパスがサーバー上のデータベースを指さないとき、`run` は何を変えるかを言って 1 で終わる。
 SQLite の URL なら、フラグの代わりに相対パスにするよう言う。
 `Rails.application` を呼ぶもののように、起動したアプリの中でしか読めない `database.yml` からは答えが出ないので、実行は本来のプロセス数のまま進む。
