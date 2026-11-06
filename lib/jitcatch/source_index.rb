@@ -28,6 +28,9 @@ module JitCatch
     PATH_BLOCKS = %i[resource resources namespace group segment route_param].freeze
     # `desc` and `params` describe the endpoint that follows them.
     ENDPOINT_DESCRIPTIONS = %i[desc params].freeze
+    # A request path segment the test computes, as `#{thing.id}`.
+    COMPUTED_SEGMENT = "*"
+    ROUTE_HELPER = /\A\w+_(?:path|url)\z/
     # A class is an API when its superclass is Grape's, or an app's own base
     # class named like one (`BaseAPI`, `Api::Base` is not).
     API_SUPERCLASS = /(?:\A|::)(?:Grape::API(?:::Instance)?|\w*(?:API|Api))\z/
@@ -213,6 +216,7 @@ module JitCatch
         return self
       end
 
+      @string_constants = string_constants(result.value)
       scan_body(result.value, "", :public, false)
       @spec_helpers = spec_helper_names(result.value)
       walk(result.value, "", false, nil)
@@ -284,20 +288,43 @@ module JitCatch
     # an endpoint (`POST /things/:id/refresh`): the same verb, and the
     # request's path ends in the endpoint's segments, a `:param` matching
     # any one. Leading segments are a mount point the API class does not name.
+    # A `*` segment is a part the test computes, which matches any one; a
+    # path that starts with one computes its mount point, so it can be
+    # shorter than the endpoint's. An endpoint whose path the source
+    # computes matches no request.
     def self.endpoint_call?(written, endpoint)
       verb, path = written.split(" ", 2)
       endpoint_verb, endpoint_path = endpoint.split(" ", 2)
       return false unless verb == endpoint_verb && path && endpoint_path
+      return false if computed_path?(endpoint)
 
       sent = path.split("/").reject(&:empty?)
+      open_mount = sent.first == COMPUTED_SEGMENT
+      sent = sent.drop(1) if open_mount
       wanted = endpoint_path.split("/").reject(&:empty?)
-      return false if sent.size < wanted.size
+      return false if sent.size < wanted.size && !open_mount
 
-      sent.last(wanted.size).zip(wanted).all? { |part, want| want.start_with?(":") || part == want }
+      size = [sent.size, wanted.size].min
+      sent.last(size).zip(wanted.last(size)).all? { |part, want| part == COMPUTED_SEGMENT || want.start_with?(":") || part == want }
     end
 
     def self.endpoint?(name)
-      name.match?(%r{\A[A-Z]+ /})
+      name.match?(%r{\A[A-Z]+ [/*]})
+    end
+
+    # A request sent to a path helper, as `post things_path` is.
+    def self.route_helper_request?(name)
+      name.match?(/\A[A-Z]+ \w+_path\z/)
+    end
+
+    def self.request?(name)
+      endpoint?(name) || route_helper_request?(name)
+    end
+
+    # An endpoint whose path holds a part the source computes, written as
+    # that part's source in braces.
+    def self.computed_path?(name)
+      name.match?(/\A[A-Z]+ \S*\{/)
     end
 
     def self.split_qualified(qname)
@@ -689,8 +716,9 @@ module JitCatch
       call ? [path_segment(call.arguments&.arguments&.first)].compact : []
     end
 
-    def record_endpoints(body, qualifier, path)
-      described = nil
+    # `described` is the line of a `desc` or `params` before the block that
+    # holds these statements, which describes the first endpoint in it.
+    def record_endpoints(body, qualifier, path, described = nil)
       statements(body).each do |stmt|
         call = stmt if stmt.is_a?(Prism::CallNode) && stmt.receiver.nil?
         if call && ENDPOINT_DESCRIPTIONS.include?(call.name)
@@ -700,12 +728,14 @@ module JitCatch
         block = call&.block.is_a?(Prism::BlockNode)
         segment = path_segment(call.arguments&.arguments&.first) if block
         if block && PATH_BLOCKS.include?(call.name)
-          record_endpoints(call.block, qualifier, [*path, *(call.name == :route_param && segment ? ":#{segment}" : segment)])
+          described = record_endpoints(call.block, qualifier, [*path, *(call.name == :route_param && segment ? ":#{segment}" : segment)], described)
+          next
         elsif block && ENDPOINT_VERBS.include?(call.name)
           record_endpoint(call, qualifier, [*path, *segment], described || call.location.start_line)
         end
         described = nil
       end
+      described
     end
 
     def record_endpoint(stmt, qualifier, path, start_line)
@@ -719,22 +749,75 @@ module JitCatch
     end
 
     # A path argument's segments with no slash at either end, or nil for
-    # none. A path the source computes is not followed.
+    # none. A part the source computes is kept as its source in braces, so
+    # the endpoint's name says that its path is not known.
     def path_segment(node)
-      text = node.unescaped if node.is_a?(Prism::StringNode) || node.is_a?(Prism::SymbolNode)
-      trimmed = text.to_s.gsub(%r{\A/+|/+\z}, "")
+      return nil if node.nil? || node.is_a?(Prism::KeywordHashNode)
+
+      text = path_parts(node).map { |part| part.is_a?(String) ? part : "{#{part.location.slice}}" }.join
+      trimmed = text.gsub(%r{\A/+|/+\z}, "")
       trimmed.empty? ? nil : trimmed
     end
 
-    # A request a test sends, as `post "/things/1/refresh"`, by verb and
-    # path, with no query string.
+    # The parts of a path the source writes: the text of each literal part,
+    # and the node of each part it computes. A constant the file assigns a
+    # string or a symbol is literal.
+    def path_parts(node)
+      case node
+      when Prism::StringNode, Prism::SymbolNode
+        [node.unescaped]
+      when Prism::InterpolatedStringNode, Prism::InterpolatedSymbolNode
+        node.parts.flat_map do |part|
+          inner = part.statements&.body if part.is_a?(Prism::EmbeddedStatementsNode)
+          if part.is_a?(Prism::StringNode) then [part.unescaped]
+          elsif inner&.size == 1 then path_parts(inner.first)
+          else [part]
+          end
+        end
+      when Prism::ConstantReadNode, Prism::ConstantPathNode
+        value = @string_constants[name_of(node).to_s]
+        value ? [value] : [node]
+      else
+        [node]
+      end
+    end
+
+    # The string and symbol constants the file assigns, by name. A name
+    # assigned two values is left out, since the scope that reads it is not
+    # followed.
+    def string_constants(root)
+      values = Hash.new { |hash, key| hash[key] = [] }
+      nodes = [root]
+      until nodes.empty?
+        node = nodes.pop
+        if node.is_a?(Prism::ConstantWriteNode) && (node.value.is_a?(Prism::StringNode) || node.value.is_a?(Prism::SymbolNode))
+          values[node.name.to_s] |= [node.value.unescaped]
+        end
+        nodes.concat(node.compact_child_nodes)
+      end
+      values.filter_map { |name, found| [name, found.first] if found.one? }.to_h
+    end
+
+    # A request a test sends, as `post "/things/#{thing.id}/refresh"`, by
+    # verb and path, with no query string and a `*` for each segment the
+    # test computes; or by verb and path helper, as `post things_path` is.
     def request_name(node)
       return nil unless node.receiver.nil? && ENDPOINT_VERBS.include?(node.name)
 
       path = node.arguments&.arguments&.first
-      return nil unless path.is_a?(Prism::StringNode) && path.unescaped.start_with?("/")
+      verb = node.name.upcase
+      if path.is_a?(Prism::CallNode) && path.receiver.nil? && path.name.to_s.match?(ROUTE_HELPER)
+        return "#{verb} #{path.name.to_s.sub(/_url\z/, "_path")}"
+      end
+      return nil unless path.is_a?(Prism::StringNode) || path.is_a?(Prism::InterpolatedStringNode)
 
-      "#{node.name.upcase} #{path.unescaped.sub(/[?#].*/m, "")}"
+      text = path_parts(path).map { |part| part.is_a?(String) ? part : COMPUTED_SEGMENT }.join.sub(/[?#].*/m, "")
+      return nil unless text.start_with?("/", COMPUTED_SEGMENT)
+
+      segments = text.split("/").map { |segment| segment.include?(COMPUTED_SEGMENT) ? COMPUTED_SEGMENT : segment }
+      return nil if segments.reject(&:empty?).all?(COMPUTED_SEGMENT)
+
+      "#{verb} #{segments.join("/")}"
     end
 
     # `delegate :name, to: :author, prefix: true` defines `author_name`, and

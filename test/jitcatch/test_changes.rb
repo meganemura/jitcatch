@@ -517,6 +517,41 @@ class TestChanges < Minitest::Test
     end
   end
 
+  # A request spec that builds its path from a mount point it computes
+  # still names the endpoint by the rest of the path. An endpoint whose path
+  # the source computes cannot be matched to a request, and the warning
+  # says so instead of leaving it with no test.
+  def test_a_grape_endpoint_path_built_at_run_time_is_named_in_a_warning
+    api = lambda do |body|
+      <<~RUBY
+        class Books < Grape::API
+          VERSION = "v1"
+          namespace VERSION do
+            post "books/:id/shelve" do
+              #{body}
+            end
+            get "\#{Settings.legacy}/list" do
+              #{body}
+            end
+          end
+        end
+      RUBY
+    end
+    with_repo do |repo|
+      repo.write("app/api/books.rb", api.("1"))
+      repo.write("spec/requests/books_spec.rb", %(RSpec.describe "Books" do\n  it "shelves" do\n    post "\#{api_root}/books/\#{book.id}/shelve"\n  end\nend\n))
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.write("app/api/books.rb", api.("2"))
+      repo.commit("Answer 2.", date: "2026-02-12T00:00:00Z")
+
+      change = JitCatch::Changes.between(repo.dir, "HEAD~1", "HEAD")
+      assert_equal [["Books#GET /v1/{Settings.legacy}/list", []], ["Books#POST /v1/books/:id/shelve", [{ "file" => "spec/requests/books_spec.rb", "via" => "grep" }]]],
+        change["methods"].map { |method| method.values_at("name", "existing_tests") }
+      assert_equal ["Books#GET /v1/{Settings.legacy}/list (app/api/books.rb:7) builds its path from code jitcatch does not run, so no request a test sends is tied to it."],
+        change["warnings"]
+    end
+  end
+
   def test_dependencies_come_from_the_gemfile_lock_diff
     lock = lambda do |specs|
       "GEM\n  remote: https://rubygems.org/\n  specs:\n#{specs.map { |spec| "    #{spec}\n      dep (>= 0)\n" }.join}\nPLATFORMS\n  ruby\n\nBUNDLED WITH\n   2.6.0\n"

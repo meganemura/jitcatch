@@ -760,6 +760,79 @@ class TestSourceIndexExamples < Minitest::Test
     assert JitCatch::SourceIndex.endpoint_call?("GET /api/things", "GET /api/things")
   end
 
+  # A path built from string literals and the string constants the file
+  # assigns is read as the router builds it. A part the source computes
+  # any other way stays in the name as its source, in braces, so no request
+  # matches it. The `desc` and `params` before a `route_param` describe the
+  # first endpoint inside it.
+  def test_a_grape_path_built_from_constants_is_read_and_a_computed_one_is_named_as_computed
+    source = <<~RUBY
+      class Books < Grape::API
+        prefix :api
+        VERSION = "v1"
+        SHELVE = :shelve
+        namespace VERSION do
+          resource :books do
+            desc "Shelve one book"
+            params do
+              optional :note, type: String
+            end
+            route_param :id do
+              post "\#{SHELVE}/now" do
+                Shelver.call(params[:id])
+              end
+              get "count" do
+                Book.count
+              end
+            end
+            get "\#{Settings.legacy}/list" do
+              Book.all
+            end
+          end
+        end
+      end
+    RUBY
+    index = JitCatch::SourceIndex.parse(source, file: "app/api/books.rb")
+
+    assert_equal [
+      ["Books#POST /api/v1/books/:id/shelve/now", 7, 14],
+      ["Books#GET /api/v1/books/:id/count", 15, 17],
+      ["Books#GET /api/v1/books/{Settings.legacy}/list", 19, 21]
+    ], index.methods.map { |method| [method.qualified, method.start_line, method.end_line] }
+    refute JitCatch::SourceIndex.endpoint_call?("GET /api/v1/books/legacy/list", "GET /api/v1/books/{Settings.legacy}/list")
+    assert JitCatch::SourceIndex.computed_path?("GET /api/v1/books/{Settings.legacy}/list")
+    refute JitCatch::SourceIndex.computed_path?("GET /api/v1/books/:id/count")
+  end
+
+  # A request path a test interpolates keeps its literal parts and the
+  # string constants the file assigns; a part it computes any other way
+  # matches any one segment, or any mount point when the path starts with
+  # it. A path helper is named as the helper, `_url` read as `_path`.
+  def test_a_request_path_a_test_builds_names_the_endpoint_it_reaches
+    spec = <<~RUBY
+      API_ROOT = "/api/v1"
+      RSpec.describe "Books" do
+        it "shelves" do
+          post "\#{API_ROOT}/books/\#{book.id}/shelve/now"
+          get "\#{base_path}/books/\#{book.id}?full=\#{full}"
+          post "/books/\#{book.id}.json"
+          post books_path(format: :json)
+          patch book_url(book)
+        end
+      end
+    RUBY
+    index = JitCatch::SourceIndex.parse(spec, file: "spec/requests/books_spec.rb")
+
+    references = index.example_references(3)
+    assert_equal ["GET */books/*", "PATCH book_path", "POST /api/v1/books/*/shelve/now", "POST /books/*", "POST books_path"],
+      references.select { |name| JitCatch::SourceIndex.request?(name) }.sort
+    assert JitCatch::SourceIndex.endpoint_call?("POST /api/v1/books/*/shelve/now", "POST /api/v1/books/:id/shelve/now")
+    assert JitCatch::SourceIndex.endpoint_call?("GET */books/*", "GET /api/v1/books/:id")
+    refute JitCatch::SourceIndex.endpoint_call?("GET */books/*", "GET /api/v1/authors/:id")
+    refute JitCatch::SourceIndex.endpoint_call?("GET */books/*", "GET /api/v1/books")
+    refute JitCatch::SourceIndex.endpoint_call?("POST /books/*", "POST /api/v1/books/:id"), "a mount point the request does not send"
+  end
+
   def test_an_enum_defines_a_predicate_a_bang_and_two_scopes_for_each_value
     source = <<~RUBY
       class Post < ApplicationRecord

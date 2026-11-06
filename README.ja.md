@@ -520,8 +520,13 @@ Grape のエンドポイントもメソッドになる。
 ブロックの中の呼び出しはエンドポイントからの呼び出しになるので、そこから呼ばれるメソッドの `reachable_from` にエンドポイントが出る。
 テストが送るリクエスト（`post "/api/things/7/refresh"` など）は、動詞が同じで、パスの末尾がエンドポイントの区切りと一致するエンドポイントを名指しする。
 `:param` は任意の一つの区切りに一致し、その前の区切りはマウント先として扱う。
+API クラスやテストが、そのファイルで代入した文字列の定数を埋め込むパス（`namespace VERSION`、`post "#{ACTION}/now"`、`post "#{API_ROOT}/things"`）は、その文字列として読む。
+テストでは、それ以外の埋め込みは任意の一つの区切りに一致する（`"/things/#{thing.id}/refresh"`）。
+パスがそれで始まるとき（`"#{api_root}/things"`）は、任意のマウント先に一致する。
+`route_param` などのパスのブロックの直前の `desc` と `params` は、その中の最初のエンドポイントに含める。
 そのテストは `tests:` と `entry_point_tests:` に並び、それを送る候補には `touches:changed_method` が付く。
-`things_path` のようにソースが計算するパスは読まない。
+API クラスがそれ以外の方法でパスを計算するエンドポイントは、その部分をソースのまま波かっこに入れて名付ける（`Books#GET /books/{Settings.legacy}/list`）。
+そのエンドポイントはどのリクエストにも一致せず、ファイルと行を示す `warning:` が出る。
 クラス本体の条件分岐の中にある `def` や読み出しメソッド（`attr_reader :x if cond`）も数える。
 分岐はすべてが順に走ったものとして読むので、分岐の中の引数のない `private` は条件分岐の後にも効く。
 Concern の `included do`、`prepended do`、`class_methods do` ブロックの中にあるものも数える。

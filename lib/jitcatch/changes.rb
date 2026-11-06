@@ -64,7 +64,7 @@ module JitCatch
         "base" => base,
         "head" => head,
         "existing_tests_via" => @coverage ? "coverage" : "grep",
-        "warnings" => warnings(base, head) + schema_warnings(head, files),
+        "warnings" => warnings(base, head) + schema_warnings(head, files) + computed_path_warnings(methods),
         "intent" => intent_lines(base, head),
         "files" => files,
         "dependencies" => dependencies(base, head),
@@ -93,6 +93,17 @@ module JitCatch
         "The two revisions share no history."
       end
       ["base is not an ancestor of head: the diff also undoes the #{commits} only base has. #{fix}"]
+    end
+
+    # A Grape path built from code the source does not settle has no
+    # verb and path a request could be matched to.
+    def computed_path_warnings(methods)
+      methods.filter_map do |method|
+        node = method["new"] || method["old"]
+        next unless node.kind == "endpoint" && SourceIndex.computed_path?(node.bare_name)
+
+        "#{node.qualified} (#{node.file}:#{node.start_line}) builds its path from code jitcatch does not run, so no request a test sends is tied to it."
+      end
     end
 
     # Rails keeps a schema in db/schema.rb or db/structure.sql, and a
@@ -489,12 +500,19 @@ module JitCatch
     end
 
     # `post "/v1/things/#{thing.id}/refresh"` for `POST /things/:id/refresh`:
-    # any segments before the endpoint's, a `:param` matching any one.
+    # any segments before the endpoint's, a `:param` matching any one. A
+    # path that starts with an interpolation, as `"#{api_root}/things/..."`,
+    # computes its mount point, so it may name only the endpoint's last
+    # segments, at least two of them.
     def request_pattern(bare)
       verb, path = bare.split(" ", 2)
       segment = %q{[^"'?/\s]+}
       parts = path.split("/").reject(&:empty?).map { |part| part.start_with?(":") ? segment : Regexp.escape(part) }
-      Regexp.new(%Q{\\b#{verb.downcase}[\\s(]+["'](?:/#{segment})*/#{parts.join("/")}/?["'?]})
+      suffixes = parts.size.downto([parts.size, 2].min).map { |count| parts.last(count).join("/") }
+      interpolation = '#\{[^}"\'\n]*\}'
+      full = "(?:/#{segment})*/#{parts.join("/")}"
+      computed_mount = "#{interpolation}(?:#{suffixes.map { |suffix| "/#{suffix}" }.join("|")})"
+      Regexp.new(%Q{\\b#{verb.downcase}[\\s(]+["'](?:#{full}|#{computed_mount})/?["'?]})
     end
 
     def grep_hits(test_sources, bare)
