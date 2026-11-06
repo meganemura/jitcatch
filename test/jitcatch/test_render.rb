@@ -386,6 +386,25 @@ constants: (none)
     assert_equal ["expected: 3"], JitCatch::Render.message_lines({ "message" => "expected: 3\nboom" })
   end
 
+  # The messages rspec-expectations 3.13 and rspec-mocks 3.13 print.
+  def test_an_rspec_be_equal_or_argument_failure_shows_the_got_line
+    assert_equal ["expected true", "got false"], JitCatch::Render.message_lines({ "message" => "expected true\n     got false" })
+    identity = "expected #<String:504> => \"100\"\n     got #<String:512> => \"120\"\n\nCompared using equal?, which compares object identity,\nbut expected and actual are not the same object."
+    assert_equal ["expected #<String:504> => \"100\"", "got #<String:512> => \"120\""], JitCatch::Render.message_lines({ "message" => identity })
+    arguments = "#<Klass (class)> received :call with unexpected arguments\n  expected: ({flag: true, id: \"x\"}) (options hash)\n       got: ({id: \"x\"}) (keyword arguments)\nDiff:\n@@ -1 +1 @@\n-[{flag: true, id: \"x\"}]\n+[{id: \"x\"}]"
+    assert_equal ["#<Klass (class)> received :call with unexpected arguments", "expected: ({flag: true, id: \"x\"}) (options hash)", "got: ({id: \"x\"}) (keyword arguments)"],
+      JitCatch::Render.message_lines({ "message" => arguments })
+    assert_equal ["expected true"], JitCatch::Render.message_lines({ "message" => "expected true\nboom" })
+    assert_equal ["received :call"], JitCatch::Render.message_lines({ "message" => "received :call\nexpected: (1)\nboom" })
+  end
+
+  def test_a_fail_on_base_row_shows_the_got_line_under_base
+    test = { "disposition" => "fail_on_base", "base" => { "status" => "fail", "error_class" => "E", "message" => "#<K (class)> received :call with unexpected arguments\n  expected: (1)\n       got: (2)" } }
+
+    assert_equal ["    base: fail E #<K (class)> received :call with unexpected arguments", "      expected: (1)", "      got: (2)"],
+      JitCatch::Render.base_failure_lines(test)
+  end
+
   def test_an_assert_raises_failure_shows_the_class_and_message_that_came
     message = "[KeyError] exception expected, not\nClass: <ArgumentError>\nMessage: <\"wrapped k\">"
 

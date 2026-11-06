@@ -413,6 +413,9 @@ jitcatch run --repo DIR BASE HEAD TESTS_DIR
 この印は、追加行が削除行を置き換えるときだけ出る。
 差分の別々の場所にある 2 行は、それぞれ 61 文字で切る。
 失敗した `assert_raises(X)` の行には、代わりに来たエラーを示す Minitest の `Class:` 行と `Message:` 行も出る。
+RSpec の `be` と `equal` の行には `expected` 行と `got` 行が出る。
+rspec-mocks の引数違いの失敗では、呼び出しの行と `expected:` 行と `got:` 行が出る。
+どちらも `assess:` の行にも `fail_on_base` の行の `base:` の下にも出る。
 別のエラーから上げられたエラーの行には、`cause: KeyError: key not found` のように元のエラーのクラスとメッセージが出る。
 RSpec は元のエラーを自分で出力する。
 Minitest は出力しないので、jitcatch は Minitest の候補の各プロセスに `-r` で `lib/jitcatch/minitest_report.rb` を読み込み、Minitest のエラーの文に元のエラーを足す。

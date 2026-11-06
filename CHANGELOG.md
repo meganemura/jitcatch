@@ -10,5 +10,6 @@ First release. jitcatch keeps the Ruby tests that pass on the parent of a change
 - `--json` on every command prints the same result for a program to read.
 - Rails apps: candidates can use the app's factories and test database. When base and head would share one test database on a database server, `run` runs one process at a time and says which line of `config/database.yml` to change.
 - A symlinked `.rb` file is not indexed, so it no longer shows up under `parse_errors`. git stores a symlink as the path it points at; the target file is indexed on its own.
+- A row shows the `got` line of a failed RSpec `be` or `equal`, and the `expected:` and `got:` arguments of an rspec-mocks failure on unexpected arguments, under `assess:` and under a `fail_on_base` row's `base:`.
 - An agent skill in `skills/jitcatch/`.
 - Ruby 3.3 or newer. No runtime dependency. On an older Ruby, `jitcatch` exits 1 and names the version it needs and the Ruby it ran on.

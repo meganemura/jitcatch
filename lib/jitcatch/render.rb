@@ -375,6 +375,12 @@ module JitCatch
         expected = lines[0].delete_prefix("expected: ")
         actual = lines[1].delete_prefix("got: ")
         [expected, actual].all? { |text| text.length <= LONG_LINE } ? lines.first(2) : changed_pair(expected, actual)
+      elsif lines[0]&.start_with?("expected ") && lines[1]&.start_with?("got ")
+        # RSpec's be and equal compare identity and print each side unlabeled.
+        lines.first(2)
+      elsif lines[1]&.start_with?("expected: ") && lines[2]&.start_with?("got: ")
+        # rspec-mocks names the call, then the arguments it wanted and got.
+        lines.first(3)
       elsif lines[0] == "--- expected" && lines[1] == "+++ actual"
         # Minitest prints a unified diff when either side spans lines or is
         # long; its header says nothing, so show the first removed and added line.
