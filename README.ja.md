@@ -813,6 +813,9 @@ head に `spec/rails_helper.rb`、`spec/spec_helper.rb`、`test/test_helper.rb` 
 報告は `setup CMD` を出し（`--json` では `setup` で、フラグが無ければ `null`）、スキーマの警告は `` `--setup` ran `CMD` in each checkout before the candidates. `` となる。
 コマンドが失敗するか `--timeout` を過ぎると、実行は終了コード 3 で止まる。
 標準出力は `jitcatch: --setup failed, so no test ran` で始まり、各側のコマンドと、その標準エラーの最後の行を示す。
+その行がデータベースに接続を拒まれたこと (`Connection refused`、`could not connect to server`、`Can't connect to MySQL server`) を示すときは、シェルが設定していて `--env` が渡さなかったデータベースの変数 (`DATABASE_URL` とその `*_DATABASE_URL` の形、`DB_*`、`PG*`、`MYSQL_*`) も各側で示す。
+たとえば `the database refused the connection, and jitcatch did not pass DB_PORT from your shell: add --env DB_PORT` となる (`--json` では `database_not_passed`)。
+すべてのファイルが同じ理由で読み込めなかった実行も、同じように示す。
 1 つのテスト用データベースを共有する 2 つの側は、それぞれのスキーマを持てないので、先にデータベースを分ける。
 
 Rails アプリで head が 500 を返した報告行には、`hint: head answered 500, and a Rails app writes the error behind it to log/test.log; run the row's rerun line and read that log` のヒントが付く。

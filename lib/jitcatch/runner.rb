@@ -37,6 +37,13 @@ module JitCatch
     # Rescuing in the child keeps Bundler's own message and drops its backtrace.
     BUNDLE_SETUP = 'begin; require "bundler/setup"; rescue Exception => e; $stderr.puts e.message; exit 1; end'
     SETUP_STDERR_LINES = 10
+    # A database server that refused the connection, as PostgreSQL and MySQL
+    # clients word it. The client then took its host and port from a default,
+    # often because the shell's setting for them was not passed.
+    DATABASE_REFUSED = /Connection refused|could not connect to server|Can't connect to (?:local )?(?:MySQL )?server/
+    # What an app's database.yml or its client library reads: libpq reads
+    # PG* itself, and Rails reads DATABASE_URL and its per-database forms.
+    DATABASE_ENV = /\A(?:(?:\w+_)?DATABASE_URL|DB_\w+|PG[A-Z]+|MYSQL_\w+)\z/
     SQLITE_RELATIVE = "relative path, as sqlite3:storage/test.sqlite3, so each checkout opens a file under its own root"
     # The test databases of a side, as Active Record reads config/database.yml
     # with that side's TEST_ENV_NUMBER and the variables --env passes, so a
@@ -579,12 +586,14 @@ module JitCatch
         )
         next if !timed_out && status&.success?
 
+        lines = Text.message_lines(normalizer.call(stderr))
         {
           "side" => side,
           "commit" => change[side],
           "command" => @setup,
-          "stderr" => timed_out ? ["timed out after #{@timeout}s"] : Text.message_lines(normalizer.call(stderr)).last(SETUP_STDERR_LINES),
-          "not_passed" => []
+          "stderr" => timed_out ? ["timed out after #{@timeout}s"] : lines.last(SETUP_STDERR_LINES),
+          "not_passed" => [],
+          "database_not_passed" => timed_out ? [] : database_not_passed(lines)
         }
       end.uniq { |failure| failure["side"] }
     end
@@ -607,7 +616,8 @@ module JitCatch
           "commit" => change[side],
           "command" => first["rerun"],
           "stderr" => lines.first(SETUP_STDERR_LINES),
-          "not_passed" => bundled ? unpassed_bundler_settings : []
+          "not_passed" => bundled ? unpassed_bundler_settings : [],
+          "database_not_passed" => database_not_passed(lines)
         }
       }
       setup_failed_doc(change, failed, stage: "load", rails_app: rails_app)
@@ -647,6 +657,12 @@ module JitCatch
     def network_library?(head, candidates)
       locked = @git.show(head, "Gemfile.lock").to_s.scan(/^    (\S+) \(/).flatten
       (locked & NETWORK_GEMS).any? || [@git.ruby_matches(head, NETWORK_USE_GREP), *candidates].any? { |text| text.match?(NETWORK_USE) }
+    end
+
+    def database_not_passed(lines)
+      return [] unless lines.any? { |line| line.match?(DATABASE_REFUSED) }
+
+      ENV.keys.grep(DATABASE_ENV).sort - @env_names
     end
 
     def unpassed_bundler_settings

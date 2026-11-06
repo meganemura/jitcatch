@@ -2192,6 +2192,17 @@ class TestRunner < Minitest::Test
       repo.commit("Add the Rails application file.", date: "2026-02-12T12:00:00Z")
       err = assert_raises(JitCatch::EnvironmentError) { JitCatch::Runner.run(repo.dir, "base", "HEAD", tests, reruns: 0) }
       assert_includes JitCatch::Render.setup_failed_text(err.doc), "is not in the checkouts jitcatch makes; pass its value with --env, such as RAILS_MASTER_KEY.\n"
+      assert_equal [[], []], err.doc["setup_failed"].map { |failure| failure["database_not_passed"] }
+
+      File.write(File.join(tests, "support.rb"), boot.sub("failed", "failed: Connection refused"))
+      saved = ENV["DB_PORT"]
+      begin
+        ENV["DB_PORT"] = "55801"
+        err = assert_raises(JitCatch::EnvironmentError) { JitCatch::Runner.run(repo.dir, "base", "HEAD", tests, reruns: 0) }
+      ensure
+        saved ? ENV["DB_PORT"] = saved : ENV.delete("DB_PORT")
+      end
+      assert_equal [%w[DB_PORT], %w[DB_PORT]], err.doc["setup_failed"].map { |failure| failure["database_not_passed"] }
 
       repo.write("lib/booted.rb", "\n")
       repo.commit("Boot.", date: "2026-02-13T00:00:00Z")
@@ -2411,6 +2422,36 @@ class TestRunner < Minitest::Test
       assert_includes text, "jitcatch: --setup failed, so no test ran\n"
       assert_includes text, "\nsetup base failed: echo broke >&2; exit 7\n  broke\n"
       assert_includes text, "Run that command in a checkout of that side, with its TEST_ENV_NUMBER and the variables --env passes, fix what it says, and run jitcatch again.\n"
+      assert_equal [[], []], err.doc["setup_failed"].map { |failure| failure["database_not_passed"] }, "a failure that is not a refused connection names no variable"
+    end
+  end
+
+  # A database client the shell points at a port of its own reaches the
+  # app's default port in a checkout, because the child gets only the names
+  # --env passes, and the refusal says nothing of the variable it lacked.
+  def test_a_setup_whose_database_refused_the_connection_names_the_database_variables_not_passed
+    with_repo do |repo|
+      repo.write("lib/calc.rb", "class Calc\nend\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("README.md", "head\n")
+      repo.commit("Touch readme.", date: "2026-02-12T00:00:00Z")
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, { "a_test.rb" => candidate_source("ATest", "test_a", "assert true") })
+      refused = %(echo 'ActiveRecord::ConnectionNotEstablished: connection to server at "127.0.0.1", port 54341 failed: Connection refused' >&2; exit 1)
+      parent = { "DB_PORT" => "55801", "PGHOST" => "127.0.0.1", "DATABASE_URL" => "postgres://localhost/x", "DB_ENGINE_NOTE" => nil }
+      saved = ENV.to_h.slice(*parent.keys)
+      begin
+        ENV.update(parent.compact)
+        err = assert_raises(JitCatch::EnvironmentError) { JitCatch::Runner.run(repo.dir, "base", "HEAD", tests, reruns: 0, setup: refused, env: %w[DATABASE_URL]) }
+      ensure
+        parent.each_key { |key| ENV.delete(key) }
+        ENV.update(saved)
+      end
+
+      assert_equal [%w[DB_PORT PGHOST], %w[DB_PORT PGHOST]], err.doc["setup_failed"].map { |failure| failure["database_not_passed"] }
+      assert_includes JitCatch::Render.setup_failed_text(err.doc),
+        "  the database refused the connection, and jitcatch did not pass DB_PORT PGHOST from your shell: add --env DB_PORT --env PGHOST\n"
     end
   end
 

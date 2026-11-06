@@ -107,6 +107,8 @@ module JitCatch
         failure["stderr"].each { |line| lines << "  #{line}" }
         names = failure["not_passed"]
         lines << "  not passed: #{names.join(" ")} (add #{env_flags(names)})" unless names.empty?
+        database = Array(failure["database_not_passed"])
+        lines << "  the database refused the connection, and jitcatch did not pass #{database.join(" ")} from your shell: add #{env_flags(database)}" unless database.empty?
       end
       lines << if command
         "Run that command in a checkout of that side, with its TEST_ENV_NUMBER and the variables --env passes, fix what it says, and run jitcatch again."
