@@ -322,6 +322,21 @@ class TestRender < Minitest::Test
       hint.("env" => %w[QUINT SERVICE_URL], "env_unset" => %w[QUINT SERVICE_URL], "env_not_passed" => %w[HTTPS_PROXY])
   end
 
+  # The rerun line runs in the reader's shell, so it names the variables the
+  # run passed, and no value: a DATABASE_URL can hold a password, and a
+  # report gets pasted where others read it.
+  def test_a_rerun_line_names_the_env_it_reads_from_the_shell_and_no_value
+    row = { "id" => "t01", "file" => "a_test.rb", "name" => "A#test_a", "classification" => "candidate", "rerun" => "ruby -Ilib -I. a_test.rb -n A#test_a",
+            "base" => { "status" => "pass" }, "head" => { "status" => "fail", "error_class" => "Minitest::Assertion", "message" => "Expected: 1" } }
+    rerun = ->(doc) { JitCatch::Render.assess_text(JitCatch::Assessor.apply({ "version" => "0.1.0", "base" => "b", "head" => "h", "tests" => [row] }.merge(doc))).lines.drop_while { |line| !line.include?("rerun:") } }
+
+    assert_equal ["    rerun: ruby -Ilib -I. a_test.rb -n A#test_a\n"], rerun.({})
+    assert_equal ["    rerun: ruby -Ilib -I. a_test.rb -n A#test_a\n", "    rerun env: reads DATABASE_URL from your shell, as jitcatch run did\n"],
+      rerun.("env" => %w[DATABASE_URL], "env_unset" => [])
+    assert_equal ["    rerun: ruby -Ilib -I. a_test.rb -n A#test_a\n", "    rerun env: reads DATABASE_URL QUINT from your shell, as jitcatch run did; QUINT was not set for the run\n"],
+      rerun.("env" => %w[DATABASE_URL QUINT], "env_unset" => %w[QUINT])
+  end
+
   # The first line of a run that tested nothing names only what happened,
   # so a gem with no database does not read as one that lacked it.
   def test_an_untested_run_names_only_the_causes_its_rows_show

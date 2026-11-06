@@ -310,6 +310,17 @@ module JitCatch
       names.one? ? "it" : "them"
     end
 
+    # The rerun line runs in the reader's shell, so it names the variables
+    # the run took from jitcatch's, and no value: a DATABASE_URL can hold a
+    # password, and a report is pasted where others read it.
+    def rerun_env_line(doc)
+      names = Array(doc["env"])
+      return nil if names.empty?
+
+      unset = Array(doc["env_unset"])
+      "    rerun env: reads #{names.join(" ")} from your shell, as jitcatch run did#{"; #{unset.join(" ")} #{unset.one? ? "was" : "were"} not set for the run" unless unset.empty?}"
+    end
+
     def counts_line(counts)
       "counts generated=#{counts["generated"]} no_signal=#{counts["no_signal"]} fail_on_base=#{counts["fail_on_base"]} candidates=#{counts["candidates"]} flaky=#{counts["flaky"]} discarded=#{counts["discarded"]} reported=#{counts["reported"]}"
     end
@@ -317,6 +328,7 @@ module JitCatch
     def assess_body(doc)
       rows = candidate_rows(doc)
       lines = ["assess:"]
+      env_line = rerun_env_line(doc)
       if rows.empty?
         lines << "  (none)"
         return lines
@@ -331,6 +343,7 @@ module JitCatch
         row["message_lines"].each { |line| lines << "    #{line}" }
         lines << "    cause: #{cause_line(row["cause"])}" if row["cause"]
         lines << "    rerun: #{row["rerun"]}" if row["rerun"]
+        lines << env_line if row["rerun"] && env_line
       end
       lines
     end

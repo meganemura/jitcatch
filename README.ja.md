@@ -698,7 +698,11 @@ Ruby 自身の prefix は `{ruby}/` と書く。
 `File.join(__dir__, "helper")` や式展開を含む文字列のように、ソースからパスが決まらないものは、`TESTS_DIR` がルートの直下にない限り、二つが同じファイルを読み込むかを jitcatch が確かめられないと `warning:` に出す。
 リポジトリのコードは `require` とこの行の `-I` で読み込む。
 この行はシェルで実行し、`--env` で渡した変数はそのシェルから来ているので、この行にも届く。
-行には値を書かない。
+`DATABASE_URL` はパスワードを含むことがあり、報告はほかの人が読む場所に貼られるので、行には値を書かない。
+`--env` で名前を渡したときは、各 `rerun:` 行の下の `rerun env:` 行がその名前と、実行のときに設定されていなかった名前を挙げる。
+たとえば `rerun env: reads DATABASE_URL QUINT from your shell, as jitcatch run did; QUINT was not set for the run` となる。
+同じ名前が設定された場所でこの行を実行する。
+`--number-database-url` が URL に番号を付けるのは実行の中だけなので、この行は自分のデータベースを使う。
 たとえば `ruby -Ilib -I. -e 'require "rspec/core"; require "rspec/support/object_formatter"; RSpec::Core::RubyProject.instance_variable_set(:@project_root, Dir.pwd); RSpec::Support::ObjectFormatter.default_instance.max_formatted_output_length = nil; exit(RSpec::Core::Runner.run(ARGV))' candidates/cart_spec.rb:11` や `ruby -Ilib -I. candidates/cart_test.rb -n CartTest#test_total` で、head に `Gemfile` があれば `bundle exec` が前に付く。
 `<file>#load` と `<file>#timeout` の行は、ファイル全体を再実行する。
 Rails アプリのように head の根に `spec` があり、jitcatch を実行したチェックアウトが `jitcatch/rspec` を読み込めるとき、RSpec の行は `rspec -I. -r jitcatch/rspec candidates/cart_spec.rb:11` になる。
