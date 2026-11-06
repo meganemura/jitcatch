@@ -30,7 +30,7 @@ git log --oneline -n 5 -- app/models
 
 ### 3. Write one spec and run jitcatch
 
-Write one spec that states what the method did before that commit. Put it in `tmp/jitcatch`, which git ignores, start it with `require "rails_helper"`, and use the app's factories as its own specs do. Then run jitcatch on the commit. Replace `Loan`, `approve`, the expected result, and `72ebf7a` with your model, its method, what the method returned before the commit, and the commit you picked.
+Write one spec that states what the method did before that commit. Put it in `tmp/jitcatch`, which git ignores, start it with `require "rails_helper"`, and use the app's factories as its own specs do. Then run jitcatch on the commit. Replace `Loan`, `approve`, the expected result, and `c3ef899` with your model, its method, what the method returned before the commit, and the commit you picked.
 
 <!-- rails:script -->
 ```sh
@@ -45,7 +45,7 @@ RSpec.describe Loan, type: :model do
   end
 end
 RUBY
-bundle exec jitcatch run 72ebf7a~1 72ebf7a tmp/jitcatch
+bundle exec jitcatch run c3ef899~1 c3ef899 tmp/jitcatch
 ```
 
 ## What you will see
@@ -54,8 +54,8 @@ This output is from a small sample app: Rails 8.1 with FactoryBot and SQLite, wh
 
 <!-- rails:pick-output -->
 ```
-72ebf7a Ask a senior officer from 10000 cents.
-4a1d57a Characterize Loan#approve.
+c3ef899 Ask a senior officer from 10000 cents.
+e994a60 Characterize Loan#approve.
 ```
 
 The last commit asks a senior officer from 10000 cents, where it used to ask only above 10000. jitcatch prints this:
@@ -64,8 +64,8 @@ The last commit asks a senior officer from 10000 cents, where it used to ask onl
 ```
 jitcatch run
 version 0.1.0
-base 4a1d57ae042c0b5dd0ae5b1c14f5623c9b2ec302
-head 72ebf7ab5ce5a144c85d971160c207e2582d8f5b
+base e994a60bff5a85b3bcc92960dd251d598b15835a
+head c3ef8997c50fc389a24ec4aa3f79caca2d6437b9
 reruns 2
 timeout_s 60
 bundle base ok
@@ -80,7 +80,7 @@ assess:
     rerun: bundle exec rspec -I. -r jitcatch/rspec tmp/jitcatch/loan_approve_spec.rb:4
 ```
 
-The spec passed on the parent and fails on the commit, so it is `reported`: the commit changed what the old code did. `expected:` is the old result and `got:` is the new one. `m01` is the changed method the spec reaches, `Loan#approve`. Next, read the commit message. This one asks for the change, so the row is intended. Without that sentence, the row would be a likely regression. Run the `rerun:` line to see the failure again, and run `bundle exec jitcatch context 72ebf7a~1 72ebf7a` to see the old and new source of each changed method. A spec that fails on the parent too describes the new behavior, so it is `fail_on_base` and is not evidence. jitcatch boots the app in a new checkout of each side and waits up to 60 seconds for each spec file there. When a row times out, its `hint:` line says what to pass or raise.
+The spec passed on the parent and fails on the commit, so it is `reported`: the commit changed what the old code did. `expected:` is the old result and `got:` is the new one. `m01` is the changed method the spec reaches, `Loan#approve`. Next, read the commit message. This one asks for the change, so the row is intended. Without that sentence, the row would be a likely regression. Run the `rerun:` line to see the failure again, and run `bundle exec jitcatch context c3ef899~1 c3ef899` to see the old and new source of each changed method. A spec that fails on the parent too describes the new behavior, so it is `fail_on_base` and is not evidence. jitcatch boots the app in a new checkout of each side and waits up to 60 seconds for each spec file there. When a row times out, its `hint:` line says what to pass or raise.
 
 ## Try it without an app
 

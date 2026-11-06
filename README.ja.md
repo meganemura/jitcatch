@@ -39,7 +39,7 @@ git log --oneline -n 5 -- app/models
 そのコミットの前にメソッドが何をしていたかを述べる spec を 1 つ書く。
 置き場所は git が無視する `tmp/jitcatch` にし、`require "rails_helper"` で始め、アプリ自身の spec と同じようにファクトリを使う。
 そのあと、そのコミットに対して jitcatch を走らせる。
-`Loan`、`approve`、期待する結果、`72ebf7a` は、自分のモデル、そのメソッド、コミットの前にメソッドが返していた値、選んだコミットに置き換える。
+`Loan`、`approve`、期待する結果、`c3ef899` は、自分のモデル、そのメソッド、コミットの前にメソッドが返していた値、選んだコミットに置き換える。
 
 <!-- rails:script -->
 ```sh
@@ -54,7 +54,7 @@ RSpec.describe Loan, type: :model do
   end
 end
 RUBY
-bundle exec jitcatch run 72ebf7a~1 72ebf7a tmp/jitcatch
+bundle exec jitcatch run c3ef899~1 c3ef899 tmp/jitcatch
 ```
 
 ## 表示される内容
@@ -65,8 +65,8 @@ FactoryBot と SQLite を使う Rails 8.1 アプリで、`Loan#approve` は大�
 
 <!-- rails:pick-output -->
 ```
-72ebf7a Ask a senior officer from 10000 cents.
-4a1d57a Characterize Loan#approve.
+c3ef899 Ask a senior officer from 10000 cents.
+e994a60 Characterize Loan#approve.
 ```
 
 最後のコミットは、10000 セントを超えるときだけでなく、10000 セントちょうどからシニアの担当者を求めるようにした。
@@ -76,8 +76,8 @@ jitcatch は次を出す。
 ```
 jitcatch run
 version 0.1.0
-base 4a1d57ae042c0b5dd0ae5b1c14f5623c9b2ec302
-head 72ebf7ab5ce5a144c85d971160c207e2582d8f5b
+base e994a60bff5a85b3bcc92960dd251d598b15835a
+head c3ef8997c50fc389a24ec4aa3f79caca2d6437b9
 reruns 2
 timeout_s 60
 bundle base ok
@@ -100,7 +100,7 @@ spec は親で通り、そのコミットで落ちるので、`reported` にな�
 このメッセージはその変更を求めているので、この行は意図どおりである。
 その一文がなければ、回帰の疑いが強い。
 `rerun:` の行を走らせると、その失敗をもう一度見られる。
-`bundle exec jitcatch context 72ebf7a~1 72ebf7a` を走らせると、変更されたメソッドごとに古いソースと新しいソースを見られる。
+`bundle exec jitcatch context c3ef899~1 c3ef899` を走らせると、変更されたメソッドごとに古いソースと新しいソースを見られる。
 親でも落ちる spec は新しい振る舞いを書いたものなので、`fail_on_base` になり、証拠にはならない。
 jitcatch は両側の新しいチェックアウトでアプリを起動し、そこで spec ファイルごとに最大 60 秒待つ。
 行がタイムアウトしたら、その `hint:` の行が、何を渡すか何を上げるかを示す。

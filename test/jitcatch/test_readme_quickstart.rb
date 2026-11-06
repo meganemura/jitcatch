@@ -44,7 +44,10 @@ class TestReadmeQuickstart < Minitest::Test
       skip "the sample app's bundle is not installed for Ruby #{RUBY_VERSION}" unless bundled.success?
 
       env = shell.merge(installed_from_this_checkout(shell, dir))
-      File.write(File.join(app, "Gemfile"), "\n#{quoted.fetch("gemfile")}", mode: "a")
+      gemfile = File.join(app, "Gemfile")
+      # The sample app pins jitcatch for its own tools, and Bundler refuses
+      # a gem listed twice, so the reader's app here is one without it.
+      File.write(gemfile, File.readlines(gemfile).grep_v(/^\s*gem "jitcatch"/).join + "\n#{quoted.fetch("gemfile")}")
       succeed(env, %w[bundle install --local], app)
       assert_equal quoted.fetch("pick-output"), succeed(env, ["bash", "-e", "-c", quoted.fetch("pick")], app)
       assert_equal quoted.fetch("output"), succeed(env, ["bash", "-e", "-c", quoted.fetch("script")], app)
@@ -101,8 +104,10 @@ class TestReadmeQuickstart < Minitest::Test
     env.merge(git_identity(dir)).merge("PATH" => [RbConfig::CONFIG.fetch("bindir"), ENV.fetch("PATH")].join(File::PATH_SEPARATOR))
   end
 
-  # A gem home that holds this checkout built as the gem, in front of the
-  # gems this Ruby has.
+  # A gem directory that holds this checkout built as the gem, in front of
+  # the gems this Ruby has. GEM_HOME stays, because Bundler keeps the git
+  # checkouts a committed Gemfile names (the sample app's own jitcatch
+  # among them) there, and base and head run with that Gemfile.
   def installed_from_this_checkout(shell, dir)
     gems = File.join(dir, "gems")
     path, status = Open3.capture2(shell, RbConfig.ruby, "-e", "print Gem.path.join(File::PATH_SEPARATOR)")
@@ -112,7 +117,7 @@ class TestReadmeQuickstart < Minitest::Test
     assert status.success?, out
     out, status = Open3.capture2e(RbConfig.ruby, "-S", "gem", "install", "--local", "--no-document", "--install-dir", gems, built)
     assert status.success?, out
-    { "GEM_HOME" => gems, "GEM_PATH" => [gems, path].join(File::PATH_SEPARATOR) }
+    { "GEM_PATH" => [gems, path].join(File::PATH_SEPARATOR) }
   end
 
   def git_identity(dir)
