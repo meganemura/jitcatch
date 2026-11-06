@@ -334,14 +334,19 @@ module JitCatch
       ["warning: #{rows} nothing; load #{schema_advice(doc)}"]
     end
 
+    # Each side needs its own schema, which only a command run in each
+    # checkout loads: `db:prepare` also loads seeds into a database it
+    # makes, and `db:schema:load` alone fails on one nobody made.
     def schema_advice(doc)
-      prepare = "run `RAILS_ENV=test bin/rails db:prepare` (or `db:schema:load`)"
       numbered = doc["numbered_databases"].to_a
-      if numbered.empty?
-        "the schema into each side's test database: #{prepare} for each database the checkouts use, or call `ActiveRecord::Migration.maintain_test_schema!` in the test helper, then run jitcatch again"
+      into = numbered.empty? ? "each side's test database" : numbered.join(" and ")
+      load = "`--setup 'bin/rails db:create db:schema:load'`"
+      step = if doc["setup"]
+        "`--setup` ran `#{doc["setup"]}`, yet the rows found no table; pass a command that loads each side's schema, as #{load} does"
       else
-        "the schema into #{numbered.join(" and ")}: #{prepare} with DATABASE_URL naming each, then run jitcatch again"
+        "run jitcatch again with #{load}, which loads each side's schema into its own database"
       end
+      "the schema into #{into}: #{step}, or call `ActiveRecord::Migration.maintain_test_schema!` in the test helper"
     end
 
     # Base takes the odd TEST_ENV_NUMBER of each pair of checkouts.

@@ -374,12 +374,16 @@ class TestRender < Minitest::Test
 
     assert_equal [
       "jitcatch: no row ran to a result on both sides (1 of 1 found no table), so this run cannot tell base from head\n",
-      "jitcatch: load the schema into app_test_1 and app_test_2: run `RAILS_ENV=test bin/rails db:prepare` (or `db:schema:load`) with DATABASE_URL naming each, then run jitcatch again\n"
+      "jitcatch: load the schema into app_test_1 and app_test_2: run jitcatch again with `--setup 'bin/rails db:create db:schema:load'`, which loads each side's schema into its own database, or call `ActiveRecord::Migration.maintain_test_schema!` in the test helper\n"
     ], text.("numbered_databases" => %w[app_test_1 app_test_2])
     assert_equal [
       "jitcatch: no row ran to a result on both sides (1 of 1 found no table), so this run cannot tell base from head\n",
-      "jitcatch: load the schema into each side's test database: run `RAILS_ENV=test bin/rails db:prepare` (or `db:schema:load`) for each database the checkouts use, or call `ActiveRecord::Migration.maintain_test_schema!` in the test helper, then run jitcatch again\n"
+      "jitcatch: load the schema into each side's test database: run jitcatch again with `--setup 'bin/rails db:create db:schema:load'`, which loads each side's schema into its own database, or call `ActiveRecord::Migration.maintain_test_schema!` in the test helper\n"
     ], text.({})
+    assert_equal "jitcatch: load the schema into app_test_1 and app_test_2: `--setup` ran `bin/rails db:migrate`, yet the rows found no table; " \
+                 "pass a command that loads each side's schema, as `--setup 'bin/rails db:create db:schema:load'` does, " \
+                 "or call `ActiveRecord::Migration.maintain_test_schema!` in the test helper\n",
+      text.("numbered_databases" => %w[app_test_1 app_test_2], "setup" => "bin/rails db:migrate").last
     timed_out = row.merge("id" => "t02", "base" => { "status" => "timeout" }, "head" => { "status" => "timeout" })
     assert_equal "jitcatch run\n", JitCatch::Render.run_text(JitCatch::Assessor.apply({ "version" => "0.1.0", "base" => "b", "head" => "h", "reruns" => 0, "timeout_s" => 10, "tests" => [timed_out] })).lines[1]
   end
@@ -405,7 +409,7 @@ class TestRender < Minitest::Test
     ran = text.(hidden_rows + [passing])
     assert_equal "jitcatch run\n", ran.lines.first
     assert_includes ran, "head h\nwarning: 6 of 7 rows found no table on a side, so they checked nothing; load the schema into app_test_1 and app_test_2: " \
-                         "run `RAILS_ENV=test bin/rails db:prepare` (or `db:schema:load`) with DATABASE_URL naming each, then run jitcatch again\nreruns 0\n"
+                         "run jitcatch again with `--setup 'bin/rails db:create db:schema:load'`, which loads each side's schema into its own database, or call `ActiveRecord::Migration.maintain_test_schema!` in the test helper\nreruns 0\n"
     refute_includes text.([passing]), "warning:"
     unnumbered = JitCatch::Render.run_text(JitCatch::Assessor.apply(run.merge("numbered_databases" => [], "tests" => [hidden.("t01"), passing])))
     assert_includes unnumbered, "    hint: base found no table, so this row checked nothing; load base's schema into its test database\n"

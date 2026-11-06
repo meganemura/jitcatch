@@ -649,7 +649,9 @@ Run that command with that Ruby in a checkout of that side, fix what it says (of
 括弧の中は、行に現れた原因だけを `timed out`、`found no database`、`found no table` で示し、複数あれば `or` でつなぐ。
 行がテーブルを見つけられなかったときは、2 行目がスキーマを読み込むように言う。
 `--number-database-url` のときは、番号付きのデータベースを名指しする。
-たとえば `` jitcatch: load the schema into app_test_wt1_1 and app_test_wt1_2: run `RAILS_ENV=test bin/rails db:prepare` (or `db:schema:load`) with DATABASE_URL naming each, then run jitcatch again `` である。
+たとえば `` jitcatch: load the schema into app_test_wt1_1 and app_test_wt1_2: run jitcatch again with `--setup 'bin/rails db:create db:schema:load'`, which loads each side's schema into its own database, or call `ActiveRecord::Migration.maintain_test_schema!` in the test helper `` である。
+各側のスキーマを読み込めるのは、各チェックアウトで走るコマンドだけである。
+`--setup` がすでにコマンドを走らせていたときは、その行はそのコマンドを名指しし、各側のスキーマを読み込むコマンドを求める。
 `--json` はいつもの run の文書を出し、その `untested` は、どの run でもそのような行の数を数える。
 
 そのような行と、別の理由で base で失敗した行だけの `run` も、変更をまたいで比べたテストが無い。
