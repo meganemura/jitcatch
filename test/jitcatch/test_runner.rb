@@ -2444,12 +2444,14 @@ class TestRunner < Minitest::Test
       begin
         ENV.update(parent.compact)
         err = assert_raises(JitCatch::EnvironmentError) { JitCatch::Runner.run(repo.dir, "base", "HEAD", tests, reruns: 0, setup: refused, env: %w[DATABASE_URL]) }
+        other = assert_raises(JitCatch::EnvironmentError) { JitCatch::Runner.run(repo.dir, "base", "HEAD", tests, reruns: 0, setup: "echo broke >&2; exit 1") }
       ensure
         parent.each_key { |key| ENV.delete(key) }
         ENV.update(saved)
       end
 
       assert_equal [%w[DB_PORT PGHOST], %w[DB_PORT PGHOST]], err.doc["setup_failed"].map { |failure| failure["database_not_passed"] }
+      assert_equal [[], []], other.doc["setup_failed"].map { |failure| failure["database_not_passed"] }, "a setup that failed another way names no variable"
       assert_includes JitCatch::Render.setup_failed_text(err.doc),
         "  the database refused the connection, and jitcatch did not pass DB_PORT PGHOST from your shell: add --env DB_PORT --env PGHOST\n"
     end
