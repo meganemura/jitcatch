@@ -1048,7 +1048,7 @@ module JitCatch
         return walk_spec_block(node, qualifier, singleton_context, enclosing) if spec_block?(node)
 
         endpoint = @endpoints[node.location.start_offset]
-        return walk(node.block, qualifier, false, endpoint) if endpoint
+        return walk(node.block, qualifier, singleton_context, endpoint) if endpoint
 
         if enclosing.nil? && !singleton_context && scope?(node)
           scope = self.class.qualify(qualifier, node.arguments.arguments.first.unescaped, true)

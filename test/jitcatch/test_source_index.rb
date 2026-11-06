@@ -711,6 +711,12 @@ class TestSourceIndexExamples < Minitest::Test
         get do
           Thing.recent
         end
+        helpers do
+          def current_thing = nil
+        end
+        Other.get "/not_here" do
+        end
+        get :status
       end
     end
   RUBY
@@ -733,12 +739,17 @@ class TestSourceIndexExamples < Minitest::Test
       RSpec.describe "Things" do
         it "refreshes" do
           post "/v1/api/things/abc-1/refresh?force=1", params: { notify: true }
+          post things_path
+          client.post "/api/elsewhere"
+          expect(response.body).to include("/api/things")
         end
       end
     RUBY
     index = JitCatch::SourceIndex.parse(spec, file: "spec/requests/things_spec.rb")
 
-    assert_includes index.example_references(2), "POST /v1/api/things/abc-1/refresh"
+    references = index.example_references(2)
+    assert_equal ["POST /v1/api/things/abc-1/refresh"], references.select { |name| JitCatch::SourceIndex.endpoint?(name) }
+    refute_includes references, "true"
     endpoint = "POST /api/things/:id/refresh"
     assert JitCatch::SourceIndex.endpoint_call?("POST /v1/api/things/abc-1/refresh", endpoint)
     assert JitCatch::SourceIndex.endpoint_call?("POST /api/things/7/refresh", endpoint)
