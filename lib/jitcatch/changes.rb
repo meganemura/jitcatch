@@ -118,7 +118,7 @@ module JitCatch
       databases = @databases.each_slice(2).map { |base, head_db| "base #{base}, head #{head_db}" }
       into = databases.empty? ? "its own test database" : "its own test database (#{databases.join("; ")})"
       ["#{warning} #{helpers.join(" and ")} #{helpers.one? ? "does" : "do"} not call `ActiveRecord::Migration.maintain_test_schema!`, so no candidate loads either schema: " \
-       "pass `--setup 'bin/rails db:schema:load'` to `jitcatch run` to load each side's schema into #{into} before the candidates run."]
+       "pass `--setup 'bin/rails db:create db:schema:load'` to `jitcatch run` to load each side's schema into #{into} before the candidates run."]
     end
 
     # Each spec line in a lockfile is four spaces, a name, and the version

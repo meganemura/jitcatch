@@ -465,7 +465,7 @@ class TestChanges < Minitest::Test
                 "so each side's test database must hold that side's schema, or a row can fail on the database and not on the code."
       assert_equal [
         "#{changed} spec/rails_helper.rb does not call `ActiveRecord::Migration.maintain_test_schema!`, so no candidate loads either schema: " \
-        "pass `--setup 'bin/rails db:schema:load'` to `jitcatch run` to load each side's schema into its own test database before the candidates run."
+        "pass `--setup 'bin/rails db:create db:schema:load'` to `jitcatch run` to load each side's schema into its own test database before the candidates run."
       ], JitCatch::Changes.between(repo.dir, "HEAD~1", "HEAD")["warnings"]
       assert_includes JitCatch::Changes.between(repo.dir, "HEAD~1", "HEAD", databases: %w[app_test_1 app_test_2])["warnings"].first,
         "load each side's schema into its own test database (base app_test_1, head app_test_2) before the candidates run."

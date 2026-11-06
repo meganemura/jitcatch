@@ -390,7 +390,7 @@ jitcatch run --repo DIR BASE HEAD TESTS_DIR
 | `--timeout SEC` | `run` | テストファイルを止めるまでの秒数。head に `config/application.rb` があれば既定は 60 で、それ以外は 10。Rails アプリは新しいチェックアウトごとに起動して `db/schema.rb` を読み込むからである。最小は 1。 |
 | `--workers N` | `run` | 同時に実行するテストファイルの数。ワーカーごとに base と head の worktree を持つ。既定は 1。1 つのワーカーは Ruby プロセスを 2 つ同時に動かすので、ワーカーを増やして速くなるのは CPU が空いているときだけである。N によらずレポートは同じになる。 |
 | `--number-database-url` | `run` | `--env` で渡した `DATABASE_URL` のデータベース名に各チェックアウトの `TEST_ENV_NUMBER` を足し、base と head にそれぞれのデータベースを持たせる（Rails アプリの節を参照）。`--env DATABASE_URL` が要る。 |
-| `--setup CMD` | `run` | 候補の前に、各チェックアウトで `CMD` を `/bin/sh` で一度ずつ走らせる。その側の `TEST_ENV_NUMBER`、`DATABASE_URL`、`--env` で渡した変数を渡し、`--env` で別の値を渡さない限り `RAILS_ENV=test` も渡す。`--setup 'bin/rails db:schema:load'` なら、各側のスキーマをそれぞれのテスト用データベースに読み込む。失敗すると終了コード 3 で終わる。 |
+| `--setup CMD` | `run` | 候補の前に、各チェックアウトで `CMD` を `/bin/sh` で一度ずつ走らせる。その側の `TEST_ENV_NUMBER`、`DATABASE_URL`、`--env` で渡した変数を渡し、`--env` で別の値を渡さない限り `RAILS_ENV=test` も渡す。`--setup 'bin/rails db:create db:schema:load'` なら、各側のスキーマをそれぞれのテスト用データベースに読み込む。失敗すると終了コード 3 で終わる。 |
 | `--serial` | `run` | Ruby プロセスを 1 つずつ動かす。ファイルの base 側を走らせてから head 側を走らせる。worktree の外の決まったパスに書く候補や、決まったポートで待ち受ける候補のためのものである。`--workers` に 1 より大きい値は渡せない。Rails アプリの base と head が 1 つのテスト用データベースを共有するときも、`run` は `warning:` を出してこのように動かす（Rails アプリの節を参照）。テキストのレポートは `serial` と出し、`--json` は `"serial": true` を記録する。 |
 | `--env NAME` | `run` | この環境変数を今の環境からテストのプロセスへ渡す。複数の名前は繰り返して渡す。実行結果には値ではなく名前を記録する。設定されていない名前は `env_unset` 行に出す。 |
 
@@ -783,10 +783,13 @@ for n in 1 2; do RAILS_ENV=test TEST_ENV_NUMBER=$n bin/rails db:create; done
 `db/schema.rb`、`db/structure.sql`、`db/migrate/`（または 2 つ目のデータベースの `db/<name>_schema.rb`、`db/<name>_structure.sql`、`db/<name>_migrate/`）が変わると、列の無いデータベースの側は、コードではなくデータベースで失敗する。
 知らない属性のせいで 500 を受け取るリクエストスペックがその例である。
 そのとき `context` と `run` は `warning: head changes the database schema (db/migrate/20261106000000_add_notify.rb, db/schema.rb), so each side's test database must hold that side's schema, or a row can fail on the database and not on the code.` を出す。
-head に `spec/rails_helper.rb`、`spec/spec_helper.rb`、`test/test_helper.rb` のどれかがあり、どれも `maintain_test_schema!` を呼ばないときは、警告はそのファイルを名指しし、`pass --setup 'bin/rails db:schema:load' to jitcatch run` と続ける。
+head に `spec/rails_helper.rb`、`spec/spec_helper.rb`、`test/test_helper.rb` のどれかがあり、どれも `maintain_test_schema!` を呼ばないときは、警告はそのファイルを名指しし、`pass --setup 'bin/rails db:create db:schema:load' to jitcatch run` と続ける。
 `--number-database-url` のときは、各側のデータベースも名指しする（`base app_test_wt1_1, head app_test_wt1_2`）。
 
 `run --setup CMD` は、バンドルの確認のあと、どの候補よりも前に、各チェックアウトで `CMD` を `/bin/sh` で一度ずつ、1 つずつ走らせる。
+`bin/rails db:create db:schema:load` は、まだない番号付きのデータベースを作り、その側のスキーマを読み込む。
+`db:schema:load` だけでは、誰も作っていないデータベースで失敗する。
+`db:prepare` は、自分で作ったデータベースに `db/seeds.rb` も読み込む。
 `CMD` は、その側の `TEST_ENV_NUMBER`、番号付きの `DATABASE_URL`、`--env` で渡した変数を受け取る。
 `--env RAILS_ENV` で別の値を渡さない限り `RAILS_ENV=test` も受け取るので、スキーマの読み込みが開発用のデータベースに届くことは無い。
 報告は `setup CMD` を出し（`--json` では `setup` で、フラグが無ければ `null`）、スキーマの警告は `` `--setup` ran `CMD` in each checkout before the candidates. `` となる。
