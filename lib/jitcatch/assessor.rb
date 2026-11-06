@@ -192,8 +192,6 @@ module JitCatch
     end
 
     def out_of_date(broken)
-      return nil if broken.nil?
-
       frame = broken.frame
       { "id" => broken.subject["id"], "name" => broken.subject["name"], "change" => broken.change,
         "call" => frame["file"] && [frame["file"], frame["line"]].compact.join(":") }

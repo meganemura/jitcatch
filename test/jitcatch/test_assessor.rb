@@ -525,20 +525,26 @@ class TestAssessor < Minitest::Test
         candidate("t02", "RecordTest#test_b", %w[Record build], error("ArgumentError", "missing keyword: :media"), frames("lib/build.rb", 7) + frames("candidates/recordtest.rb", 9)),
         candidate("t03", "RecordTest#test_c", %w[Record], failure("Expected: 1\n  Actual: 2")),
         candidate("t04", "LabelTest#test_a", ["label"], error("NoMethodError", "undefined method 'label' for an instance of Calc"), frames("candidates/labeltest.rb", 3)),
-        candidate("t05", "AddTest#test_a", ["add"], error("ArgumentError", "wrong number of arguments (given 2, expected 3)"), frames("lib/calc.rb", 11) + frames("candidates/addtest.rb", 5))
+        candidate("t05", "AddTest#test_a", ["add"], error("ArgumentError", "wrong number of arguments (given 2, expected 3)"), frames("lib/calc.rb", 11) + frames("candidates/addtest.rb", 5)),
+        candidate("t06", "OtherTest#test_a", %w[Other], error("ArgumentError", "missing keyword: :media"), frames("candidates/othertest.rb", 4)),
+        { "id" => "t07", "file" => "ok_test.rb", "name" => "OkTest#test_ok", "mentions" => [], "classification" => "no_signal", "base" => pass_result, "head" => pass_result }
       ]
     }
 
     out = JitCatch::Assessor.apply(doc)
-    rows = out["tests"].to_h { |test| [test["id"], [test["disposition"], test["out_of_date"]]] }
+    rows = out["tests"].to_h { |test| [test["id"], [test["disposition"], test.fetch("out_of_date")]] }
 
     assert_equal({
       "t01" => ["discarded", { "id" => "k01", "name" => "Calc::Record", "change" => "definition", "call" => "candidates/recordtest.rb:5" }],
       "t02" => ["reported", nil],
       "t03" => ["reported", nil],
       "t04" => ["discarded", { "id" => "m01", "name" => "Calc#label", "change" => "removed", "call" => "candidates/labeltest.rb:3" }],
-      "t05" => ["discarded", { "id" => "m02", "name" => "Calc#add", "change" => "parameters", "call" => "candidates/addtest.rb:5" }]
+      "t05" => ["discarded", { "id" => "m02", "name" => "Calc#add", "change" => "parameters", "call" => "candidates/addtest.rb:5" }],
+      "t06" => ["reported", nil],
+      "t07" => ["no_signal", nil]
     }, rows)
+    assert_equal %w[error:ArgumentError report touches:changed_constant], out["tests"].find { |test| test["id"] == "t02" }["tags"],
+      "a call from the app's code is not a broken call the test made"
     text = JitCatch::Render.assess_text(out)
     assert_includes text, "  c01 RecordTest#test_a base=pass head=error - discard:signature_change,error:ArgumentError,touches:changed_constant\n" \
                           "    candidate is out of date with head: Calc::Record (k01) changed its definition; update the call at candidates/recordtest.rb:5 to head's code, or drop the test\n" \
