@@ -66,7 +66,7 @@ BUNDLE_GEMFILE=/path/to/Gemfile bundle exec mutineer run --since origin/queue \
 
 - The CLI does not call a model. Generation and the intended-versus-regression judgment stay outside the tool.
 - The same repository and the same tests produce the same bytes. Fixed order, no timestamps, Minitest `--seed 1`, a worktree root written as `{worktree}` in messages and dropped from frames. The one time a run keeps is base's `seconds` on a row whose head timed out, since a row that timed out already depends on the machine. Every command prints that document as JSON with `--json`.
-- Exit status 0 is success, 1 is a usage error, 2 is a git error, and 3 means `run` tested nothing: a side failed its setup check, no candidate file loaded on either side, or every row timed out or found no database on a side (`Assessor.untested_run?`). Finding candidates still exits 0. The tool does not decide that something is a regression.
+- Exit status 0 is success, 1 is a usage error, 2 is a git error, and 3 means `run` tested nothing: a side failed its setup check, no candidate file loaded on either side, or no row compared base with head while at least one row timed out or found no database or no table on a side (`Assessor.untested_run?`). A run whose rows all failed on base with nothing hidden exits 0: its fix is in the candidates, and each row's `base:` line says why. Finding candidates still exits 0. The tool does not decide that something is a regression.
 
 ## Releasing
 

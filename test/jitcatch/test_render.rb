@@ -383,6 +383,33 @@ class TestRender < Minitest::Test
     assert_equal "jitcatch run\n", JitCatch::Render.run_text(JitCatch::Assessor.apply({ "version" => "0.1.0", "base" => "b", "head" => "h", "reruns" => 0, "timeout_s" => 10, "tests" => [timed_out] })).lines[1]
   end
 
+  # Rows the database hid beside rows that ran read like a run that
+  # checked them all, unless the text says so, and a fail_on_base row
+  # whose base found no table says which database lacks the schema.
+  def test_rows_that_found_no_table_beside_rows_that_ran_get_a_warning_and_a_hint
+    no_table = { "status" => "error", "error_class" => "ActiveRecord::StatementInvalid", "message" => "PG::UndefinedTable: ERROR:  relation \"loans\" does not exist" }
+    hidden = ->(id) { { "id" => id, "file" => "loan_spec.rb", "name" => "Loan #{id}", "classification" => "fail_on_base", "base" => no_table, "head" => no_table } }
+    wrong = { "id" => "t07", "file" => "notify_spec.rb", "name" => "Notify args", "classification" => "fail_on_base",
+              "base" => { "status" => "fail", "error_class" => "Minitest::Assertion", "message" => "Expected: 1" }, "head" => { "status" => "pass" } }
+    passing = wrong.merge("classification" => "no_signal", "base" => { "status" => "pass" })
+    run = { "version" => "0.1.0", "base" => "b", "head" => "h", "reruns" => 0, "timeout_s" => 10, "numbered_databases" => %w[app_test_1 app_test_2] }
+    text = ->(tests) { JitCatch::Render.run_text(JitCatch::Assessor.apply(run.merge("tests" => tests))) }
+    hidden_rows = (1..6).map { |n| hidden.("t0#{n}") }
+
+    mixed = text.(hidden_rows + [wrong])
+    assert_equal "jitcatch: no row compared base with head (6 of 7 found no table, and 1 failed on base), so this run cannot tell base from head\n", mixed.lines.first
+    assert_includes mixed, "  t01 fail_on_base Loan t01 loan_spec.rb\n    base: error ActiveRecord::StatementInvalid PG::UndefinedTable: ERROR:  relation \"loans\" does not exist\n" \
+                           "    hint: base found no table, so this row checked nothing; load base's schema into app_test_1\n"
+    ran = text.(hidden_rows + [passing])
+    assert_equal "jitcatch run\n", ran.lines.first
+    assert_includes ran, "head h\nwarning: 6 of 7 rows found no table on a side, so they checked nothing; load the schema into app_test_1 and app_test_2: " \
+                         "run `RAILS_ENV=test bin/rails db:prepare` (or `db:schema:load`) with DATABASE_URL naming each, then run jitcatch again\nreruns 0\n"
+    refute_includes text.([passing]), "warning:"
+    unnumbered = JitCatch::Render.run_text(JitCatch::Assessor.apply(run.merge("numbered_databases" => [], "tests" => [hidden.("t01"), passing])))
+    assert_includes unnumbered, "    hint: base found no table, so this row checked nothing; load base's schema into its test database\n"
+    assert_includes unnumbered, "warning: 1 of 2 rows found no table on a side, so it checked nothing; load the schema into each side's test database: "
+  end
+
   def test_context_text_lists_dependencies_only_when_one_changed
     doc = {
       "version" => "0.1.0", "base" => "b", "head" => "h", "existing_tests_via" => "grep",
@@ -470,7 +497,7 @@ constants: (none)
     test = { "disposition" => "fail_on_base", "base" => { "status" => "fail", "error_class" => "E", "message" => "#<K (class)> received :call with unexpected arguments\n  expected: (1)\n       got: (2)" } }
 
     assert_equal ["    base: fail E #<K (class)> received :call with unexpected arguments", "      expected: (1)", "      got: (2)"],
-      JitCatch::Render.base_failure_lines(test)
+      JitCatch::Render.base_failure_lines(test, {})
   end
 
   def test_an_assert_raises_failure_shows_the_class_and_message_that_came

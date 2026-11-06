@@ -97,11 +97,19 @@ module JitCatch
         seconds.is_a?(Numeric) && timeout_s.is_a?(Numeric) && seconds * 2 <= timeout_s
     end
 
-    # Rows that each say nothing about the change are a run that tested
-    # nothing, which must not read like a change with no finding.
+    # A run where no row compared base with head, and the environment hid
+    # at least one row that might have, tested nothing, which must not read
+    # like a change with no finding. Its fix is outside the candidates. A
+    # run whose rows all failed on base with nothing hidden is the
+    # candidates' to fix, and each row's `base:` line says why.
     def self.untested_run?(doc)
-      generated = Array(doc["tests"]).size
-      generated.positive? && doc["untested"] == generated
+      tests = Array(doc["tests"])
+      doc["untested"].to_i.positive? && tests.none? { |test| compared?(test, doc["timeout_s"]) }
+    end
+
+    # Base passed and neither side hit an untested cause.
+    def self.compared?(test, timeout_s)
+      test.dig("base", "status") == "pass" && !untested?(test, timeout_s)
     end
 
     private

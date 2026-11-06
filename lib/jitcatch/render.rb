@@ -58,6 +58,7 @@ module JitCatch
       lines << "base #{doc["base"]}"
       lines << "head #{doc["head"]}"
       lines.concat(warning_lines(doc))
+      lines.concat(no_table_warning_lines(doc))
       lines << "reruns #{doc["reruns"]}"
       lines << "timeout_s #{doc["timeout_s"]}"
       lines << "serial" if doc["serial"]
@@ -74,7 +75,7 @@ module JitCatch
           lines << "  #{test_line(test)}"
           lines.concat(rerun_lines(test)) if test["disposition"] == "flaky"
           lines.concat(timeout_lines(test, doc))
-          lines.concat(base_failure_lines(test))
+          lines.concat(base_failure_lines(test, doc))
         end
       end
       lines << counts_line(doc["counts"])
@@ -268,29 +269,60 @@ module JitCatch
 
     # A row that failed on base is no candidate, so nothing else in the
     # text says what went wrong there.
-    def base_failure_lines(test)
+    def base_failure_lines(test, doc)
       base = test["base"]
       return [] unless test["disposition"] == "fail_on_base" && base && base["status"] != "timeout"
 
       first, *rest = message_lines(base)
       outcome = [base["status"], base["error_class"], first].reject { |part| part.to_s.empty? }
-      ["    base: #{outcome.join(" ")}", *rest.map { |line| "      #{line}" }]
+      lines = ["    base: #{outcome.join(" ")}", *rest.map { |line| "      #{line}" }]
+      return lines unless Assessor.no_table?(base)
+
+      databases = base_databases(doc)
+      into = databases.empty? ? "its test database" : databases.join(" and ")
+      lines << "    hint: base found no table, so this row checked nothing; load base's schema into #{into}"
     end
 
     # Only the numbered databases have names the reader can load a schema
     # into; the URL itself can hold a password, so it is never printed.
     def untested_lines(doc)
       causes = Assessor::UNTESTED_CAUSES.keys & doc["tests"].flat_map { |test| Assessor.untested_causes(test, doc["timeout_s"]) }
-      lines = ["jitcatch: no row ran to a result on both sides (#{doc["untested"]} of #{doc["tests"].size} #{causes.join(" or ")}), so this run cannot tell base from head"]
-      return lines unless causes.include?("found no table")
+      size = doc["tests"].size
+      hidden = "#{doc["untested"]} of #{size} #{causes.join(" or ")}"
+      lines = [if doc["untested"] == size
+        "jitcatch: no row ran to a result on both sides (#{hidden}), so this run cannot tell base from head"
+      else
+        "jitcatch: no row compared base with head (#{hidden}, and #{size - doc["untested"]} failed on base), so this run cannot tell base from head"
+      end]
+      lines << "jitcatch: load #{schema_advice(doc)}" if causes.include?("found no table")
+      lines
+    end
 
+    # A run that compared some rows says nothing on its first line, so the
+    # rows the database hid would read as rows that checked something.
+    def no_table_warning_lines(doc)
+      return [] if Assessor.untested_run?(doc)
+
+      count = Array(doc["tests"]).count { |test| Assessor.untested_causes(test, doc["timeout_s"]).include?("found no table") }
+      return [] if count.zero?
+
+      rows = count == 1 ? "1 of #{doc["tests"].size} rows found no table on a side, so it checked" : "#{count} of #{doc["tests"].size} rows found no table on a side, so they checked"
+      ["warning: #{rows} nothing; load #{schema_advice(doc)}"]
+    end
+
+    def schema_advice(doc)
       prepare = "run `RAILS_ENV=test bin/rails db:prepare` (or `db:schema:load`)"
       numbered = doc["numbered_databases"].to_a
-      lines << if numbered.empty?
-        "jitcatch: load the schema into each side's test database: #{prepare} for each database the checkouts use, or call `ActiveRecord::Migration.maintain_test_schema!` in the test helper, then run jitcatch again"
+      if numbered.empty?
+        "the schema into each side's test database: #{prepare} for each database the checkouts use, or call `ActiveRecord::Migration.maintain_test_schema!` in the test helper, then run jitcatch again"
       else
-        "jitcatch: load the schema into #{numbered.join(" and ")}: #{prepare} with DATABASE_URL naming each, then run jitcatch again"
+        "the schema into #{numbered.join(" and ")}: #{prepare} with DATABASE_URL naming each, then run jitcatch again"
       end
+    end
+
+    # Base takes the odd TEST_ENV_NUMBER of each pair of checkouts.
+    def base_databases(doc)
+      doc["numbered_databases"].to_a.each_slice(2).map(&:first)
     end
 
     # A child that waits on the network or on a command an environment

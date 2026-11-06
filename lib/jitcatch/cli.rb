@@ -184,8 +184,8 @@ module JitCatch
         run       Run each candidate file on base and head. Keep pass/fail, drop flakes.
         assess    Re-apply the rule assessor to a run JSON file.
 
-        Exit status: 0 success, 1 usage error, 2 git error, 3 run tested nothing (setup failed,
-        or every row timed out or found no database or table on a side).
+        Exit status: 0 success, 1 usage error, 2 git error, 3 run tested nothing (setup failed, or
+        no row compared base with head and a row timed out or found no database or table).
       HELP
     end
   end

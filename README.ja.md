@@ -632,7 +632,18 @@ Run that command with that Ruby in a checkout of that side, fix what it says (of
 `--number-database-url` のときは、番号付きのデータベースを名指しする。
 たとえば `` jitcatch: load the schema into app_test_wt1_1 and app_test_wt1_2: run `RAILS_ENV=test bin/rails db:prepare` (or `db:schema:load`) with DATABASE_URL naming each, then run jitcatch again `` である。
 `--json` はいつもの run の文書を出し、その `untested` は、どの run でもそのような行の数を数える。
-終了コード 3 は、`untested` が行の数と等しいことを意味する。
+
+そのような行と、別の理由で base で失敗した行だけの `run` も、変更をまたいで比べたテストが無い。
+モックの引数だけを確かめる候補がその例である。
+この `run` も終了コード 3 で終わり、テキストは `jitcatch: no row compared base with head (6 of 7 found no table, and 1 failed on base), so this run cannot tell base from head` の行で始まる。
+隠れた行が無く、すべての行が base で失敗した `run` は終了コード 0 で終わる。
+直すのは候補の側であり、各行の `base:` の行がその理由を示す。
+つまり終了コード 3 は、`untested` が 0 より大きく、base が通り何も隠れていない行が無いことを意味する。
+比べた行があるときは、見出しに `warning:` の行が出る。
+たとえば `warning: 6 of 7 rows found no table on a side, so they checked nothing; load the schema into ...` で、同じ助言が続く。
+base でテーブルが見つからなかった `fail_on_base` の行には、`base:` の行の下に `hint:` の行が出る。
+それは `hint: base found no table, so this row checked nothing; load base's schema into app_test_1` で、base の番号付きのデータベースを名指しする。
+`--number-database-url` が無ければ `its test database` となる。
 
 base が `--timeout` の半分以内で通り、head だけがタイムアウトした行は、タグ `head_only_timeout` を付けて報告する。
 遅い起動ではこれを説明できず、head はループし続けるか、待ち続けているかもしれない。

@@ -47,6 +47,24 @@ class TestAssessor < Minitest::Test
     assert JitCatch::Assessor.untested_run?(JitCatch::Assessor.apply(doc.merge("tests" => [fail_on_base]))), "a run whose every row found no table"
   end
 
+  # A run where the database hid some rows and the rest failed on base
+  # compared no test across the change, and the cause sits outside the
+  # candidates, as it does for a run whose every row the database hid. A
+  # run whose rows all failed on base with a working database is the
+  # candidates' to fix, and each row already says why.
+  def test_a_run_that_compared_nothing_because_a_database_hid_rows_tested_nothing
+    no_table = error("ActiveRecord::StatementInvalid", "PG::UndefinedTable: ERROR:  relation \"loans\" does not exist")
+    hidden = ->(id) { { "id" => id, "name" => "Loan#approve! #{id}", "file" => "candidates/loan_test.rb", "classification" => "fail_on_base", "base" => no_table, "head" => no_table } }
+    wrong = { "id" => "t07", "name" => "Notify#args", "file" => "candidates/notify_test.rb", "classification" => "fail_on_base", "base" => failure("Expected: 1"), "head" => failure("Expected: 1") }
+    passing = wrong.merge("classification" => "no_signal", "base" => pass_result, "head" => pass_result)
+    run = ->(tests) { JitCatch::Assessor.untested_run?(JitCatch::Assessor.apply({ "methods" => [], "constants" => [], "tests_dir" => "candidates", "tests" => tests })) }
+    hidden_rows = (1..6).map { |n| hidden.("t0#{n}") }
+
+    assert run.(hidden_rows + [wrong]), "six rows found no table and the seventh failed on base"
+    refute run.(hidden_rows + [passing]), "one row compared base with head"
+    refute run.([wrong]), "a working database with a wrong candidate"
+  end
+
   def test_discards_a_head_that_cannot_reach_its_database
     doc = {
       "methods" => [method("m01", "modified", "same", "approve!", [], 1)],
