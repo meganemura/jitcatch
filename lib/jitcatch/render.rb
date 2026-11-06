@@ -280,7 +280,7 @@ module JitCatch
     # Only the numbered databases have names the reader can load a schema
     # into; the URL itself can hold a password, so it is never printed.
     def untested_lines(doc)
-      causes = Assessor::UNTESTED_CAUSES.keys & doc["tests"].flat_map { |test| Assessor.untested_causes(test) }
+      causes = Assessor::UNTESTED_CAUSES.keys & doc["tests"].flat_map { |test| Assessor.untested_causes(test, doc["timeout_s"]) }
       lines = ["jitcatch: no row ran to a result on both sides (#{doc["untested"]} of #{doc["tests"].size} #{causes.join(" or ")}), so this run cannot tell base from head"]
       return lines unless causes.include?("found no table")
 
@@ -302,6 +302,11 @@ module JitCatch
       sides = %w[base head].select { |side| test.dig(side, "status") == "timeout" }
       return [] if sides.empty?
 
+      base_seconds = test.dig("base", "seconds")
+      if Assessor.head_only_timeout?(test, doc["timeout_s"])
+        return ["    hint: base passed in #{base_seconds}s; head did not finish in #{doc["timeout_s"]}s, so head may loop or wait forever"]
+      end
+
       unset = Array(doc["env_unset"])
       not_passed = Array(doc["env_not_passed"])
       missing = [
@@ -310,7 +315,8 @@ module JitCatch
       ].compact
       wait = missing.empty? ? "raise --timeout if the file needs longer" : "#{missing.join("; ")}, then raise --timeout if it needs longer"
       rails = ", as a Rails app's first run in a new checkout can (it loads db/schema.rb)" if doc["rails_app"]
-      ["    hint: #{sides.join(" and ")} timed out after #{doc["timeout_s"]}s; #{wait}#{rails}"]
+      took = ", and base passed in #{base_seconds}s" if base_seconds
+      ["    hint: #{sides.join(" and ")} timed out after #{doc["timeout_s"]}s#{took}; #{wait}#{rails}"]
     end
 
     def env_flags(names)

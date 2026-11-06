@@ -308,6 +308,17 @@ class TestRender < Minitest::Test
       hint.("rails_app" => true, "env_not_passed" => %w[DATABASE_URL])
   end
 
+  # Base's time is what tells a head that waits forever from a slow boot,
+  # so the hint gives it, and drops the advice that fits a slow boot.
+  def test_a_timeout_on_head_alone_gives_the_time_base_took
+    row = ->(seconds) { { "id" => "t01", "file" => "a_test.rb", "name" => "a_test.rb#timeout", "classification" => "candidate", "base" => { "status" => "pass", "seconds" => seconds }, "head" => { "status" => "timeout" } } }
+    run = { "version" => "0.1.0", "base" => "b", "head" => "h", "reruns" => 0, "timeout_s" => 10, "rails_app" => true, "env_not_passed" => %w[DATABASE_URL] }
+    text = ->(seconds) { JitCatch::Render.run_text(JitCatch::Assessor.apply(run.merge("tests" => [row.(seconds)]))) }
+
+    assert_includes text.(2.1), "  t01 reported a_test.rb#timeout a_test.rb\n    hint: base passed in 2.1s; head did not finish in 10s, so head may loop or wait forever\n"
+    assert_includes text.(7.4), "    hint: head timed out after 10s, and base passed in 7.4s; jitcatch did not pass DATABASE_URL"
+  end
+
   # A name --env passed but the shell did not set reached the child as
   # nothing, which a longer timeout does not fix either, and the reader
   # chose that name, so the hint names it first.

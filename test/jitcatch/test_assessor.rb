@@ -105,6 +105,27 @@ class TestAssessor < Minitest::Test
     assert_equal ["discarded", "discard:timeout"], [test["disposition"], test["tags"].find { |tag| tag.start_with?("discard:") }]
   end
 
+  # A head that runs out of the time a base needed less than half of may
+  # loop or wait forever, which is the change's to answer for. A base that
+  # took longer, or a run file that kept no time, leaves a slow boot as
+  # likely, so the row says nothing.
+  def test_reports_a_timeout_on_head_alone_when_base_passed_well_within_the_timeout
+    doc = ->(base) {
+      { "timeout_s" => 10, "methods" => [method("m01", "modified", "same", "wait", [], 1)], "constants" => [], "tests_dir" => "candidates",
+        "tests" => [candidate("t01", "Waiter#wait", ["wait"], timeout_result).merge("base" => base)] }
+    }
+    outcome = ->(base) {
+      out = JitCatch::Assessor.apply(doc.(base))
+      test = out["tests"].fetch(0)
+      [test["disposition"], test["tags"].grep(/\A(?:discard:|report\z|head_only_timeout\z)/), out["untested"]]
+    }
+
+    assert_equal ["reported", %w[head_only_timeout report], 0], outcome.(pass_result.merge("seconds" => 2.1))
+    assert_equal ["reported", %w[head_only_timeout report], 0], outcome.(pass_result.merge("seconds" => 5.0)), "exactly half"
+    assert_equal ["discarded", %w[discard:timeout], 1], outcome.(pass_result.merge("seconds" => 5.1))
+    assert_equal ["discarded", %w[discard:timeout], 1], outcome.(pass_result), "a run file that kept no time"
+  end
+
   def test_discards_signature_load_and_timeout_and_tags_touches
     doc = {
       "methods" => [

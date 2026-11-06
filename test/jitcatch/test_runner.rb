@@ -1226,7 +1226,10 @@ class TestRunner < Minitest::Test
     end
   end
 
-  def test_discards_head_timeout
+  # Base passed in far less than the timeout and only head ran out of it,
+  # as a head that loops while a test stubs the clock does, so the row is
+  # the change's and stays reported.
+  def test_reports_a_timeout_on_head_alone
     with_repo do |repo|
       repo.write("lib/flag.rb", "module Flag; def self.ok; true; end; end\n")
       repo.commit("base", date: "2026-02-11T00:00:00Z")
@@ -1252,19 +1255,17 @@ class TestRunner < Minitest::Test
         RUBY
       })
       started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-      doc = execute(repo, tests, timeout: 1, reruns: 2, finished_in_time: blocked_children_time_out(repo.dir))
+      doc = execute(repo, tests, timeout: 40, reruns: 2, finished_in_time: blocked_children_time_out(repo.dir))
       assert_operator Process.clock_gettime(Process::CLOCK_MONOTONIC) - started, :<, 50, "the timed-out process was not killed"
       assert_equal "x", File.read(head_runs), "a timeout is not rerun"
-      assert_equal 1, doc["counts"]["generated"]
-      assert_equal 1, doc["counts"]["discarded"]
-      assert_equal 0, doc["counts"]["reported"]
+      assert_equal [1, 0, 1, 0], doc["counts"].values_at("generated", "discarded", "reported", "fail_on_base")
       row = doc["tests"].fetch(0)
-      assert_equal "discarded", row["disposition"]
-      assert_includes row["tags"], "discard:timeout"
-      assert_equal "pass", row["base"]["status"]
-      assert_equal "timeout", row["head"]["status"]
-      assert_equal "slow_test.rb#timeout", row["name"]
-      assert_includes JitCatch::Render.run_text(doc), "slow_test.rb#timeout slow_test.rb\n    hint: head timed out after 1s; raise --timeout if the file needs longer\n"
+      assert_equal %w[slow_test.rb#timeout reported pass timeout], [row["name"], row["disposition"], row.dig("base", "status"), row.dig("head", "status")]
+      assert_includes row["tags"], "head_only_timeout"
+      assert_operator row.dig("base", "seconds"), :<=, 20
+      assert_nil row.dig("head", "seconds"), "only a base that passed beside a timed-out head keeps its time"
+      refute JitCatch::Assessor.untested_run?(doc)
+      assert_match(/slow_test\.rb#timeout slow_test\.rb\n    hint: base passed in \d+\.\ds; head did not finish in 40s, so head may loop or wait forever\n/, JitCatch::Render.run_text(doc))
     end
   end
 

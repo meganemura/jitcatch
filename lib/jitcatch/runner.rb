@@ -51,7 +51,7 @@ module JitCatch
       print JSON.generate(configs.map { |config| config.configuration_hash.slice(:adapter, :host, :port, :socket, :database).transform_values(&:to_s) })
     SCRIPT
     # `lines` maps an RSpec example's name to the line it starts on.
-    Result = Data.define(:tests, :lines, :file_error, :timed_out, :exit_code)
+    Result = Data.define(:tests, :lines, :file_error, :timed_out, :exit_code, :seconds)
     # One worker's two checkouts. A worker runs one file at a time in them.
     Pair = Data.define(:base, :head)
     # The names a test can mention, and the constants head defines.
@@ -283,7 +283,12 @@ module JitCatch
     def rows_for(relative, base_run, head_run, index, known, head_dir)
       if file_level?(base_run) || file_level?(head_run)
         name = file_level_name(relative, base_run, head_run)
-        [build_row(relative, name, nil, side_result(base_run), side_result(head_run), mentions_for(index, name, nil, known, relative, head_dir))]
+        base_result = side_result(base_run)
+        # Only beside a head that timed out does base's time say anything:
+        # how far head was from base when it ran out. Kept nowhere else, so
+        # every other row stays the same bytes from run to run.
+        base_result = base_result.merge("seconds" => base_run.seconds.round(1)) if head_run.timed_out && base_result["status"] == "pass"
+        [build_row(relative, name, nil, base_result, side_result(head_run), mentions_for(index, name, nil, known, relative, head_dir))]
       else
         names = (base_run.tests.keys | head_run.tests.keys).sort
         names.map { |name|
@@ -384,7 +389,7 @@ module JitCatch
         "-I#{worktree}",
         *framework.arguments(File.join(".jitcatch", relative))
       ]
-      status, stdout, stderr, timed_out = run_process(
+      status, stdout, stderr, timed_out, seconds = run_process(
         cmd,
         chdir: worktree,
         stdout_path: stdout_path,
@@ -392,7 +397,7 @@ module JitCatch
         env: child_env(worktree)
       )
       if timed_out
-        return Result.new(tests: {}, lines: {}, file_error: nil, timed_out: true, exit_code: nil)
+        return Result.new(tests: {}, lines: {}, file_error: nil, timed_out: true, exit_code: nil, seconds: seconds)
       end
 
       parsed = framework.parse(File.file?(report_path) ? read_text(report_path) : nil, stdout, stderr, normalizer)
@@ -401,17 +406,20 @@ module JitCatch
         lines: parsed["lines"],
         file_error: Failure.naming_tests(parsed["file_error"], tests_from_root),
         timed_out: false,
-        exit_code: status&.exitstatus
+        exit_code: status&.exitstatus,
+        seconds: seconds
       )
     end
 
     def run_process(cmd, chdir:, stdout_path:, stderr_path:, env:)
+      started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       pid = Process.spawn(env, *cmd, chdir: chdir, out: stdout_path, err: stderr_path, pgroup: true, unsetenv_others: true)
       waiter = Process.detach(pid)
       timed_out = !@finished_in_time.call(waiter)
+      seconds = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
       kill_group(pid) if timed_out
       status = waiter.value
-      [status, read_text(stdout_path), read_text(stderr_path), timed_out]
+      [status, read_text(stdout_path), read_text(stderr_path), timed_out, seconds]
     end
 
     def kill_group(pid)

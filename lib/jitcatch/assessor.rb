@@ -65,14 +65,14 @@ module JitCatch
       @doc.merge(
         "tests" => tests,
         "counts" => counts(tests),
-        "untested" => tests.count { |test| self.class.untested?(test) }
+        "untested" => tests.count { |test| self.class.untested?(test, @doc["timeout_s"]) }
       )
     end
 
     # A row whose side timed out, or found no database or no table, says
     # nothing about the change, whatever its classification.
-    def self.untested?(test)
-      !untested_causes(test).empty?
+    def self.untested?(test, timeout_s)
+      !untested_causes(test, timeout_s).empty?
     end
 
     UNTESTED_CAUSES = {
@@ -81,9 +81,20 @@ module JitCatch
       "found no table" => ->(result) { no_table?(result) }
     }.freeze
 
-    def self.untested_causes(test)
+    def self.untested_causes(test, timeout_s)
       results = %w[base head].map { |side| test[side] || {} }
-      UNTESTED_CAUSES.select { |_cause, seen| results.any?(&seen) }.keys
+      causes = UNTESTED_CAUSES.select { |_cause, seen| results.any?(&seen) }.keys
+      head_only_timeout?(test, timeout_s) ? causes - ["timed out"] : causes
+    end
+
+    # Base passed in at most half the time head ran out of, so a slow boot
+    # does not explain head's timeout: head may loop or wait forever, as a
+    # wait that checks a clock the test froze does.
+    def self.head_only_timeout?(test, timeout_s)
+      base = test["base"] || {}
+      seconds = base["seconds"]
+      test.dig("head", "status") == "timeout" && base["status"] == "pass" &&
+        seconds.is_a?(Numeric) && timeout_s.is_a?(Numeric) && seconds * 2 <= timeout_s
     end
 
     # Rows that each say nothing about the change are a run that tested
@@ -120,7 +131,8 @@ module JitCatch
 
     def discard_reason(test, call)
       head = test["head"] || {}
-      return "timeout" if head["status"] == "timeout" || head["error_class"] == "Timeout" || test.dig("base", "status") == "timeout"
+      timed_out = head["status"] == "timeout" || head["error_class"] == "Timeout" || test.dig("base", "status") == "timeout"
+      return "timeout" if timed_out && !self.class.head_only_timeout?(test, @doc["timeout_s"])
       return "load_error" if head["error_class"] == "LoadError"
       return "no_database" if NO_DATABASE.include?(head["error_class"])
       return "no_table" if self.class.no_table?(head)
@@ -205,6 +217,7 @@ module JitCatch
       tags << caller_tag(call)
       tags << "assertion" if head["status"] == "fail"
       tags << "message_varies" if test["message_varies"]
+      tags << "head_only_timeout" if self.class.head_only_timeout?(test, @doc["timeout_s"])
       if head["error_class"] && head["status"] != "fail"
         tags << "error:#{head["error_class"]}"
       end

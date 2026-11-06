@@ -634,6 +634,15 @@ Run that command with that Ruby in a checkout of that side, fix what it says (of
 `--json` はいつもの run の文書を出し、その `untested` は、どの run でもそのような行の数を数える。
 終了コード 3 は、`untested` が行の数と等しいことを意味する。
 
+base が `--timeout` の半分以内で通り、head だけがタイムアウトした行は、タグ `head_only_timeout` を付けて報告する。
+遅い起動ではこれを説明できず、head はループし続けるか、待ち続けているかもしれない。
+テストが止めた時計を見て待つコードがそうなる。
+そのヒントは base にかかった時間を示し、`hint: base passed in 0.1s; head did not finish in 5s, so head may loop or wait forever` となる。
+この行は再実行せず、`untested` にも数えない。
+base がそれより長くかかったときは遅い起動もありうるので、その行は `discard:timeout` になり、ヒントは `hint: head timed out after 10s, and base passed in 7.4s;` で始まる。
+`--json` では、こうした行にだけ、base の `seconds` を 0.1 秒単位で丸めて載せる。
+時間は実行のたびに変わるからである。
+
 テストのプロセスは決まった環境変数と `--env` で名指しした変数だけを受け取るので、シェルにある名前が無いために、届かないコマンドやネットワークを待ち続けることがある。
 ある行がタイムアウトすると、その行の `hint:` が、`--timeout` を延ばすよう言う前に、今の環境にあり、`--env` で渡しておらず、子プロセスが必要としそうな変数を名指しする。
 それはネットワークの設定（大文字でも小文字でも `HTTPS_PROXY`、`NO_PROXY`、`ALL_PROXY`、`HTTP_PROXY`、そして `SSL_CERT_FILE`、`SSL_CERT_DIR`、`NODE_EXTRA_CA_CERTS`）か、head の Ruby ファイルか候補がリテラルで読む名前（`ENV["QUINT"]`、`ENV.fetch("QUINT")`、`ENV.key?("QUINT")`）である。
@@ -643,8 +652,8 @@ Run that command with that Ruby in a checkout of that side, fix what it says (of
 そのため、ローカルの SQLite だけを使うアプリのスペックでは名指ししない。
 たとえば `hint: base and head timed out after 10s; jitcatch did not pass HTTPS_PROXY QUINT, so add --env HTTPS_PROXY --env QUINT if the file needs them, then raise --timeout if it needs longer` となる。
 `--env` で渡したのに今の環境で設定されていない名前は、それらより先に出る。
-たとえば `hint: head timed out after 10s; --env QUINT passed nothing, because QUINT is not set, so set it if the file needs it, then raise --timeout if it needs longer` となる。
-そのような名前が無ければ、ヒントは `hint: head timed out after 10s; raise --timeout if the file needs longer` である。
+たとえば `hint: base and head timed out after 10s; --env QUINT passed nothing, because QUINT is not set, so set it if the file needs it, then raise --timeout if it needs longer` となる。
+そのような名前が無ければ、ヒントは `hint: base and head timed out after 10s; raise --timeout if the file needs longer` である。
 head に `config/application.rb` があるときだけ、ヒントの最後に `, as a Rails app's first run in a new checkout can (it loads db/schema.rb)` が付く。
 `--json` では名前が `env_not_passed` に並び、タイムアウトした行が無ければ空である。
 `rails_app` は、head に `config/application.rb` があるとき true になる。
