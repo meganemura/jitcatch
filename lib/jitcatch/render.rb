@@ -52,7 +52,7 @@ module JitCatch
 
     def run_text(doc)
       lines = []
-      lines << untested_line(doc) if Assessor.untested_run?(doc)
+      lines.concat(untested_lines(doc)) if Assessor.untested_run?(doc)
       lines << "jitcatch run"
       lines << "version #{doc["version"]}"
       lines << "base #{doc["base"]}"
@@ -277,9 +277,20 @@ module JitCatch
       ["    base: #{outcome.join(" ")}", *rest.map { |line| "      #{line}" }]
     end
 
-    def untested_line(doc)
+    # Only the numbered databases have names the reader can load a schema
+    # into; the URL itself can hold a password, so it is never printed.
+    def untested_lines(doc)
       causes = Assessor::UNTESTED_CAUSES.keys & doc["tests"].flat_map { |test| Assessor.untested_causes(test) }
-      "jitcatch: no row ran to a result on both sides (#{doc["untested"]} of #{doc["tests"].size} #{causes.join(" or ")}), so this run cannot tell base from head"
+      lines = ["jitcatch: no row ran to a result on both sides (#{doc["untested"]} of #{doc["tests"].size} #{causes.join(" or ")}), so this run cannot tell base from head"]
+      return lines unless causes.include?("found no table")
+
+      prepare = "run `RAILS_ENV=test bin/rails db:prepare` (or `db:schema:load`)"
+      numbered = doc["numbered_databases"].to_a
+      lines << if numbered.empty?
+        "jitcatch: load the schema into each side's test database: #{prepare} for each database the checkouts use, or call `ActiveRecord::Migration.maintain_test_schema!` in the test helper, then run jitcatch again"
+      else
+        "jitcatch: load the schema into #{numbered.join(" and ")}: #{prepare} with DATABASE_URL naming each, then run jitcatch again"
+      end
     end
 
     # A child that waits on the network or on a command an environment

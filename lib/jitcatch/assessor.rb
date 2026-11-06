@@ -9,6 +9,15 @@ module JitCatch
     # uses its own numbered test database, so one that was never created
     # fails on that side alone, which says nothing about the change.
     NO_DATABASE = %w[ActiveRecord::NoDatabaseError ActiveRecord::ConnectionNotEstablished ActiveRecord::DatabaseConnectionError].freeze
+    # A database that `db:create` made has no tables until something loads
+    # the schema, which a test helper without `maintain_test_schema!` never
+    # does. Each adapter words the missing table its own way, and the
+    # SQLite adapter's own column lookup says "Could not find table".
+    NO_TABLE = /\APG::UndefinedTable: |\ASQLite3::SQLException: no such table: |\ACould not find table '|Table '[^']*' doesn't exist/
+
+    def self.no_table?(result)
+      result["error_class"] == "ActiveRecord::StatementInvalid" && NO_TABLE.match?(result["message"].to_s)
+    end
 
     def self.apply(doc)
       new(doc).apply
@@ -60,15 +69,16 @@ module JitCatch
       )
     end
 
-    # A row whose side timed out or found no database says nothing about
-    # the change, whatever its classification.
+    # A row whose side timed out, or found no database or no table, says
+    # nothing about the change, whatever its classification.
     def self.untested?(test)
       !untested_causes(test).empty?
     end
 
     UNTESTED_CAUSES = {
       "timed out" => ->(result) { result["status"] == "timeout" },
-      "found no database" => ->(result) { NO_DATABASE.include?(result["error_class"]) }
+      "found no database" => ->(result) { NO_DATABASE.include?(result["error_class"]) },
+      "found no table" => ->(result) { no_table?(result) }
     }.freeze
 
     def self.untested_causes(test)
@@ -113,6 +123,7 @@ module JitCatch
       return "timeout" if head["status"] == "timeout" || head["error_class"] == "Timeout" || test.dig("base", "status") == "timeout"
       return "load_error" if head["error_class"] == "LoadError"
       return "no_database" if NO_DATABASE.include?(head["error_class"])
+      return "no_table" if self.class.no_table?(head)
       # Only a call the test wrote is a claim the new signature voids. With
       # no frame to say who called, the test is assumed to have.
       return "signature_change" if call && (call.empty? || test_frame?(call))

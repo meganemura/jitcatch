@@ -438,7 +438,7 @@ bin/jitcatch assess --json run.json
 | 0 | コマンドは完了した。候補が見つかっても 0 のまま。 |
 | 1 | 使い方の誤り。 |
 | 2 | git の失敗。 |
-| 3 | `run` は何もテストしなかった。ある側がセットアップの確認に失敗したか、どちらの側でも候補ファイルが 1 つも読み込めなかったか、すべての行がある側でタイムアウトしたかデータベースが見つからなかった。 |
+| 3 | `run` は何もテストしなかった。ある側がセットアップの確認に失敗したか、どちらの側でも候補ファイルが 1 つも読み込めなかったか、すべての行がある側でタイムアウトしたか、データベースかテーブルが見つからなかった。 |
 
 ### 結果
 
@@ -462,7 +462,7 @@ bin/jitcatch assess --json run.json
 `touches:changed_dependency` は、ロックしたバージョンが変わった gem の中からエラーが出た。
 gem の中から始まったエラーには `touches:changed_method` を付けない。
 `touches:unchanged_caller` は、diff が編集していない入口を通り、その入口から変更メソッドへ届いている。
-`discard:signature_change`、`discard:load_error`、`discard:timeout`、`discard:no_database` は、候補を除いたルールの名前である。
+`discard:signature_change`、`discard:load_error`、`discard:timeout`、`discard:no_database`、`discard:no_table` は、候補を除いたルールの名前である。
 `discard:signature_change` は、削除したメソッドや新しいシグネチャが壊した呼び出しを、テスト自身がしているときだけ使う。
 変更されていないコードがその呼び出しをしているときは、行を報告する。
 たとえば `class B < A` が、head で削除した `A#helper` をまだ呼んでいるときである。
@@ -623,10 +623,14 @@ Run that command with that Ruby in a checkout of that side, fix what it says (of
 失敗した側は、今の環境にあって `--env` で渡していない Bundler の設定（`BUNDLE_WITHOUT`、`BUNDLE_PATH` などの `BUNDLE_` で始まる変数）を `not passed:` の行（`--json` では `not_passed`）で名指しする。
 
 どの行も変更について何も言えないまま、行を出して終わる `run` もある。
-すべての行が、ある側でタイムアウトしたか、ある側でデータベースが見つからなかった（base か head での `NoDatabaseError`、`ConnectionNotEstablished`、`DatabaseConnectionError`）場合である。
+すべての行が、ある側でタイムアウトしたか、ある側でデータベースが見つからなかった（base か head での `NoDatabaseError`、`ConnectionNotEstablished`、`DatabaseConnectionError`）か、ある側でテーブルが見つからなかった場合である。
+テーブルが見つからないとは、`PG::UndefinedTable`、MySQL の `Table '...' doesn't exist`、SQLite の `no such table` か `Could not find table` による `ActiveRecord::StatementInvalid` のことで、`db:create` で作ったまま何も入れていないデータベースで起きる。
 このような `run` は何もテストしていないので、やはり終了コード 3 で終わり、指摘の無い変更のようには読めない。
 テキストは `jitcatch: no row ran to a result on both sides (6 of 6 timed out), so this run cannot tell base from head` の行で始まり、そのあとにいつもの報告が続くので、各行のヒントも残る。
-括弧の中は、行に現れた原因だけを `timed out`、`found no database`、`timed out or found no database` のどれかで示す。
+括弧の中は、行に現れた原因だけを `timed out`、`found no database`、`found no table` で示し、複数あれば `or` でつなぐ。
+行がテーブルを見つけられなかったときは、2 行目がスキーマを読み込むように言う。
+`--number-database-url` のときは、番号付きのデータベースを名指しする。
+たとえば `` jitcatch: load the schema into app_test_wt1_1 and app_test_wt1_2: run `RAILS_ENV=test bin/rails db:prepare` (or `db:schema:load`) with DATABASE_URL naming each, then run jitcatch again `` である。
 `--json` はいつもの run の文書を出し、その `untested` は、どの run でもそのような行の数を数える。
 終了コード 3 は、`untested` が行の数と等しいことを意味する。
 
@@ -666,7 +670,7 @@ base の再実行が一度でも通らなければ行は `flaky` になる。
 タイムアウトは再実行しない。
 
 候補を `discarded` にするルールは 4 つある。
-head での `LoadError`、どちらかの側でのタイムアウト、データベースが無いか届かないことを示す head での Active Record のエラー（`NoDatabaseError`、`ConnectionNotEstablished`、`DatabaseConnectionError`）、そして diff が消したかシグネチャを書き換えた名前に対する `NameError`、`NoMethodError`、引数個数の `ArgumentError` である。
+head での `LoadError`、どちらかの側でのタイムアウト、データベースが無いか届かないか、テーブルが無いことを示す head での Active Record のエラー（`NoDatabaseError`、`ConnectionNotEstablished`、`DatabaseConnectionError`、テーブルが無いときは `discard:no_table`）、そして diff が消したかシグネチャを書き換えた名前に対する `NameError`、`NoMethodError`、引数個数の `ArgumentError` である。
 消えたクラスやモジュールも消えた名前に数える。
 引数個数の `ArgumentError` とは `wrong number of arguments`、`missing keyword`、`unknown keyword`、`struct size differs`（メンバーより多くの値を渡した `Struct`）のことで、`assert_raises` や RSpec の `raise_error` が受け取って失敗にしたときも同じに扱う。
 コードが意図して起こす `ArgumentError`（`qty must be > 0` のようなもの）は `reported` のまま残る。
@@ -737,13 +741,15 @@ test:
 ```
 
 最初の実行の前に、ワーカー 1 つにつき 2 つのデータベースを一度だけ作る。
-スキーマは、Rails が起動するときにそれぞれのリビジョンのものを読み込む。
+`spec/rails_helper.rb`（または `test/test_helper.rb`）が `ActiveRecord::Migration.maintain_test_schema!` を呼ぶなら、スキーマは Rails が起動するときにそれぞれのリビジョンのものを読み込む。
+呼ばないなら、`db:create` の代わりに、スキーマも読み込む `db:prepare` を走らせる。
+`db:create` だけで作ったデータベースにはテーブルが無く、どの行もテーブルを見つけられない。
 
 ```sh
 for n in 1 2; do RAILS_ENV=test TEST_ENV_NUMBER=$n bin/rails db:create; done
 ```
 
-head のデータベースが無いときは、その行は `discard:no_database` になる。
+head のデータベースが無いときは、その行は `discard:no_database` になり、テーブルが無いときは `discard:no_table` になる。
 `database.yml` がこの変数を使っていないことは、`run` が候補を動かす前に見つける。
 `run` は各側の `config/database.yml` を、その側の `TEST_ENV_NUMBER` と、`--env` で渡した `DATABASE_URL` があればそれも使って、Active Record と同じように読む。
 base と head がサーバー上の 1 つのデータベース、または絶対パスの 1 つの SQLite ファイルを指すとき、`--workers` の値にかかわらず、`--serial` と同じく一度に 1 つのプロセスだけを動かす。
@@ -768,6 +774,7 @@ Rails はデータベース名を含む `DATABASE_URL` を `database.yml` の `d
 報告は URL の残りを除いた名前を `numbered_databases app_test_wt1_1 app_test_wt1_2` と出す（`--json` では `numbered_databases`）。
 これらは同じサーバーに一度だけ作る。
 たとえば `for n in 1 2; do DATABASE_URL=postgresql://localhost/app_test_wt1_$n RAILS_ENV=test bin/rails db:create; done` とする。
+テストヘルパーが `ActiveRecord::Migration.maintain_test_schema!` を呼ばないなら、`db:create` の代わりに `db:prepare` を使う。
 このフラグを付けて `--env DATABASE_URL` を渡さないとき、または URL のパスがサーバー上のデータベースを指さないとき、`run` は何を変えるかを言って 1 で終わる。
 SQLite の URL なら、フラグの代わりに相対パスにするよう言う。
 `Rails.application` を呼ぶもののように、起動したアプリの中でしか読めない `database.yml` からは答えが出ないので、実行は本来のプロセス数のまま進む。

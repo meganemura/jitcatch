@@ -185,7 +185,7 @@ module JitCatch
         assess    Re-apply the rule assessor to a run JSON file.
 
         Exit status: 0 success, 1 usage error, 2 git error, 3 run tested nothing (setup failed,
-        or every row timed out or found no database on a side).
+        or every row timed out or found no database or table on a side).
       HELP
     end
   end

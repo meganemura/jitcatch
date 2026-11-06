@@ -352,6 +352,26 @@ class TestRender < Minitest::Test
     assert_equal "jitcatch: no row ran to a result on both sides (2 of 2 timed out or found no database), so this run cannot tell base from head\n", first.([base_no_database, base_timed_out])
   end
 
+  # A database that db:create made and nothing filled checked nothing, so
+  # the run says which step loads the schema, naming the numbered
+  # databases but never the URL, which can hold a password.
+  def test_an_untested_run_whose_rows_found_no_table_says_to_load_the_schema
+    no_table = { "status" => "error", "error_class" => "ActiveRecord::StatementInvalid", "message" => "PG::UndefinedTable: ERROR:  relation \"loans\" does not exist" }
+    row = { "id" => "t01", "file" => "loan_spec.rb", "name" => "Loan opens", "classification" => "fail_on_base", "base" => no_table, "head" => no_table }
+    text = ->(extra) { JitCatch::Render.run_text(JitCatch::Assessor.apply({ "version" => "0.1.0", "base" => "b", "head" => "h", "reruns" => 0, "timeout_s" => 10, "tests" => [row] }.merge(extra))).lines.first(2) }
+
+    assert_equal [
+      "jitcatch: no row ran to a result on both sides (1 of 1 found no table), so this run cannot tell base from head\n",
+      "jitcatch: load the schema into app_test_1 and app_test_2: run `RAILS_ENV=test bin/rails db:prepare` (or `db:schema:load`) with DATABASE_URL naming each, then run jitcatch again\n"
+    ], text.("numbered_databases" => %w[app_test_1 app_test_2])
+    assert_equal [
+      "jitcatch: no row ran to a result on both sides (1 of 1 found no table), so this run cannot tell base from head\n",
+      "jitcatch: load the schema into each side's test database: run `RAILS_ENV=test bin/rails db:prepare` (or `db:schema:load`) for each database the checkouts use, or call `ActiveRecord::Migration.maintain_test_schema!` in the test helper, then run jitcatch again\n"
+    ], text.({})
+    timed_out = row.merge("id" => "t02", "base" => { "status" => "timeout" }, "head" => { "status" => "timeout" })
+    assert_equal "jitcatch run\n", JitCatch::Render.run_text(JitCatch::Assessor.apply({ "version" => "0.1.0", "base" => "b", "head" => "h", "reruns" => 0, "timeout_s" => 10, "tests" => [timed_out] })).lines[1]
+  end
+
   def test_context_text_lists_dependencies_only_when_one_changed
     doc = {
       "version" => "0.1.0", "base" => "b", "head" => "h", "existing_tests_via" => "grep",

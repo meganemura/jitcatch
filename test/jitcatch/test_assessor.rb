@@ -21,6 +21,32 @@ class TestAssessor < Minitest::Test
     assert_equal [true, false], out["tests"].map { |test| test["tags"].include?("message_varies") }
   end
 
+  # A test database made with db:create alone has no tables until something
+  # loads the schema, so a missing table says nothing about the change.
+  def test_discards_a_head_whose_database_has_no_tables
+    doc = {
+      "methods" => [method("m01", "modified", "same", "approve!", [], 1)], "constants" => [], "tests_dir" => "candidates",
+      "tests" => [
+        candidate("t01", "Loan#approve! pg", ["approve!"], error("ActiveRecord::StatementInvalid", "PG::UndefinedTable: ERROR:  relation \"loans\" does not exist\nLINE 10: WHERE a.attrelid = '\"loans\"'::regclass")),
+        candidate("t02", "Loan#approve! sqlite", ["approve!"], error("ActiveRecord::StatementInvalid", "SQLite3::SQLException: no such table: loans")),
+        candidate("t03", "Loan#approve! sqlite columns", ["approve!"], error("ActiveRecord::StatementInvalid", "Could not find table 'loans'")),
+        candidate("t04", "Loan#approve! mysql", ["approve!"], error("ActiveRecord::StatementInvalid", "Mysql2::Error: Table 'app_test.loans' doesn't exist")),
+        candidate("t05", "Loan#approve! unique", ["approve!"], error("ActiveRecord::StatementInvalid", "PG::UniqueViolation: ERROR:  duplicate key value violates unique constraint")),
+        candidate("t06", "Loan#approve! own", ["approve!"], error("RuntimeError", "no such table: loans"))
+      ]
+    }
+
+    out = JitCatch::Assessor.apply(doc)
+
+    assert_equal [%w[discarded discard:no_table]] * 4 + [%w[reported report]] * 2,
+      out["tests"].map { |test| [test["disposition"], test["tags"].find { |tag| tag.start_with?("discard:", "report") }] }
+    assert_equal 4, out["untested"]
+    fail_on_base = { "id" => "t07", "name" => "Loan#approve! opens", "file" => "candidates/loan_test.rb", "classification" => "fail_on_base",
+                     "base" => error("ActiveRecord::StatementInvalid", "PG::UndefinedTable: ERROR:  relation \"loans\" does not exist"),
+                     "head" => error("ActiveRecord::StatementInvalid", "PG::UndefinedTable: ERROR:  relation \"loans\" does not exist") }
+    assert JitCatch::Assessor.untested_run?(JitCatch::Assessor.apply(doc.merge("tests" => [fail_on_base]))), "a run whose every row found no table"
+  end
+
   def test_discards_a_head_that_cannot_reach_its_database
     doc = {
       "methods" => [method("m01", "modified", "same", "approve!", [], 1)],
