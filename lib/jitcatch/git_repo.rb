@@ -73,12 +73,18 @@ module JitCatch
 
     Blob = Data.define(:path, :oid, :size)
 
+    # A symlink is a blob that holds the path it points at, not Ruby. Its
+    # target is listed on its own when the repository holds it.
+    SYMLINK_MODE = "120000"
+
     # `-z` leaves a path with a tab, a newline, or a quote unquoted too.
     def ruby_blobs(ref)
       git("ls-tree", "-r", "-l", "-z", "--end-of-options", ref).split("\0").filter_map { |entry|
         meta, path = entry.split("\t", 2)
-        _mode, type, oid, size = meta.split
-        Blob.new(path: path, oid: oid, size: size.to_i) if type == "blob" && path.end_with?(".rb")
+        mode, type, oid, size = meta.split
+        next unless type == "blob" && mode != SYMLINK_MODE && path.end_with?(".rb")
+
+        Blob.new(path: path, oid: oid, size: size.to_i)
       }.sort_by(&:path)
     end
 

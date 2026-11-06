@@ -449,6 +449,24 @@ class TestChangesGraph < Minitest::Test
     end
   end
 
+  def test_a_symlinked_ruby_file_is_not_parsed_as_its_link_path
+    with_repo do |repo|
+      repo.write("lib/b/real_file.rb", "def x = 1\n")
+      FileUtils.mkdir_p(File.join(repo.dir, "lib/a"))
+      File.symlink("../b/real_file.rb", File.join(repo.dir, "lib/a/link_file.rb"))
+      repo.write("lib/c.rb", "def y = 1\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/c.rb", "def y = 2\n")
+      repo.commit("head", date: "2026-02-12T00:00:00Z")
+
+      doc = JitCatch::Changes.between(repo.dir, "base", "HEAD")
+
+      assert_empty doc["parse_errors"]
+      assert_equal [["#y", "lib/c.rb"]], doc["methods"].map { |method| method.values_at("name", "file") }
+    end
+  end
+
   def test_constants_test_files_and_the_grep_of_tests
     with_repo do |repo|
       shop = <<~RUBY
