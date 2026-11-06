@@ -749,8 +749,11 @@ warning: To run them at once, end the test database name in config/database.yml 
 ```
 
 過去のコミットの `database.yml` は変えられないので、そのコミットどうしでは 1 つずつ動かす実行のままでよい。
-`--env DATABASE_URL` を渡したときは、2 行目は代わりに `--number-database-url` を挙げる。
+`--env DATABASE_URL` を渡し、その URL がサーバー上のデータベースを指すときは、2 行目は代わりに `--number-database-url` を挙げる。
 Rails はデータベース名を含む `DATABASE_URL` を `database.yml` の `database:` より優先するので、`database:` に番号を付けても分かれないからである。
+`postgresql://localhost` のようにデータベース名を含まない URL は `database.yml` の `database:` を使うので、2 行目は上と同じになる。
+`sqlite3:/srv/app/wt1.sqlite3` のように絶対パスの SQLite の URL は両方のチェックアウトで 1 つのファイルを指し、このフラグはファイルには番号を付けない。
+そのため 2 行目は `give DATABASE_URL a relative path, as sqlite3:storage/test.sqlite3, so each checkout opens a file under its own root` と言う。
 
 `--number-database-url` は、ワークツリーごとに自分の `DATABASE_URL` を渡すアプリに合う。
 たとえば git が無視する `.env.test.local` から渡していて、チェックアウトにはそのファイルがない場合である。
@@ -759,7 +762,8 @@ Rails はデータベース名を含む `DATABASE_URL` を `database.yml` の `d
 報告は URL の残りを除いた名前を `numbered_databases app_test_wt1_1 app_test_wt1_2` と出す（`--json` では `numbered_databases`）。
 これらは同じサーバーに一度だけ作る。
 たとえば `for n in 1 2; do DATABASE_URL=postgresql://localhost/app_test_wt1_$n RAILS_ENV=test bin/rails db:create; done` とする。
-このフラグを付けて `--env DATABASE_URL` を渡さないとき、または URL のパスがデータベースを指さないとき、`run` は 1 で終わる。
+このフラグを付けて `--env DATABASE_URL` を渡さないとき、または URL のパスがサーバー上のデータベースを指さないとき、`run` は何を変えるかを言って 1 で終わる。
+SQLite の URL なら、フラグの代わりに相対パスにするよう言う。
 `Rails.application` を呼ぶもののように、起動したアプリの中でしか読めない `database.yml` からは答えが出ないので、実行は本来のプロセス数のまま進む。
 PostgreSQL 16 を使うサンプルアプリで `db/schema.rb` も変える変更では、6 つのファイルが、ロードアベレージ 11 から 18 では 1 つずつで 40 秒から 50 秒、番号付きのデータベースで 18 秒、ロードアベレージ 2 ではそれぞれ 32 秒と 9 秒かかった。
 1 つのデータベースを共有したまま `--workers 3` で動かすと、2 回のうち 1 回、変更が原因でない `loan_spec.rb#load` の行が報告された。

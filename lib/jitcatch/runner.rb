@@ -37,6 +37,7 @@ module JitCatch
     # Rescuing in the child keeps Bundler's own message and drops its backtrace.
     BUNDLE_SETUP = 'begin; require "bundler/setup"; rescue Exception => e; $stderr.puts e.message; exit 1; end'
     SETUP_STDERR_LINES = 10
+    SQLITE_RELATIVE = "relative path, as sqlite3:storage/test.sqlite3, so each checkout opens a file under its own root"
     # The test databases of a side, as Active Record reads config/database.yml
     # with that side's TEST_ENV_NUMBER and the variables --env passes, so a
     # DATABASE_URL merges in as it does when rails_helper sets RAILS_ENV.
@@ -91,14 +92,24 @@ module JitCatch
     def check_database_url
       raise UsageError, "--number-database-url numbers the DATABASE_URL that --env passes, so pass --env DATABASE_URL" unless @env_names.include?("DATABASE_URL")
       return if ENV["DATABASE_URL"] && numbered_database_url(ENV["DATABASE_URL"], "1")
+      raise UsageError, "--number-database-url numbers only a database server's database, and DATABASE_URL names an SQLite file; give it a #{SQLITE_RELATIVE}" if sqlite_url?(ENV["DATABASE_URL"])
 
       raise UsageError, "--number-database-url needs DATABASE_URL to name a database, as postgresql://localhost/app_test does; it #{ENV["DATABASE_URL"] ? "names none" : "is not set"}"
     end
 
+    # An SQLite URL names a file, not a database on a server, so there is
+    # no database to number; a relative path already gives each checkout
+    # its own file.
+    def sqlite_url?(url)
+      url.to_s.match?(/\Asqlite3?:/i)
+    end
+
     # `postgresql://host/app_test_wt1?sslmode=disable` with number 2 is
     # `postgresql://host/app_test_wt1_2?sslmode=disable`. Nil when the URL
-    # names no database.
+    # names no database on a server.
     def numbered_database_url(url, number)
+      return nil if sqlite_url?(url)
+
       uri = URI.parse(url)
       name = uri.path.to_s.delete_prefix("/")
       return nil if name.empty? || name.include?("/")
@@ -475,16 +486,20 @@ module JitCatch
 
     # One line says what happened, and one says how to run both sides at
     # once. Rails reads a DATABASE_URL that names a database over the
-    # `database:` of database.yml, so with --env DATABASE_URL only the URL
-    # can split it. A past commit's database.yml cannot change, so for it the
-    # run one process at a time is the one to keep.
+    # `database:` of database.yml, so then only the URL can split it, and
+    # one that names none takes `database:` from the file. A past commit's
+    # database.yml cannot change, so for it the run one process at a time is
+    # the one to keep.
     def shared_database_warnings(name)
       numbers = @test_env_numbers.values.sort_by(&:to_i)
       happened = "base and head use one test database, #{name}, so jitcatch ran one process at a time; that changes how long the run takes, not its results."
-      remedy = if @env_names.include?("DATABASE_URL")
+      url = ENV["DATABASE_URL"] if @env_names.include?("DATABASE_URL")
+      remedy = if url && numbered_database_url(url, "1")
         "To run them at once, add --number-database-url: each checkout then adds its TEST_ENV_NUMBER to the database name in DATABASE_URL " \
           "(#{numbers.map { |number| "#{name}_#{number}" }.join(", ")}), and you create those databases once. " \
           "Numbering database: in config/database.yml does not split it, because a DATABASE_URL that names a database wins over database:."
+      elsif sqlite_url?(url)
+        "To run them at once, give DATABASE_URL a #{SQLITE_RELATIVE}. --number-database-url numbers only a database server's database."
       else
         "To run them at once, end the test database name in config/database.yml with <%= ENV[\"TEST_ENV_NUMBER\"] %> " \
           "and create the numbered databases: for n in #{numbers.join(" ")}; do RAILS_ENV=test TEST_ENV_NUMBER=$n bin/rails db:create; done. " \

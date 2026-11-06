@@ -1898,15 +1898,21 @@ class TestRunner < Minitest::Test
 
   # Each case: the test section of config/database.yml on both sides, the
   # variables jitcatch's caller has, the ones --env passes, and the database
-  # the warning names (nil for none). A database server reached under one name is one database for
+  # the warning names (nil for none), and the advice it gives. A database server reached under one name is one database for
   # every checkout; an SQLite file at a relative path is a file of each.
   SHARED_DATABASE_CASES = [
-    ["adapter: postgresql\n  database: lending_test", {}, [], "lending_test"],
-    ["adapter: mysql2\n  database: app_test", {}, [], "app_test"],
+    ["adapter: postgresql\n  database: lending_test", {}, [], "lending_test", :database_yml],
+    ["adapter: mysql2\n  database: app_test", {}, [], "app_test", :database_yml],
     [%(adapter: postgresql\n  database: app_test<%= ENV["TEST_ENV_NUMBER"] %>), {}, [], nil],
-    [%(adapter: postgresql\n  database: app_test<%= ENV["TEST_ENV_NUMBER"] %>), { "DATABASE_URL" => "postgres://db.example/ci_test" }, ["DATABASE_URL"], "ci_test"],
+    [%(adapter: postgresql\n  database: app_test<%= ENV["TEST_ENV_NUMBER"] %>), { "DATABASE_URL" => "postgres://db.example/ci_test" }, ["DATABASE_URL"], "ci_test", :flag],
+    # A URL that names no database takes database: from config/database.yml,
+    # so numbering that line splits it and the flag would refuse the URL.
+    ["adapter: postgresql\n  database: app_test", { "DATABASE_URL" => "postgres://db.example" }, ["DATABASE_URL"], "app_test", :database_yml],
+    # An SQLite URL names a file, which the flag does not number.
+    ["adapter: sqlite3\n  database: storage/test.sqlite3", { "DATABASE_URL" => "sqlite3:/var/tmp/wt1.sqlite3" }, ["DATABASE_URL"], "/var/tmp/wt1.sqlite3", :sqlite_url],
+    ["adapter: sqlite3\n  database: storage/test.sqlite3", { "DATABASE_URL" => "sqlite3:storage/wt1.sqlite3" }, ["DATABASE_URL"], nil],
     ["adapter: sqlite3\n  database: storage/test.sqlite3", {}, [], nil],
-    ["adapter: sqlite3\n  database: /var/tmp/app_test.sqlite3", {}, [], "/var/tmp/app_test.sqlite3"],
+    ["adapter: sqlite3\n  database: /var/tmp/app_test.sqlite3", {}, [], "/var/tmp/app_test.sqlite3", :database_yml],
     # A DATABASE_URL that --env does not pass reaches no candidate.
     [%(adapter: postgresql\n  database: app_test<%= ENV["TEST_ENV_NUMBER"] %>), { "DATABASE_URL" => "postgres://db.example/ci_test" }, [], nil],
     # A file that needs the booted app reads as no answer, so the run stays as it was.
@@ -1916,7 +1922,7 @@ class TestRunner < Minitest::Test
   def test_base_and_head_that_share_one_test_database_run_one_process_at_a_time
     skip "activerecord is not installed for #{RUBY_VERSION}" if Gem::Specification.find_all_by_name("activerecord").empty?
 
-    SHARED_DATABASE_CASES.each do |config, env, passed, shared|
+    SHARED_DATABASE_CASES.each do |config, env, passed, shared, advice|
       with_repo do |repo|
         repo.write("lib/calc.rb", "class Calc; end\n")
         repo.write("config/database.yml", "test:\n  #{config}\n")
@@ -1938,15 +1944,16 @@ class TestRunner < Minitest::Test
         if shared
           assert_equal [["number=1", "number=2"]] * 2, sides, config
           assert doc["serial"], config
-          remedy = if passed.include?("DATABASE_URL")
-            "To run them at once, add --number-database-url: each checkout then adds its TEST_ENV_NUMBER to the database name in DATABASE_URL " \
+          remedy = {
+            flag: "To run them at once, add --number-database-url: each checkout then adds its TEST_ENV_NUMBER to the database name in DATABASE_URL " \
               "(#{shared}_1, #{shared}_2, #{shared}_3, #{shared}_4), and you create those databases once. " \
-              "Numbering database: in config/database.yml does not split it, because a DATABASE_URL that names a database wins over database:."
-          else
-            "To run them at once, end the test database name in config/database.yml with <%= ENV[\"TEST_ENV_NUMBER\"] %> " \
+              "Numbering database: in config/database.yml does not split it, because a DATABASE_URL that names a database wins over database:.",
+            sqlite_url: "To run them at once, give DATABASE_URL a relative path, as sqlite3:storage/test.sqlite3, so each checkout opens a file under its own root. " \
+              "--number-database-url numbers only a database server's database.",
+            database_yml: "To run them at once, end the test database name in config/database.yml with <%= ENV[\"TEST_ENV_NUMBER\"] %> " \
               "and create the numbered databases: for n in 1 2 3 4; do RAILS_ENV=test TEST_ENV_NUMBER=$n bin/rails db:create; done. " \
               "This helps only when BASE and HEAD both have that line."
-          end
+          }.fetch(advice)
           assert_equal [
             "base and head use one test database, #{shared}, so jitcatch ran one process at a time; that changes how long the run takes, not its results.",
             remedy
@@ -1998,7 +2005,9 @@ class TestRunner < Minitest::Test
 
       [[[], env, "--number-database-url numbers the DATABASE_URL that --env passes, so pass --env DATABASE_URL"],
        [["DATABASE_URL"], { "DATABASE_URL" => nil }, "--number-database-url needs DATABASE_URL to name a database, as postgresql://localhost/app_test does; it is not set"],
-       [["DATABASE_URL"], { "DATABASE_URL" => "postgresql://localhost" }, "--number-database-url needs DATABASE_URL to name a database, as postgresql://localhost/app_test does; it names none"]].each do |passed, given, message|
+       [["DATABASE_URL"], { "DATABASE_URL" => "postgresql://localhost" }, "--number-database-url needs DATABASE_URL to name a database, as postgresql://localhost/app_test does; it names none"],
+       [["DATABASE_URL"], { "DATABASE_URL" => "sqlite3:/var/tmp/wt1.sqlite3" }, "--number-database-url numbers only a database server's database, and DATABASE_URL names an SQLite file; give it a relative path, as sqlite3:storage/test.sqlite3, so each checkout opens a file under its own root"],
+       [["DATABASE_URL"], { "DATABASE_URL" => "sqlite3:/wt1.sqlite3" }, "--number-database-url numbers only a database server's database, and DATABASE_URL names an SQLite file; give it a relative path, as sqlite3:storage/test.sqlite3, so each checkout opens a file under its own root"]].each do |passed, given, message|
         error = assert_raises(JitCatch::UsageError) { with_env(given) { JitCatch::Runner.run(repo.dir, "base", "HEAD", tests, reruns: 0, env: passed, number_database_url: true) } }
         assert_equal message, error.message
       end
