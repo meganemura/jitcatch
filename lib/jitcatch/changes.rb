@@ -459,10 +459,16 @@ module JitCatch
 
     # A factory that builds a class no file defines may need an inflection
     # the app configures (`ApiKey` against `APIKey`), so it is not followed.
+    # One that builds a Ruby value, as `class: Hash` does for the shape of an
+    # API response, builds no class of the app, so nothing is skipped. The
+    # list is fixed so that every Ruby prints the same document.
+    RUBY_VALUE_CLASSES = %w[Array Data Hash Object OpenStruct Set String Struct].freeze
+
     def factories_of(idx)
       defined = lookups(idx)[2]
-      Factories.read(idx["sources"].select { |path, _source| Factories.file?(path) }).map do |factory|
+      Factories.read(idx["sources"].select { |path, _source| Factories.file?(path) }).filter_map do |factory|
         next factory if factory.reason || defined.key?(factory.class_name)
+        next if RUBY_VALUE_CLASSES.include?(factory.class_name.to_s.delete_prefix("::"))
 
         factory.with(reason: "it builds #{factory.class_name}, which no file here defines")
       end

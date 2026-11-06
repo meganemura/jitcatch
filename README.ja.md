@@ -532,6 +532,7 @@ trait の中の関連は、その trait を名指しする呼び出しにだけ�
 ファクトリーの外で定義した trait と、別の trait を含む trait はたどらない。
 ソースからクラスが決まらないファクトリーはたどらず、理由と一緒に `factories_skipped:` に出す。
 実行時に計算する `class:`、そこで読んだファクトリーにない親、どのファイルも定義しないクラスがこれに当たり、最後のものはアプリが設定する活用（`ApiKey` と `APIKey`）で起こりうる。
+アプリのクラスではなく Ruby の値を作るファクトリー（API の応答の形を作る `class: Hash` や、`Array`、`Data`、`Object`、`OpenStruct`、`Set`、`String`、`Struct`）は除き、そこにも出さない。
 Active Record のモデルのクラス本体がコールバックかバリデーション（`after_save :count_save`、`validate :check`、またはそのどちらかの `if:` や `unless:`。`validates :amount, presence: true, if: :checked?` もこれに当たる）で名前を挙げるメソッドには `run_by:` が出る。
 これは Rails の規則でそのメソッドを走らせる呼び出しで、後ろに名前を挙げた行が続く。
 save のコールバックには `Loan.create`、`Loan.create!`、`Loan#save`、`Loan#save!`、`Loan#update`、`Loan#update!` と、そのクラスのファクトリーごとの `create(:loan)` と `build(:loan)` が出る（create のコールバックには update が、update のコールバックには create が出ない）。

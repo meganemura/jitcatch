@@ -719,6 +719,11 @@ class TestChanges < Minitest::Test
           factory :mystery, class: kind
           factory :api_key
           factory :orphan, parent: :nothing
+          factory :api_record, class: Hash do
+            skip_create
+            initialize_with { {} }
+          end
+          factory :pair, class: "OpenStruct"
         end
       RUBY
       repo.write("spec/models/loan_spec.rb", "loan = create(:loan)\nexpect(loan.approved_by).to eq(\"nobody\")\n")
