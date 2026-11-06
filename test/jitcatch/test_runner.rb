@@ -2335,6 +2335,51 @@ class TestRunner < Minitest::Test
     end
   end
 
+  # A request spec sends to a path helper or to a path it interpolates,
+  # and `config/routes.rb` says which controller action serves it, so the
+  # row is tied to that action. A helper the routes file does not draw is
+  # named in a warning, since the row cannot be tied to anything.
+  def test_a_request_to_a_route_helper_mentions_the_controller_action_it_reaches
+    with_repo do |repo|
+      repo.write("config/routes.rb", %(Rails.application.routes.draw do\n  resources :books, only: %i[create show]\n  draw :extra\nend\n))
+      controller = ->(label) { %(class BooksController\n  def create\n    #{label.inspect}\n  end\n\n  def show\n    "shown"\n  end\nend\n) }
+      repo.write("app/controllers/books_controller.rb", controller.("created"))
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("app/controllers/books_controller.rb", controller.("made"))
+      repo.commit("Say made.", date: "2026-02-12T00:00:00Z")
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, { "books_test.rb" => <<~RUBY })
+        require "minitest/autorun"
+
+        class BooksTest < Minitest::Test
+          def books_path = "/books"
+          def report_path = "/report"
+          def post(path) = File.read("app/controllers/books_controller.rb").include?("made") ? 500 : 201
+
+          def test_create_by_helper
+            assert_equal 201, post(books_path)
+          end
+
+          def test_create_by_path
+            id = 7
+            assert_equal 201, post("/books?draft=\#{id}")
+          end
+
+          def test_report
+            assert_equal 201, post(report_path)
+          end
+        end
+      RUBY
+
+      doc = execute(repo, tests)
+
+      rows = doc["tests"].to_h { |test| [test["name"], [test["method_id"], test["tags"].include?("touches:changed_method")]] }
+      assert_equal({ "BooksTest#test_create_by_helper" => ["m01", true], "BooksTest#test_create_by_path" => ["m01", true], "BooksTest#test_report" => [nil, false] }, rows)
+      assert_includes doc["warnings"], "1 candidate request names a path helper config/routes.rb does not draw (report_path), so it is tied to no controller action."
+    end
+  end
+
   # A schema the change edits has to be in each side's database before its
   # candidates run, so --setup runs once in each checkout with that side's
   # TEST_ENV_NUMBER, and with RAILS_ENV=test unless --env passes one, so a

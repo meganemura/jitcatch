@@ -527,6 +527,10 @@ API クラスやテストが、そのファイルで代入した文字列の定�
 そのテストは `tests:` と `entry_point_tests:` に並び、それを送る候補には `touches:changed_method` が付く。
 API クラスがそれ以外の方法でパスを計算するエンドポイントは、その部分をソースのまま波かっこに入れて名付ける（`Books#GET /books/{Settings.legacy}/list`）。
 そのエンドポイントはどのリクエストにも一致せず、ファイルと行を示す `warning:` が出る。
+Rails アプリでは、`run` は `config/routes.rb` が描くルート（`resources`、`resource`、`namespace`、`scope`、`member`、`collection`、`on:`、`root`、`to:` か `=>` を持つ動詞）を読む。
+そのため、候補がパスヘルパー（`post things_path`、`patch thing_url(thing)`）やパスに送るリクエストは、それを受けるコントローラーのアクション（`ThingsController#create` など）を名指しする。
+`draw` で読むファイル、ループ、concern などで描くヘルパーは読まない。
+そのとき `run` は `warning: 1 candidate request names a path helper config/routes.rb does not draw (report_path), so it is tied to no controller action.` を出す。
 クラス本体の条件分岐の中にある `def` や読み出しメソッド（`attr_reader :x if cond`）も数える。
 分岐はすべてが順に走ったものとして読むので、分岐の中の引数のない `private` は条件分岐の後にも効く。
 Concern の `included do`、`prepended do`、`class_methods do` ブロックの中にあるものも数える。

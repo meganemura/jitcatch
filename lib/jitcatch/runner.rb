@@ -57,7 +57,8 @@ module JitCatch
     # The names a test can mention, and the constants head defines.
     # `unsaved` maps a `build(:loan)` that only a callback lists to the
     # record calls that make it run that callback.
-    Known = Data.define(:names, :constants, :unsaved)
+    # `routes` are the routes head's config/routes.rb draws.
+    Known = Data.define(:names, :constants, :unsaved, :routes)
 
     def self.run(repo, base_ref, head_ref, tests_dir, reruns: 2, timeout: nil, env: [], workers: 1, serial: false, number_database_url: false, setup: nil, finished_in_time: nil)
       new(repo, base_ref, head_ref, tests_dir, reruns: reruns, timeout: timeout, env: env, workers: workers, serial: serial,
@@ -158,7 +159,11 @@ module JitCatch
         bundle = { "base" => setups[0]["bundle"], "head" => setups[1]["bundle"] }
         shared = shared_test_database(first)
         @serial ||= !shared.nil?
-        rows = classify_files(files, shared ? [first] : pairs, normalizer, Known.new(names: mention_names(change), constants: changes.head_constants, unsaved: unsaved_mentions(change)))
+        routes_file = File.join(first.head, "config", "routes.rb")
+        routes = Routes.parse(File.file?(routes_file) ? read_text(routes_file) : nil)
+        helper_warnings = File.file?(routes_file) ? route_helper_warnings(files, routes) : []
+        known = Known.new(names: mention_names(change), constants: changes.head_constants, unsaved: unsaved_mentions(change), routes: routes)
+        rows = classify_files(files, shared ? [first] : pairs, normalizer, known)
         bundled = gemfile?(first.head)
         spec_root = File.exist?(File.join(first.head, "spec"))
         launcher = @frameworks.value?(Framework::RSpec) && launcher_loads?
@@ -179,7 +184,7 @@ module JitCatch
         "command" => "run",
         "base" => change["base"],
         "head" => change["head"],
-        "warnings" => change["warnings"] + require_warnings(files) + [*(shared_database_warnings(shared) if shared)],
+        "warnings" => change["warnings"] + require_warnings(files) + helper_warnings + [*(shared_database_warnings(shared) if shared)],
         "reruns" => @reruns,
         "timeout_s" => @timeout,
         "serial" => @serial,
@@ -708,10 +713,14 @@ module JitCatch
       referenced += script_names(index.paths_named(test_name, line), relative, head_dir)
       names = known.names
       # A request names the path it sends, which an endpoint's names only
-      # through a pattern, so each one becomes the endpoints it reaches.
+      # through a pattern, so each one becomes the endpoints it reaches, and
+      # the controller action the routes draw for it.
       endpoints = names.select { |name| SourceIndex.endpoint?(name) }
       referenced = referenced.flat_map { |name|
-        SourceIndex.endpoint?(name) ? [name, *endpoints.select { |endpoint| SourceIndex.endpoint_call?(name, endpoint) }] : [name]
+        next [name] unless SourceIndex.request?(name)
+
+        actions = known.routes.actions(name)
+        [name, *endpoints.select { |endpoint| SourceIndex.endpoint_call?(name, endpoint) }, *actions, *actions.map { |action| SourceIndex.split_qualified(action).last }]
       }.uniq
       referenced.select { |name|
         next false if known.unsaved.key?(name) && !SourceIndex.saves_or_validates?(referenced, known.unsaved[name])
@@ -765,6 +774,19 @@ module JitCatch
 # The run loads each candidate from `.jitcatch/` at a checkout's root,
 # and the rerun line from TESTS_DIR, so a require_relative that leaves
 # TESTS_DIR resolves to two files unless TESTS_DIR sits at the root.
+    # A helper that config/routes.rb draws through `draw`, a loop, or a
+    # concern is not read, so a request to it ties its row to no action.
+    def route_helper_warnings(files, routes)
+      helpers = files.flat_map { |relative|
+        SourceIndex.parse(read_candidate(relative), file: relative).referenced_names(nil)
+          .select { |name| SourceIndex.route_helper_request?(name) }.map { |name| name.split(" ", 2).last }
+      }.uniq.sort.reject { |helper| routes.helper?(helper) }
+      return [] if helpers.empty?
+
+      requests = helpers.size == 1 ? "1 candidate request names a path helper" : "#{helpers.size} candidate requests name path helpers"
+      ["#{requests} config/routes.rb does not draw (#{helpers.join(", ")}), so #{helpers.one? ? "it is" : "they are"} tied to no controller action."]
+    end
+
     def require_warnings(files)
       tests = File.realpath(@tests_dir)
       # From a directory directly under the root, a path that stays in
