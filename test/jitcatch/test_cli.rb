@@ -113,6 +113,7 @@ class TestCLI < Minitest::Test
         %w[run --setup] => "--setup requires a value",
         %w[run --setup true base HEAD t] => "tests directory not found: t",
         %w[run --env 1X base HEAD t] => "--env needs a variable name, not 1X",
+        %w[run --env DB_PORT=55801 base HEAD t] => "--env takes a name and reads its value from your shell, as each rerun line does: run export DB_PORT=<value>, then pass --env DB_PORT",
         %w[run --env LANG base HEAD t] => "--env cannot pass LANG: jitcatch sets it",
         %w[run --env BUNDLE_GEMFILE base HEAD t] => "--env cannot pass BUNDLE_GEMFILE: jitcatch sets it",
         %w[run --env TEST_ENV_NUMBER base HEAD t] => "--env cannot pass TEST_ENV_NUMBER: jitcatch sets it",

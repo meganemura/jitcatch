@@ -148,7 +148,7 @@ When none exists, every file fails to load on both sides and `run` exits 3 (`Act
 RAILS_MASTER_KEY=$(cat config/master.key) jitcatch run --env RAILS_MASTER_KEY BASE HEAD TESTS_DIR
 ```
 
-Pass other variables the app reads at boot the same way (`--env DATABASE_URL`, `--env REDIS_URL`). `RAILS_ENV` is not passed; `rails_helper` sets it to `test`.
+Pass other variables the app reads at boot the same way (`--env DATABASE_URL`, `--env REDIS_URL`). `RAILS_ENV` is not passed; `rails_helper` sets it to `test`. `--env` takes a name, not `NAME=VALUE`: export the value first. `env_unset DB_HOST` is a note, not an error: the shell does not set it, so each side ran with the app's own default.
 
 **Time.** Each file boots the app once on each side. On the sample app (4 CPUs, load average 1 to 3), six files with one example each took 9.8 s, `--workers 2` took 6.0 s, and one file with the same six examples took 1.9 s. Put the examples in few files, and raise `--timeout` above the app's boot time. bootsnap starts with an empty cache in each checkout. One file took 3.7 s with bootsnap and 2.5 s with `DISABLE_BOOTSNAP=1 jitcatch run --env DISABLE_BOOTSNAP`; six files took 8.0 s with bootsnap and 9.8 s without it, because later files reuse the cache. Disable it for one or two files.
 

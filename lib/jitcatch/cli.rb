@@ -152,7 +152,11 @@ module JitCatch
       number
     end
 
+    # A value on the command line would reach the run and no rerun line,
+    # which reads each name from the reader's shell, so --env takes a name.
     def env_option(flag, value)
+      name = value[/\A([A-Za-z_][A-Za-z0-9_]*)=/, 1]
+      raise UsageError, "#{flag} takes a name and reads its value from your shell, as each rerun line does: run export #{name}=<value>, then pass #{flag} #{name}" if name
       raise UsageError, "#{flag} needs a variable name, not #{value}" unless value.match?(/\A[A-Za-z_][A-Za-z0-9_]*\z/)
       raise UsageError, "#{flag} cannot pass #{value}: jitcatch sets it" if Runner::RESERVED_ENV.include?(value)
 

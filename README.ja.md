@@ -392,7 +392,7 @@ jitcatch run --repo DIR BASE HEAD TESTS_DIR
 | `--number-database-url` | `run` | `--env` で渡した `DATABASE_URL` のデータベース名に各チェックアウトの `TEST_ENV_NUMBER` を足し、base と head にそれぞれのデータベースを持たせる（Rails アプリの節を参照）。`--env DATABASE_URL` が要る。 |
 | `--setup CMD` | `run` | 候補の前に、各チェックアウトで `CMD` を `/bin/sh` で一度ずつ走らせる。その側の `TEST_ENV_NUMBER`、`DATABASE_URL`、`--env` で渡した変数を渡し、`--env` で別の値を渡さない限り `RAILS_ENV=test` も渡す。`--setup 'bin/rails db:create db:schema:load'` なら、各側のスキーマをそれぞれのテスト用データベースに読み込む。失敗すると終了コード 3 で終わる。 |
 | `--serial` | `run` | Ruby プロセスを 1 つずつ動かす。ファイルの base 側を走らせてから head 側を走らせる。worktree の外の決まったパスに書く候補や、決まったポートで待ち受ける候補のためのものである。`--workers` に 1 より大きい値は渡せない。Rails アプリの base と head が 1 つのテスト用データベースを共有するときも、`run` は `warning:` を出してこのように動かす（Rails アプリの節を参照）。テキストのレポートは `serial` と出し、`--json` は `"serial": true` を記録する。 |
-| `--env NAME` | `run` | この環境変数を今の環境からテストのプロセスへ渡す。複数の名前は繰り返して渡す。実行結果には値ではなく名前を記録する。設定されていない名前は `env_unset` 行に出す。 |
+| `--env NAME` | `run` | この環境変数を今の環境からテストのプロセスへ渡す。複数の名前は繰り返して渡す。実行結果には値ではなく名前を記録する。設定されていない名前は `env_unset` 行に出す。これはエラーではなく注記で、その名前なしで実行したのでコード自身の既定値が使われたことを示す。名前だけを受け取る。`--env DB_PORT=55801` はシェルでの書き方を示して止まる。`export DB_PORT=<value>` のあとに `--env DB_PORT` を渡す。再実行の行は値をシェルから読むからである。 |
 
 | コマンド | 引数 |
 | --- | --- |
@@ -752,7 +752,7 @@ Ruby 自身の prefix は `{ruby}/` と書く。
 この行はシェルで実行し、`--env` で渡した変数はそのシェルから来ているので、この行にも届く。
 `DATABASE_URL` はパスワードを含むことがあり、報告はほかの人が読む場所に貼られるので、行には値を書かない。
 `--env` で名前を渡したときは、各 `rerun:` 行の下の `rerun env:` 行がその名前と、実行のときに設定されていなかった名前を挙げる。
-たとえば `rerun env: reads DATABASE_URL QUINT from your shell, as jitcatch run did; QUINT was not set for the run` となる。
+たとえば `rerun env: reads DATABASE_URL QUINT from your shell, as jitcatch run did; QUINT was unset, so the run used the code's own default` となる。
 同じ名前が設定された場所でこの行を実行する。
 `--number-database-url` が URL に番号を付けるのは実行の中だけなので、この行は自分のデータベースを使う。
 たとえば `ruby -Ilib -I. -e 'require "rspec/core"; require "rspec/support/object_formatter"; RSpec::Core::RubyProject.instance_variable_set(:@project_root, Dir.pwd); RSpec::Support::ObjectFormatter.default_instance.max_formatted_output_length = nil; exit(RSpec::Core::Runner.run(ARGV))' candidates/cart_spec.rb:11` や `ruby -Ilib -I. candidates/cart_test.rb -n CartTest#test_total` で、head に `Gemfile` があれば `bundle exec` が前に付く。

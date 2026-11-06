@@ -227,7 +227,7 @@ class TestRender < Minitest::Test
       timeout_s 10
       serial
       env A_VAR B_VAR
-      env_unset B_VAR
+      env_unset B_VAR (a note, not an error: the shell does not set it, so each side ran with the code's own default)
       test_files_omitted 3
       tests:
         (none)
@@ -345,7 +345,7 @@ class TestRender < Minitest::Test
     assert_equal ["    rerun: ruby -Ilib -I. a_test.rb -n A#test_a\n"], rerun.({})
     assert_equal ["    rerun: ruby -Ilib -I. a_test.rb -n A#test_a\n", "    rerun env: reads DATABASE_URL from your shell, as jitcatch run did\n"],
       rerun.("env" => %w[DATABASE_URL], "env_unset" => [])
-    assert_equal ["    rerun: ruby -Ilib -I. a_test.rb -n A#test_a\n", "    rerun env: reads DATABASE_URL QUINT from your shell, as jitcatch run did; QUINT was not set for the run\n"],
+    assert_equal ["    rerun: ruby -Ilib -I. a_test.rb -n A#test_a\n", "    rerun env: reads DATABASE_URL QUINT from your shell, as jitcatch run did; QUINT was unset, so the run used the code's own default\n"],
       rerun.("env" => %w[DATABASE_URL QUINT], "env_unset" => %w[QUINT])
   end
 

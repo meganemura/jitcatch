@@ -65,7 +65,7 @@ module JitCatch
       lines << "serial" if doc["serial"]
       lines << "numbered_databases #{doc["numbered_databases"].join(" ")}" unless doc["numbered_databases"].to_a.empty?
       lines << "env #{doc["env"].join(" ")}" unless doc["env"].to_a.empty?
-      lines << "env_unset #{doc["env_unset"].join(" ")}" unless doc["env_unset"].to_a.empty?
+      lines << "env_unset #{doc["env_unset"].join(" ")} (a note, not an error: the shell does not set #{them(doc["env_unset"])}, so each side ran with the code's own default)" unless doc["env_unset"].to_a.empty?
       doc.fetch("bundle", {}).each { |side, bundle| lines << "bundle #{side} #{bundle}" unless bundle == "none" }
       lines << "test_files_omitted #{doc["test_files_omitted"]}" unless doc["test_files_omitted"].to_i.zero?
       lines << "tests:"
@@ -396,7 +396,7 @@ module JitCatch
       return nil if names.empty?
 
       unset = Array(doc["env_unset"])
-      "    rerun env: reads #{names.join(" ")} from your shell, as jitcatch run did#{"; #{unset.join(" ")} #{unset.one? ? "was" : "were"} not set for the run" unless unset.empty?}"
+      "    rerun env: reads #{names.join(" ")} from your shell, as jitcatch run did#{"; #{unset.join(" ")} #{unset.one? ? "was" : "were"} unset, so the run used the code's own default" unless unset.empty?}"
     end
 
     def counts_line(counts)
