@@ -32,7 +32,7 @@ class TestAssessor < Minitest::Test
         candidate("t03", "Loan#approve! sqlite columns", ["approve!"], error("ActiveRecord::StatementInvalid", "Could not find table 'loans'")),
         candidate("t04", "Loan#approve! mysql", ["approve!"], error("ActiveRecord::StatementInvalid", "Mysql2::Error: Table 'app_test.loans' doesn't exist")),
         candidate("t05", "Loan#approve! unique", ["approve!"], error("ActiveRecord::StatementInvalid", "PG::UniqueViolation: ERROR:  duplicate key value violates unique constraint")),
-        candidate("t06", "Loan#approve! own", ["approve!"], error("RuntimeError", "no such table: loans"))
+        candidate("t06", "Loan#approve! own", ["approve!"], error("RuntimeError", "Could not find table 'loans'"))
       ]
     }
 
