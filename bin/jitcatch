@@ -1,6 +1,16 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
+# The library uses Data.define and newer syntax, so an older Ruby, such as
+# a system Ruby on PATH outside a version manager's shell hook, fails while
+# loading it with an error that names no version. This file stays plain
+# enough for that Ruby to parse.
+if (RUBY_VERSION.split(".").map(&:to_i) <=> [3, 3]) < 0
+  require "rbconfig"
+  $stderr.puts "jitcatch needs Ruby 3.3 or newer; this is ruby #{RUBY_VERSION} at #{RbConfig.ruby}"
+  exit 1
+end
+
 require_relative "../lib/jitcatch"
 
 exit JitCatch::CLI.start(ARGV)

@@ -266,6 +266,15 @@ class TestCLI < Minitest::Test
     assert_match(/\Ajitcatch: unknown command: nope\n/, stderr)
   end
 
+  # No Ruby older than 3.3 is installed here, so the child reports one.
+  def test_bin_names_the_ruby_it_needs_on_an_older_ruby
+    bin = File.expand_path("../../bin/jitcatch", __dir__)
+    older = %(Object.send(:remove_const, :RUBY_VERSION); RUBY_VERSION = "2.6.10"; ARGV.replace(["--version"]); load #{bin.dump})
+    stdout, stderr, status = Open3.capture3(RbConfig.ruby, "-W0", "-e", older)
+    assert_equal ["", "jitcatch needs Ruby 3.3 or newer; this is ruby 2.6.10 at #{RbConfig.ruby}\n", 1],
+                 [stdout, stderr, status.exitstatus]
+  end
+
   def test_context_reads_non_ascii_git_output_under_the_c_locale
     with_repo do |repo|
       repo.write("lib/box.rb", "class Box\n  def n\n    10\n  end\nend\n")

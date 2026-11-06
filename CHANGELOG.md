@@ -11,4 +11,4 @@ First release. jitcatch keeps the Ruby tests that pass on the parent of a change
 - Rails apps: candidates can use the app's factories and test database. When base and head would share one test database on a database server, `run` runs one process at a time and says which line of `config/database.yml` to change.
 - A symlinked `.rb` file is not indexed, so it no longer shows up under `parse_errors`. git stores a symlink as the path it points at; the target file is indexed on its own.
 - An agent skill in `skills/jitcatch/`.
-- Ruby 3.3 or newer. No runtime dependency.
+- Ruby 3.3 or newer. No runtime dependency. On an older Ruby, `jitcatch` exits 1 and names the version it needs and the Ruby it ran on.
