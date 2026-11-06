@@ -367,11 +367,14 @@ module JitCatch
     # A method that sends the name of a changed method, or of one that
     # reaches it, to a receiver the source does not name, as in
     # `EMITTERS.fetch(format).render`, may reach it, but no edge says so.
+    # The router calls a controller action, and no code in the app sends
+    # its name, so `cipher.update` does not reach `ThingsController#update`.
     def decorate_dynamic_callers(methods, head_idx, base_idx)
       methods.each do |method|
         node = method["new"] || method["old"]
         idx = method["change"] == "removed" ? base_idx : head_idx
-        names = [node.qualified, *method["reachable_from"]].to_h { |name| [SourceIndex.split_qualified(name).last, name] }
+        sent = [node.qualified, *method["reachable_from"]].reject { |name| controller_action?(name) }
+        names = sent.to_h { |name| [SourceIndex.split_qualified(name).last, name] }
         callers = idx["calls"].filter_map do |call|
           next unless UNTYPED_RECEIVERS.include?(call.receiver.kind) && names.key?(call.bare_name) && call.enclosing && !test_file?(call.file)
           next if call.enclosing == node.qualified || method["reachable_from"].include?(call.enclosing)
@@ -380,6 +383,11 @@ module JitCatch
         end
         method["dynamic_callers"] = callers.uniq.sort_by { |caller| [caller["from"], caller["name"]] }.first(REACHABLE_CAP)
       end
+    end
+
+    def controller_action?(name)
+      owner, sep, = SourceIndex.split_qualified(name)
+      sep == "#" && owner.split("::").last.to_s.end_with?("Controller")
     end
 
     def decorate_tests(methods, base_idx, head_idx, builders)

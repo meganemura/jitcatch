@@ -234,6 +234,33 @@ class TestChangesGraph < Minitest::Test
     end
   end
 
+  # The router calls a controller action; no code in the app sends its name.
+  def test_a_controller_action_in_reachable_from_names_no_dynamic_caller
+    with_repo do |repo|
+      repo.write("lib/sync.rb", "class Sync\n  def self.call(id) = id\nend\n")
+      repo.write("lib/things_controller.rb", "class ThingsController\n  def update = Sync.call(1)\nend\n")
+      repo.write("lib/crypto.rb", <<~RUBY)
+        class Crypto
+          def encrypt(text)
+            cipher = OpenSSL::Cipher.new("aes-256-cbc").encrypt
+            cipher.update(text) + cipher.final
+          end
+
+          def sync(job) = job.call(2)
+        end
+      RUBY
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/sync.rb", "class Sync\n  def self.call(id) = id + 1\nend\n")
+      repo.commit("Shift the id.", date: "2026-02-12T00:00:00Z")
+
+      method = JitCatch::Changes.between(repo.dir, "base", "HEAD")["methods"].fetch(0)
+
+      assert_equal ["ThingsController#update"], method["reachable_from"]
+      assert_equal [{ "from" => "Crypto#sync", "name" => "call" }], method["dynamic_callers"]
+    end
+  end
+
   def test_a_block_pass_of_a_symbol_calls_that_name
     with_repo do |repo|
       repo.write("lib/order.rb", "class Line\nend\n\nclass Order\n  def initialize(lines) = @lines = lines\n  def total_cents = @lines.sum(&:total_cents)\nend\n")
