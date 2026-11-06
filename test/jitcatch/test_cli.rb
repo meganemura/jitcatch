@@ -113,7 +113,9 @@ class TestCLI < Minitest::Test
         %w[run --env LANG base HEAD t] => "--env cannot pass LANG: jitcatch sets it",
         %w[run --env BUNDLE_GEMFILE base HEAD t] => "--env cannot pass BUNDLE_GEMFILE: jitcatch sets it",
         %w[run --env TEST_ENV_NUMBER base HEAD t] => "--env cannot pass TEST_ENV_NUMBER: jitcatch sets it",
-        %w[assess missing.json] => "run json not found: missing.json"
+        %w[assess missing.json] => "run json not found: missing.json",
+        %w[context --number-database-url base HEAD] => "unknown option: --number-database-url",
+        %W[run --number-database-url base HEAD #{repo.dir}] => "--number-database-url numbers the DATABASE_URL that --env passes, so pass --env DATABASE_URL"
       }.each do |args, message|
         assert_equal ["", "jitcatch: #{message}\n", 1], cli(*args), args.join(" ")
       end

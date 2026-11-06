@@ -630,7 +630,7 @@ class TestChanges < Minitest::Test
       repo.commit("base", date: "2026-02-11T00:00:00Z")
       repo.branch("base")
       repo.write("app/models/post.rb", post.sub("2.days", "3.days").sub("where(title: title)", "where(title: title.strip)")
-        .sub("2.years", "3.years").sub(":name, :email, to: :author", ":name, :email, to: :writer").sub("to: :account", "to: :owner"))
+        .sub("2.years", "3.years").sub("->(title) {", "->(title, kind) {").sub(":name, :email, to: :author", ":name, :email, to: :writer").sub("to: :account", "to: :owner"))
       repo.commit("Widen recent.", date: "2026-02-12T00:00:00Z")
 
       doc = JitCatch::Changes.between(repo.dir, "base", "HEAD")
@@ -643,10 +643,11 @@ class TestChanges < Minitest::Test
         ["Post#writer_name", "added", "delegate :name, to: :writer, prefix: true"],
         ["Post.old", "modified", "scope(:old) { where(created_at: ..3.years.ago) }"],
         ["Post.recent", "modified", "scope :recent, -> { where(created_at: 3.days.ago..) }"],
-        ["Post.titled", "modified", "scope :titled, ->(title) { where(title: title.strip) }"]
+        ["Post.titled", "modified", "scope :titled, ->(title, kind) { where(title: title.strip) }"]
       ], doc["methods"].map { |method| [method["name"], method["change"], method["new_source"] || method["old_source"]] }
       recent = doc["methods"].find { |method| method["name"] == "Post.recent" }
       assert_equal [["app/models/digest.rb", 2, "Digest.build"], ["app/models/post.rb", 5, "Post.fresh"]], recent["callsites"].map { |site| site.values_at("file", "line", "enclosing") }
+      assert_equal ["changed"], doc["methods"].select { |method| method["name"] == "Post.titled" }.map { |method| method["signature"] }
       assert_equal ["private"], doc["methods"].select { |method| method["name"] == "Post#plan" }.map { |method| method["visibility"] }
       assert_includes doc["entrypoints"].find { |entry| entry["class"] == "Post" }["methods"].map { |method| method["name"] }, "Post.recent"
     end

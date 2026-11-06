@@ -239,6 +239,14 @@ class TestRender < Minitest::Test
 
   # A test that failed on base says why, so its author can tell a new
   # feature from a test that does not run.
+  def test_run_text_names_the_numbered_databases
+    doc = { "version" => "0.1.0", "base" => "b", "head" => "h", "warnings" => [], "reruns" => 2, "timeout_s" => 60, "env" => ["DATABASE_URL"],
+            "numbered_databases" => %w[app_test_1 app_test_2], "tests" => [],
+            "counts" => { "generated" => 0, "no_signal" => 0, "fail_on_base" => 0, "candidates" => 0, "flaky" => 0, "discarded" => 0, "reported" => 0 } }
+
+    assert_includes JitCatch::Render.run_text(doc), "timeout_s 60\nnumbered_databases app_test_1 app_test_2\nenv DATABASE_URL\n"
+  end
+
   def test_run_text_prints_reruns_under_a_flaky_row_and_a_hint_under_a_timeout
     fail_line = { "status" => "fail", "error_class" => "Minitest::Assertion", "message_first_line" => "Expected: 1" }
     doc = JitCatch::Assessor.apply({

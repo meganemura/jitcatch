@@ -5,6 +5,22 @@ require_relative "../test_helper"
 class TestAssessor < Minitest::Test
   # Each checkout of a Rails app uses its own numbered test database, and
   # one that was never created fails on that side alone.
+  def test_a_row_whose_message_varied_says_so_in_its_tags
+    doc = {
+      "methods" => [method("m01", "modified", "same", "approve!", [], 1)],
+      "constants" => [],
+      "tests_dir" => "candidates",
+      "tests" => [
+        candidate("t01", "Loan#approve! approves", ["approve!"], { "status" => "fail", "error_class" => "Minitest::Assertion", "message" => "id 1" }).merge("message_varies" => true),
+        candidate("t02", "Loan#approve! refuses", ["approve!"], { "status" => "fail", "error_class" => "Minitest::Assertion", "message" => "no" })
+      ]
+    }
+
+    out = JitCatch::Assessor.apply(doc)
+
+    assert_equal [true, false], out["tests"].map { |test| test["tags"].include?("message_varies") }
+  end
+
   def test_discards_a_head_that_cannot_reach_its_database
     doc = {
       "methods" => [method("m01", "modified", "same", "approve!", [], 1)],

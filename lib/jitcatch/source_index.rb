@@ -964,7 +964,6 @@ module JitCatch
 
         if enclosing.nil? && !singleton_context && scope?(node)
           scope = self.class.qualify(qualifier, node.arguments.arguments.first.unescaped, true)
-          @defined[node.arguments.arguments.first.unescaped] << scope
           return walk(scope_body(node), qualifier, true, scope)
         end
 
