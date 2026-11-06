@@ -96,7 +96,7 @@ module JitCatch
         lines << "#{load ? "load" : "setup"} #{failure["side"]} failed: #{failure["command"]}"
         failure["stderr"].each { |line| lines << "  #{line}" }
         names = failure["not_passed"]
-        lines << "  not passed: #{names.join(" ")} (add #{names.map { |name| "--env #{name}" }.join(" ")})" unless names.empty?
+        lines << "  not passed: #{names.join(" ")} (add #{env_flags(names)})" unless names.empty?
       end
       lines << if load
         rails = " A file git ignores, such as config/master.key, is not in the checkouts jitcatch makes; pass its value with --env, such as RAILS_MASTER_KEY." if doc["rails_app"]
@@ -284,20 +284,30 @@ module JitCatch
 
     # A child that waits on the network or on a command an environment
     # variable names often lacks a name the parent has, which a longer
-    # timeout does not fix, so the row names those first. Only a Rails app
-    # loads db/schema.rb in each new checkout.
+    # timeout does not fix, so the row names those first: a name --env
+    # passed that the shell did not set, then a name jitcatch did not pass.
+    # Only a Rails app loads db/schema.rb in each new checkout.
     def timeout_lines(test, doc)
       sides = %w[base head].select { |side| test.dig(side, "status") == "timeout" }
       return [] if sides.empty?
 
-      names = Array(doc["env_not_passed"])
-      wait = if names.empty?
-        "raise --timeout if the file needs longer"
-      else
-        "jitcatch did not pass #{names.join(" ")}, so add #{names.map { |name| "--env #{name}" }.join(" ")} if the file needs #{names.one? ? "it" : "them"}, then raise --timeout if it needs longer"
-      end
+      unset = Array(doc["env_unset"])
+      not_passed = Array(doc["env_not_passed"])
+      missing = [
+        ("#{env_flags(unset)} passed nothing, because #{unset.join(" ")} #{unset.one? ? "is" : "are"} not set, so set #{them(unset)} if the file needs #{them(unset)}" unless unset.empty?),
+        ("jitcatch did not pass #{not_passed.join(" ")}, so add #{env_flags(not_passed)} if the file needs #{them(not_passed)}" unless not_passed.empty?)
+      ].compact
+      wait = missing.empty? ? "raise --timeout if the file needs longer" : "#{missing.join("; ")}, then raise --timeout if it needs longer"
       rails = ", as a Rails app's first run in a new checkout can (it loads db/schema.rb)" if doc["rails_app"]
       ["    hint: #{sides.join(" and ")} timed out after #{doc["timeout_s"]}s; #{wait}#{rails}"]
+    end
+
+    def env_flags(names)
+      names.map { |name| "--env #{name}" }.join(" ")
+    end
+
+    def them(names)
+      names.one? ? "it" : "them"
     end
 
     def counts_line(counts)

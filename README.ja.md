@@ -638,6 +638,8 @@ Run that command with that Ruby in a checkout of that side, fix what it says (of
 スクリプトファイルが走らせるコマンドは見ない。
 そのため、ローカルの SQLite だけを使うアプリのスペックでは名指ししない。
 たとえば `hint: base and head timed out after 10s; jitcatch did not pass HTTPS_PROXY QUINT, so add --env HTTPS_PROXY --env QUINT if the file needs them, then raise --timeout if it needs longer` となる。
+`--env` で渡したのに今の環境で設定されていない名前は、それらより先に出る。
+たとえば `hint: head timed out after 10s; --env QUINT passed nothing, because QUINT is not set, so set it if the file needs it, then raise --timeout if it needs longer` となる。
 そのような名前が無ければ、ヒントは `hint: head timed out after 10s; raise --timeout if the file needs longer` である。
 head に `config/application.rb` があるときだけ、ヒントの最後に `, as a Rails app's first run in a new checkout can (it loads db/schema.rb)` が付く。
 `--json` では名前が `env_not_passed` に並び、タイムアウトした行が無ければ空である。

@@ -308,6 +308,20 @@ class TestRender < Minitest::Test
       hint.("rails_app" => true, "env_not_passed" => %w[DATABASE_URL])
   end
 
+  # A name --env passed but the shell did not set reached the child as
+  # nothing, which a longer timeout does not fix either, and the reader
+  # chose that name, so the hint names it first.
+  def test_a_timed_out_row_names_an_unset_env_name_before_one_jitcatch_did_not_pass
+    row = { "id" => "t01", "file" => "a_test.rb", "name" => "a_test.rb#timeout", "classification" => "candidate", "base" => { "status" => "pass" }, "head" => { "status" => "timeout" } }
+    hint = ->(doc) { JitCatch::Render.run_text(JitCatch::Assessor.apply({ "version" => "0.1.0", "base" => "b", "head" => "h", "reruns" => 0, "timeout_s" => 10, "tests" => [row] }.merge(doc))).lines.grep(/hint:/).first }
+
+    assert_equal "    hint: head timed out after 10s; --env QUINT passed nothing, because QUINT is not set, so set it if the file needs it, then raise --timeout if it needs longer\n",
+      hint.("env" => %w[QUINT], "env_unset" => %w[QUINT])
+    assert_equal "    hint: head timed out after 10s; --env QUINT --env SERVICE_URL passed nothing, because QUINT SERVICE_URL are not set, so set them if the file needs them; " \
+                 "jitcatch did not pass HTTPS_PROXY, so add --env HTTPS_PROXY if the file needs it, then raise --timeout if it needs longer\n",
+      hint.("env" => %w[QUINT SERVICE_URL], "env_unset" => %w[QUINT SERVICE_URL], "env_not_passed" => %w[HTTPS_PROXY])
+  end
+
   # The first line of a run that tested nothing names only what happened,
   # so a gem with no database does not read as one that lacked it.
   def test_an_untested_run_names_only_the_causes_its_rows_show
