@@ -690,6 +690,35 @@ class TestSourceIndexExamples < Minitest::Test
     ], index.methods.map { |method| [method.qualified, method.source, method.start_line] }.sort
   end
 
+  def test_an_enum_defines_a_predicate_a_bang_and_two_scopes_for_each_value
+    source = <<~RUBY
+      class Post < ApplicationRecord
+        enum :status, { draft: 0, live: 1 }
+        enum :kind, %i[note link], prefix: true, scopes: false
+        enum :tone, calm: "c", suffix: :tone, instance_methods: false
+        enum status: { old: 0 }
+      end
+    RUBY
+    index = JitCatch::SourceIndex.parse(source, file: "app/models/post.rb")
+
+    assert_equal [
+      ["Post#draft!", "enum :status, draft: 0", 2],
+      ["Post#draft?", "enum :status, draft: 0", 2],
+      ["Post#kind_link!", "enum :kind, :link, prefix: true, scopes: false", 3],
+      ["Post#kind_link?", "enum :kind, :link, prefix: true, scopes: false", 3],
+      ["Post#kind_note!", "enum :kind, :note, prefix: true, scopes: false", 3],
+      ["Post#kind_note?", "enum :kind, :note, prefix: true, scopes: false", 3],
+      ["Post#live!", "enum :status, live: 1", 2],
+      ["Post#live?", "enum :status, live: 1", 2],
+      ["Post.calm_tone", "enum :tone, calm: \"c\", suffix: :tone, instance_methods: false", 4],
+      ["Post.draft", "enum :status, draft: 0", 2],
+      ["Post.live", "enum :status, live: 1", 2],
+      ["Post.not_calm_tone", "enum :tone, calm: \"c\", suffix: :tone, instance_methods: false", 4],
+      ["Post.not_draft", "enum :status, draft: 0", 2],
+      ["Post.not_live", "enum :status, live: 1", 2]
+    ], index.methods.map { |method| [method.qualified, method.source, method.start_line] }.sort
+  end
+
   def test_a_bare_private_in_a_conditional_carries_past_it
     source = <<~RUBY
       class Order

@@ -465,6 +465,9 @@ module JitCatch
         if stmt.receiver.nil? && ATTRIBUTE_MACROS.key?(stmt.name)
           record_attributes_as_methods(stmt, qualifier, visibility == :module_function ? :public : visibility, singleton)
         end
+        record_scope(stmt, qualifier) if scope?(stmt) && !singleton
+        record_delegates(stmt, qualifier, singleton) if stmt.receiver.nil? && stmt.name == :delegate
+        record_enum(stmt, qualifier) if stmt.receiver.nil? && stmt.name == :enum && !singleton
         visibility
       else
         visibility
@@ -613,6 +616,100 @@ module JitCatch
         suffixes.each do |suffix|
           macro = suffix.empty? ? "attr_reader" : "attr_writer"
           record_generated(arg, qualifier, "#{arg.unescaped}#{suffix}", visibility, singleton, macro, "#{macro} :#{arg.unescaped}")
+        end
+      end
+    end
+
+    # `scope :recent, -> { ... }` and `scope(:old) { ... }` define the class
+    # method `Post.recent`, and its body is the whole statement.
+    def scope?(stmt)
+      stmt.receiver.nil? && stmt.name == :scope && stmt.arguments&.arguments&.first.is_a?(Prism::SymbolNode) && !scope_body(stmt).nil?
+    end
+
+    def scope_body(stmt)
+      body = stmt.arguments.arguments[1]
+      return body if body.is_a?(Prism::LambdaNode)
+
+      stmt.block if stmt.block.is_a?(Prism::BlockNode)
+    end
+
+    def record_scope(stmt, qualifier)
+      bare = stmt.arguments.arguments.first.unescaped
+      params = scope_body(stmt).parameters
+      params = params.parameters if params.is_a?(Prism::BlockParametersNode)
+      @methods << self.class::Method.new(
+        file: @file,
+        bare_name: bare,
+        qualifier: qualifier.to_s,
+        qualified: self.class.qualify(qualifier, bare, true),
+        kind: "singleton",
+        visibility: "public",
+        start_line: stmt.location.start_line,
+        end_line: stmt.location.end_line,
+        source: extract_lines(stmt.location.start_line, stmt.location.end_line),
+        params: params&.location&.slice.to_s.gsub(/\s+/, ""),
+        macro: "scope"
+      )
+    end
+
+    # `delegate :name, to: :author, prefix: true` defines `author_name`, and
+    # a change to the options changes every name the line delegates.
+    def record_delegates(stmt, qualifier, singleton)
+      names = Array(stmt.arguments&.arguments).grep(Prism::SymbolNode)
+      options = Array(stmt.arguments&.arguments).grep(Prism::KeywordHashNode).first
+      return if names.empty? || options.nil?
+
+      pairs = options.elements.grep(Prism::AssocNode).select { |pair| pair.key.is_a?(Prism::SymbolNode) }.to_h { |pair| [pair.key.unescaped, pair.value] }
+      return unless pairs.key?("to")
+
+      prefix = case (value = pairs["prefix"])
+      when Prism::TrueNode then pairs["to"].is_a?(Prism::SymbolNode) ? "#{pairs["to"].unescaped}_" : ""
+      when Prism::SymbolNode, Prism::StringNode then "#{value.unescaped}_"
+      else ""
+      end
+      visibility = pairs["private"].is_a?(Prism::TrueNode) ? :private : :public
+      names.each do |arg|
+        record_generated(arg, qualifier, "#{prefix}#{arg.unescaped}", visibility, singleton, "delegate", "delegate :#{arg.unescaped}, #{slice_of(options)}")
+      end
+    end
+
+    ENUM_OPTIONS = %w[prefix suffix scopes default instance_methods validate].freeze
+
+    # `enum :status, { draft: 0, live: 1 }` defines `draft?`, `draft!`, and
+    # the scopes `Post.draft` and `Post.not_draft` for each value. Each value
+    # keeps its own line, so changing one value changes that value's methods.
+    # Rails 8 removed the `enum status: {...}` form, so it is not read.
+    def record_enum(stmt, qualifier)
+      name, *rest = Array(stmt.arguments&.arguments)
+      return unless name.is_a?(Prism::SymbolNode)
+
+      pairs = rest.grep(Prism::KeywordHashNode).flat_map(&:elements).grep(Prism::AssocNode).select { |pair| pair.key.is_a?(Prism::SymbolNode) }
+      options = pairs.select { |pair| ENUM_OPTIONS.include?(pair.key.unescaped) }
+      listed = rest.find { |arg| arg.is_a?(Prism::HashNode) || arg.is_a?(Prism::ArrayNode) }
+      values = case listed
+      when Prism::HashNode then listed.elements.grep(Prism::AssocNode).select { |pair| pair.key.is_a?(Prism::SymbolNode) }.map { |pair| [pair.key.unescaped, pair] }
+      when Prism::ArrayNode then listed.elements.grep(Prism::SymbolNode).map { |value| [value.unescaped, value] }
+      else (pairs - options).map { |pair| [pair.key.unescaped, pair] }
+      end
+      option = options.to_h { |pair| [pair.key.unescaped, pair.value] }
+      affix = lambda do |key, joined|
+        case (value = option[key])
+        when Prism::TrueNode then joined.call(name.unescaped)
+        when Prism::SymbolNode, Prism::StringNode then joined.call(value.unescaped)
+        else ""
+        end
+      end
+      prefix = affix.call("prefix", ->(text) { "#{text}_" })
+      suffix = affix.call("suffix", ->(text) { "_#{text}" })
+      written = options.map { |pair| ", #{slice_of(pair)}" }.join
+      values.each do |value, node|
+        method = "#{prefix}#{value}#{suffix}"
+        source = "enum :#{name.unescaped}, #{node.is_a?(Prism::SymbolNode) ? ":#{value}" : slice_of(node)}#{written}"
+        unless option["instance_methods"].is_a?(Prism::FalseNode)
+          ["#{method}?", "#{method}!"].each { |bare| record_generated(node, qualifier, bare, :public, false, "enum", source) }
+        end
+        unless option["scopes"].is_a?(Prism::FalseNode)
+          [method, "not_#{method}"].each { |bare| record_generated(node, qualifier, bare, :public, true, "enum", source) }
         end
       end
     end
@@ -864,6 +961,12 @@ module JitCatch
         node.compact_child_nodes.each { |child| walk(child, qualifier, singleton_context, qname) }
       when Prism::CallNode
         return walk_spec_block(node, qualifier, singleton_context, enclosing) if spec_block?(node)
+
+        if enclosing.nil? && !singleton_context && scope?(node)
+          scope = self.class.qualify(qualifier, node.arguments.arguments.first.unescaped, true)
+          @defined[node.arguments.arguments.first.unescaped] << scope
+          return walk(scope_body(node), qualifier, true, scope)
+        end
 
         if node.name
           @calls << self.class::Call.new(

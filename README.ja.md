@@ -501,6 +501,14 @@ id が最も小さいものだけを見るのではない。
 そのため、その行から外した名前は `removed` になり、行に残った名前は変わらない。
 `*FIELDS` の形で渡したリストも、同じファイルがその前に `FIELDS = %i[x y].freeze` のようにシンボルのリストを入れていれば数える。
 このとき各メンバーは、そのリストの中の自分のシンボルの行を持つ。
+クラス本体に書いた Active Record の三つのマクロもメソッドを定義する。
+`scope :recent, -> { ... }`（または `scope(:recent) { ... }`）はクラスメソッド `Post.recent` になり、文全体がソースになる。
+その本体の中の呼び出しは `Post.recent` からの呼び出しになる。
+`delegate :name, to: :author` は `Post#name`（`prefix: true` なら `Post#author_name`）になり、名前一つの形とオプションがソースになる。
+そのため `to:` を変えると、その行のすべての名前が変わる。
+`enum :status, { draft: 0, live: 1 }` は値ごとに `Post#draft?`、`Post#draft!`、`Post.draft`、`Post.not_draft` を定義し、`prefix:`、`suffix:`、`scopes: false`、`instance_methods: false` も反映する。
+ソースはその値一つの形（`enum :status, draft: 0`）なので、一つの値を変えるとその値の四つのメソッドだけが変わる。
+Rails 8 で取り除かれた `enum status: {...}` の形は読まない。
 クラス本体の条件分岐の中にある `def` や読み出しメソッド（`attr_reader :x if cond`）も数える。
 分岐はすべてが順に走ったものとして読むので、分岐の中の引数のない `private` は条件分岐の後にも効く。
 Concern の `included do`、`prepended do`、`class_methods do` ブロックの中にあるものも数える。

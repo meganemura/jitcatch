@@ -611,6 +611,47 @@ class TestChanges < Minitest::Test
     end
   end
 
+  def test_a_scope_is_a_class_method_and_a_delegate_an_instance_method
+    with_repo do |repo|
+      repo.write("app/models/application_record.rb", "class ApplicationRecord < ActiveRecord::Base\n  self.abstract_class = true\nend\n")
+      post = <<~RUBY
+        class Post < ApplicationRecord
+          scope :recent, -> { where(created_at: 2.days.ago..) }
+          scope :titled, ->(title) { where(title: title) }
+          scope(:old) { where(created_at: ..2.years.ago) }
+          scope :fresh, -> { recent.where(y: 2) }
+          delegate :name, :email, to: :author, prefix: true
+          delegate :plan, to: :account, private: true
+        end
+      RUBY
+      repo.write("app/models/post.rb", post)
+      repo.write("app/models/digest.rb", "class Digest\n  def self.build = Post.recent.to_a\nend\n")
+      repo.write("spec/models/post_spec.rb", "RSpec.describe Post do\n  it \"lists recent\" do\n    expect(described_class.recent).to eq([])\n  end\nend\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("app/models/post.rb", post.sub("2.days", "3.days").sub("where(title: title)", "where(title: title.strip)")
+        .sub("2.years", "3.years").sub(":name, :email, to: :author", ":name, :email, to: :writer").sub("to: :account", "to: :owner"))
+      repo.commit("Widen recent.", date: "2026-02-12T00:00:00Z")
+
+      doc = JitCatch::Changes.between(repo.dir, "base", "HEAD")
+
+      assert_equal [
+        ["Post#author_email", "removed", "delegate :email, to: :author, prefix: true"],
+        ["Post#author_name", "removed", "delegate :name, to: :author, prefix: true"],
+        ["Post#plan", "modified", "delegate :plan, to: :owner, private: true"],
+        ["Post#writer_email", "added", "delegate :email, to: :writer, prefix: true"],
+        ["Post#writer_name", "added", "delegate :name, to: :writer, prefix: true"],
+        ["Post.old", "modified", "scope(:old) { where(created_at: ..3.years.ago) }"],
+        ["Post.recent", "modified", "scope :recent, -> { where(created_at: 3.days.ago..) }"],
+        ["Post.titled", "modified", "scope :titled, ->(title) { where(title: title.strip) }"]
+      ], doc["methods"].map { |method| [method["name"], method["change"], method["new_source"] || method["old_source"]] }
+      recent = doc["methods"].find { |method| method["name"] == "Post.recent" }
+      assert_equal [["app/models/digest.rb", 2, "Digest.build"], ["app/models/post.rb", 5, "Post.fresh"]], recent["callsites"].map { |site| site.values_at("file", "line", "enclosing") }
+      assert_equal ["private"], doc["methods"].select { |method| method["name"] == "Post#plan" }.map { |method| method["visibility"] }
+      assert_includes doc["entrypoints"].find { |entry| entry["class"] == "Post" }["methods"].map { |method| method["name"] }, "Post.recent"
+    end
+  end
+
   def test_a_method_that_only_turns_private_is_modified
     with_repo do |repo|
       repo.write("lib/calc.rb", "class Calc\n  def add(a, b)\n    a + b\n  end\n\n  def sub(a, b)\n    a - b\n  end\nend\n")
