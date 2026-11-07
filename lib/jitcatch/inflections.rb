@@ -58,6 +58,12 @@ module JitCatch
       word.split("_").map { |part| @acronyms[part] || part.capitalize }.join
     end
 
+    # The other way: `APIKeysController` is `api_keys_controller`, as Active
+    # Support's `underscore` splits a run of capitals before its last one.
+    def underscore(camel)
+      camel.gsub(/([A-Z\d]+)([A-Z][a-z])/, '\1_\2').gsub(/([a-z\d])([A-Z])/, '\1_\2').downcase
+    end
+
     def plural(rule, replacement)
       @uncountables.delete(rule) if rule.is_a?(String)
       @uncountables.delete(replacement)

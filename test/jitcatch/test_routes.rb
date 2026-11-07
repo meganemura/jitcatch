@@ -99,4 +99,12 @@ class TestRoutes < Minitest::Test
     refute routes.helper?("extra_path")
     assert_equal [], JitCatch::Routes.parse(nil).actions("GET /books")
   end
+  # A path helper and a URL helper build their URL from one route.
+  def test_a_helper_names_the_route_it_builds_a_url_for
+    routes = JitCatch::Routes.parse(ROUTES)
+
+    found = %w[book_reviews_path book_url shelve_book_path about_url books profile_path].map { |helper| routes.route_for_helper(helper)&.then { |route| [route.path, route.action] } }
+    assert_equal [["/books/:book_id/reviews", "ReviewsController#create"], ["/books/:id", "BooksController#show"],
+      ["/books/:id/shelve", "BooksController#shelve"], ["/about", "PagesController#about"], nil, ["/profile", "ProfilesController#update"]], found
+  end
 end

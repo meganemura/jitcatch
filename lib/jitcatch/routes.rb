@@ -51,8 +51,15 @@ module JitCatch
     end
 
     def helper?(name)
-      bare = name.delete_suffix("_path")
-      @routes.any? { |route| route.helper == bare }
+      !route_for_helper(name).nil?
+    end
+
+    # The first route a `*_path` or `*_url` helper builds a URL for, or nil.
+    def route_for_helper(name)
+      return nil unless name.end_with?("_path", "_url")
+
+      bare = name.sub(/_(?:path|url)\z/, "")
+      @routes.find { |route| route.helper == bare }
     end
 
     # The controller actions a request (`POST things_path`, or

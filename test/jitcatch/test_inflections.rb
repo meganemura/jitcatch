@@ -49,4 +49,12 @@ class TestInflections < Minitest::Test
 
     assert_equal %w[cactu ApiKeys oxen], [inflections.singularize("cactus"), inflections.camelize("api_keys"), inflections.pluralize("ox")]
   end
+
+  # Each answer is what Active Support 8.1.4.1's String#underscore gave.
+  def test_a_class_name_takes_the_snake_case_active_support_gives_it
+    inflections = JitCatch::Inflections.rails
+
+    assert_equal %w[closures_controller api_keys_controller order_item html_parser book2_shelf v2_api],
+      %w[ClosuresController APIKeysController OrderItem HTMLParser Book2Shelf V2Api].map { |word| inflections.underscore(word) }
+  end
 end
