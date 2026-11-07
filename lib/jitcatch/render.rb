@@ -10,7 +10,10 @@ module JitCatch
     # The element diff keeps a table of this many cells.
     MAX_ELEMENT_PAIRS = 250_000
 
-    def context_text(doc)
+    # The readers a context shows unless `--all-readers` asks for every one.
+    READERS_SHOWN = 10
+
+    def context_text(doc, readers_limit: READERS_SHOWN)
       lines = []
       lines << "jitcatch context"
       lines << "version #{doc["version"]}"
@@ -32,7 +35,8 @@ module JitCatch
       end
       lines.concat(dependency_lines(Array(doc["dependencies"])))
       lines.concat(constant_lines(doc["constants"]))
-      lines.concat(method_lines(doc["methods"]))
+      lines.concat(method_lines(doc["methods"], reader_counts(doc["readers"])))
+      lines.concat(reader_lines(shown_readers(doc["readers"], readers_limit))) if doc["readers"]
       lines.concat(entrypoint_lines(doc["entrypoints"]))
       skipped = Array(doc["factories_skipped"])
       unless skipped.empty?
@@ -46,8 +50,43 @@ module JitCatch
       finish(lines)
     end
 
-    def context_json(doc)
+    def context_json(doc, readers_limit: READERS_SHOWN)
+      doc = doc.merge("readers" => shown_readers(doc["readers"], readers_limit)) if doc["readers"]
       { "command" => "context" }.merge(doc)
+    end
+
+    def reader_counts(readers)
+      Array(readers && readers["values"]).select { |value| value["id"] }.to_h { |value| [value["id"], value["readers"]] }
+    end
+
+    # The highest-scored rows, and how many the limit left out.
+    def shown_readers(readers, limit)
+      rows = limit ? readers["rows"].first(limit) : readers["rows"]
+      readers.merge("rows" => rows, "omitted" => readers["rows"].size - rows.size)
+    end
+
+    # Rows go under the value they read, values in the order the change
+    # lists them; a value keeps its line when the limit shows none of its rows.
+    def reader_lines(readers)
+      read = readers["values"].select { |value| value["readers"].positive? }
+      return ["readers: (none)", "  not seen: #{readers["not_seen"].join("; ")}"] if read.empty?
+
+      total = readers["rows"].size + readers["omitted"]
+      more = readers["omitted"].positive? ? ", showing #{readers["rows"].size}; --all-readers shows all" : ""
+      lines = ["readers: #{total} for #{read.size} changed #{read.size == 1 ? "value" : "values"}#{more}"]
+      read.each do |value|
+        id = value["id"] ? " #{value["id"]}" : ""
+        lines << "  #{value["value"]} (#{value["change"]}) #{value["kind"]}#{id} #{value["rev"][0, 7]}:#{value["file"]}:#{value["line"]} readers=#{value["readers"]}"
+        readers["rows"].select { |row| row["value"] == value["value"] }.each do |row|
+          lines << "    #{row["score"]} #{row["mechanism"]} #{row["rev"][0, 7]}:#{row["file"]}:#{row["line"]}"
+          lines << "      note: this line is itself part of BASE..HEAD" if row["edited_by_change"]
+          lines << "      rank: #{row["rank"]}"
+          lines << "      why: #{row["why"]}"
+          lines << "      also: #{row["also"].join(", ")}" unless row["also"].empty?
+          lines << "      test: #{row["test"]}"
+        end
+      end
+      lines << "  not seen: #{readers["not_seen"].join("; ")}"
     end
 
     def run_text(doc)
@@ -169,14 +208,14 @@ module JitCatch
           lines << "  [#{const["id"]}] #{const["change"]} #{const["name"]} #{const["file"]}:#{const["start_line"]}#{moved}"
           lines << "    old: #{const["old_source"] || "(none)"}"
           lines << "    new: #{const["new_source"] || "(none)"}"
-          readers = const["readers"].empty? ? "(none)" : const["readers"].join(", ")
-          lines << "    readers: #{readers}"
+          read_by = const["read_by"].empty? ? "(none)" : const["read_by"].join(", ")
+          lines << "    read_by: #{read_by}"
         end
         lines
       end
     end
 
-    def method_lines(methods)
+    def method_lines(methods, readers = {})
       if methods.empty?
         ["methods: (none)"]
       else
@@ -185,7 +224,7 @@ module JitCatch
           via = method["via_constant"] ? " via=#{method["via_constant"]}" : ""
           via += " moved_from=#{method["moved_from"]}" if method["moved_from"]
           lines << "  [#{method["id"]}] #{method["change"]} #{method["name"]} #{method["file"]}:#{method["start_line"]}-#{method["end_line"]} signature=#{method["signature"]} visibility=#{method["visibility"]}#{via}"
-          lines << "    callsites: #{format_callsites(method)}"
+          lines << "    callsites: #{format_callsites(method, readers.fetch(method["id"], 0))}"
           unless method["reachable_from"].empty?
             lines << "    reachable_from: #{method["reachable_from"].join(", ")}"
           end
@@ -217,10 +256,17 @@ module JitCatch
       lines
     end
 
-    def format_callsites(method)
-      return "(none)" if method["callsites"].empty?
+    # A method nothing calls by name can still be read: say so where an
+    # empty list would read as nothing reaching it.
+    def format_callsites(method, readers = 0)
+      return "(none)" if method["callsites"].empty? && readers.zero?
+      return "(none by name; #{readers} under readers:)" if method["callsites"].empty?
 
-      text = method["callsites"].map { |site| "#{site["file"]}:#{site["line"]} #{site["enclosing"]}" }.join("; ")
+      # A template's call site is made from the template, which its path already names.
+      text = method["callsites"].map { |site|
+        place = "#{site["file"]}:#{site["line"]}"
+        site["enclosing"] == site["file"] ? place : "#{place} #{site["enclosing"]}"
+      }.join("; ")
       omitted = method["callsites_omitted"].to_i
       omitted.positive? ? "#{text} (+#{omitted} more)" : text
     end

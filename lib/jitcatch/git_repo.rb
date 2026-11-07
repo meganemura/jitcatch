@@ -77,12 +77,13 @@ module JitCatch
     # target is listed on its own when the repository holds it.
     SYMLINK_MODE = "120000"
 
+    # The Ruby files and the ERB templates at ref.
     # `-z` leaves a path with a tab, a newline, or a quote unquoted too.
-    def ruby_blobs(ref)
+    def source_blobs(ref)
       git("ls-tree", "-r", "-l", "-z", "--end-of-options", ref).split("\0").filter_map { |entry|
         meta, path = entry.split("\t", 2)
         mode, type, oid, size = meta.split
-        next unless type == "blob" && mode != SYMLINK_MODE && path.end_with?(".rb")
+        next unless type == "blob" && mode != SYMLINK_MODE && (path.end_with?(".rb") || Template.template?(path))
 
         Blob.new(path: path, oid: oid, size: size.to_i)
       }.sort_by(&:path)

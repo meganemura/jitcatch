@@ -351,7 +351,7 @@ class TestChanges < Minitest::Test
       doc = JitCatch::Changes.between(repo.dir, "base", "HEAD")
 
       assert_equal [["k01", "modified", "Shop::LIMIT", "lib/shop/version.rb", "lib/shop.rb", ["m01"]], ["k02", "moved", "Shop::VERSION", "lib/shop/version.rb", "lib/shop.rb", []]],
-        doc["constants"].map { |const| const.values_at("id", "change", "name", "file", "moved_from", "readers") }
+        doc["constants"].map { |const| const.values_at("id", "change", "name", "file", "moved_from", "read_by") }
       assert_equal [["Shop.cap", "affected", "k01"]], doc["methods"].map { |method| method.values_at("name", "change", "via_constant") }
       assert_includes JitCatch::Render.context_text(doc), "  [k02] moved Shop::VERSION lib/shop/version.rb:2 moved_from=lib/shop.rb\n"
     end
@@ -391,7 +391,7 @@ class TestChanges < Minitest::Test
       assert_equal [["Model#check", "modified"], ["Model#more", "added"]], doc["methods"].map { |method| method.values_at("name", "change") },
         "a method that only names a namespace is not affected"
       check = doc["methods"].find { |method| method["name"] == "Model#check" }
-      assert_equal [check["id"]], doc["constants"].find { |const| const["name"] == "Model::Unsupported" }["readers"]
+      assert_equal [check["id"]], doc["constants"].find { |const| const["name"] == "Model::Unsupported" }["read_by"]
     end
   end
 

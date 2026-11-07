@@ -269,7 +269,7 @@ constants:
   [k01] modified Shop::Cart::VOLUME_THRESHOLD_CENTS lib/shop/cart.rb:7
     old: VOLUME_THRESHOLD_CENTS = 10_000
     new: VOLUME_THRESHOLD_CENTS = 5_000
-    readers: m01
+    read_by: m01
 methods:
   [m01] affected Shop::Cart#volume_discount_cents lib/shop/cart.rb:30-34 signature=same visibility=public via=k01
 ```
@@ -304,6 +304,7 @@ jitcatch run --repo DIR BASE HEAD TESTS_DIR
 | --- | --- | --- |
 | `--json` | `context`, `run`, `assess` | Print the same document as JSON. |
 | `--repo DIR` | `context`, `run` | Git repository to read. The default is the working directory. |
+| `--all-readers` | `context` | Print every row under `readers:`, not the 10 that score highest. |
 | `--coverage FILE` | `context` | Replace the grep of existing tests with this file. The JSON has `"format": "jitcatch-coverage-v1"` and a `tests` array. See `examples/coverage/jitcatch-coverage-v1.sample.json`. |
 | `--reruns N` | `run` | Extra runs on head after a pass-on-base / fail-on-head result. The default is 2. `0` skips the flake check. |
 | `--timeout SEC` | `run` | Seconds before a test file is killed. The default is 60 when head has `config/application.rb`, since a Rails app boots and loads `db/schema.rb` in each new checkout, and 10 otherwise. The minimum is 1. |
@@ -439,6 +440,37 @@ Past commits keep the `database.yml` they have, so for them one process at a tim
 Each checkout has only the files git tracks. An initializer that reads a credential fails there without `config/master.key`, so pass the key: `RAILS_MASTER_KEY=$(cat config/master.key) jitcatch run --env RAILS_MASTER_KEY BASE HEAD TESTS_DIR`.
 
 Each file boots the app once on each side. On the sample app (4 CPUs), six files with one example each took 9.8 s, and one file with the same six examples took 1.9 s. bootsnap starts with an empty cache in each checkout: one file took 3.7 s with it and 2.5 s with `DISABLE_BOOTSNAP=1` passed through `--env DISABLE_BOOTSNAP`, and six files took 8.0 s with it and 9.8 s without it.
+
+### Code that reads a changed value
+
+A change can take effect in code that never calls it by name. A `to_param` reaches every URL a route helper builds for that record, a `default_scope` reaches every query on the model, a constant reaches the SQL it is interpolated into, and a column default reaches every `create` that leaves it out. Those places are not call sites, so `callsites:` cannot list them. `context` lists them under `readers:`, one block per changed value: a method, a scope, a `default_scope`, a constant, a callback, a validation, an `attribute` or `db/schema.rb` column default, or a `config.` setting in `config/`. It reads `app/`, `config/`, `lib/`, and `db/schema.rb` at `HEAD` from git, never from the checkout, and the ERB templates under them as Ruby, line for line. A call in a template is a call site too, so a method that a view calls by name lists the view under `callsites:`, not under `readers:`.
+
+A history of four files:
+
+```text
+config/routes.rb                         resources :branches do; resources :closures, only: :index; end
+app/controllers/closures_controller.rb   before_action :set_branch ... @branch = Branch.find(params[:branch_id])
+app/views/branches/show.html.erb         <%= link_to "Closures", branch_closures_path(@branch) %>
+app/models/branch.rb (head adds)         def to_param; code; end
+```
+
+`context base HEAD` prints:
+
+```text
+    callsites: (none by name; 1 under readers:)
+```
+
+```text
+readers: 1 for 1 changed value
+  Branch#to_param (added) method m01 aac7821:app/models/branch.rb:4 readers=1
+    100 route_param_mismatch aac7821:app/views/branches/show.html.erb:2
+      rank: the URL value and the lookup now disagree
+      why: @branch goes through Branch#to_param (now `code`) into params[:branch_id]; ClosuresController#index reads params[:branch_id] by id (Branch.find(params[:branch_id]), app/controllers/closures_controller.rb:11)
+      test: Render app/views/branches/show.html.erb:2 with a Branch whose to_param differs from its id, follow the URL branch_closures_path(@branch) builds, and check ClosuresController#index finds that same Branch.
+  not seen: receivers named unlike their model (`x = Branch.first; link_to x`); dispatch names built at run time from data outside the source (a DB column, a request param); routes drawn by `draw`, loops, or concerns; `to_param` reached through a gem's helper; serializers, jbuilder, and other template languages than ERB; callbacks and validations added by concerns or gems; config read through ENV or a YAML file at boot
+```
+
+A row is the place (`commit:path:line`, which `git show` takes), how it reads the value (`mechanism`), its score, `rank:` (why it scores what it does), `why:` (what the source says), `also:` (more places of the same kind for the same value), and `test:` (what a test would check). `note:` marks a row on a line the change itself edits. Rows go from the highest score down, at most 10 in all; the first line counts the rest, and `--all-readers` prints every one, in the text and in `--json`. A row that a method's `callsites:` already lists, or a plain read inside a method that a constant's `read_by:` already lists, is left out. `not seen:` names what the reader cannot see: it names a record's model by the name of its variable or method (`@branch`, `home_branch`, `branches`), so `x = Branch.first; link_to x` is not listed.
 
 ## Install
 

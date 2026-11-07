@@ -337,7 +337,7 @@ constants:
   [k01] modified Shop::Cart::VOLUME_THRESHOLD_CENTS lib/shop/cart.rb:7
     old: VOLUME_THRESHOLD_CENTS = 10_000
     new: VOLUME_THRESHOLD_CENTS = 5_000
-    readers: m01
+    read_by: m01
 methods:
   [m01] affected Shop::Cart#volume_discount_cents lib/shop/cart.rb:30-34 signature=same visibility=public via=k01
 ```
@@ -385,6 +385,7 @@ jitcatch run --repo DIR BASE HEAD TESTS_DIR
 | --- | --- | --- |
 | `--json` | `context`, `run`, `assess` | 同じ内容を JSON で出す。 |
 | `--repo DIR` | `context`, `run` | 読む git リポジトリ。既定は作業ディレクトリ。 |
+| `--all-readers` | `context` | `readers:` の行を、スコアの高い 10 行だけでなく全部出す。 |
 | `--coverage FILE` | `context` | 既存テストの grep の代わりにこのファイルを使う。JSON は `"format": "jitcatch-coverage-v1"` と `tests` 配列を持つ。例は `examples/coverage/jitcatch-coverage-v1.sample.json`。 |
 | `--reruns N` | `run` | base で通り head で落ちたあとの、head での追加実行回数。既定は 2。`0` でフレーク検査をしない。 |
 | `--timeout SEC` | `run` | テストファイルを止めるまでの秒数。head に `config/application.rb` があれば既定は 60 で、それ以外は 10。Rails アプリは新しいチェックアウトごとに起動して `db/schema.rb` を読み込むからである。最小は 1。 |
@@ -872,6 +873,51 @@ PostgreSQL 16 を使うサンプルアプリで `db/schema.rb` も変える変�
 bootsnap のキャッシュは、チェックアウトごとに空から始まる。
 1 ファイルでは bootsnap ありで 3.7 秒、`--env DISABLE_BOOTSNAP` で `DISABLE_BOOTSNAP=1` を渡すと 2.5 秒だった。
 6 ファイルでは bootsnap ありで 8.0 秒、なしで 9.8 秒だった。
+
+### 変わった値を読むコード
+
+変更は、名前で呼ばないコードにも効く。
+`to_param` は、route helper がそのレコードに作る URL すべてに届く。
+`default_scope` はそのモデルへのクエリすべてに、定数はそれを埋め込んだ SQL に、カラムのデフォルト値はそれを省いた `create` すべてに届く。
+こうした箇所は呼び出し元ではないので、`callsites:` には出ない。
+`context` はそれを `readers:` に、変わった値ごとに 1 ブロックで出す。
+値はメソッド、scope、`default_scope`、定数、コールバック、バリデーション、`attribute` か `db/schema.rb` のカラムのデフォルト値、`config/` の中の `config.` の設定。
+`HEAD` の `app/`、`config/`、`lib/`、`db/schema.rb` を git から読み、チェックアウトは読まない。
+その中の ERB テンプレートは、行を保ったまま Ruby として読む。
+テンプレートの中の呼び出しも呼び出し元なので、ビューが名前で呼ぶメソッドは、そのビューを `readers:` ではなく `callsites:` に出す。
+
+4 ファイルの履歴:
+
+```text
+config/routes.rb                         resources :branches do; resources :closures, only: :index; end
+app/controllers/closures_controller.rb   before_action :set_branch ... @branch = Branch.find(params[:branch_id])
+app/views/branches/show.html.erb         <%= link_to "Closures", branch_closures_path(@branch) %>
+app/models/branch.rb (head adds)         def to_param; code; end
+```
+
+`context base HEAD` はこう出す:
+
+```text
+    callsites: (none by name; 1 under readers:)
+```
+
+```text
+readers: 1 for 1 changed value
+  Branch#to_param (added) method m01 aac7821:app/models/branch.rb:4 readers=1
+    100 route_param_mismatch aac7821:app/views/branches/show.html.erb:2
+      rank: the URL value and the lookup now disagree
+      why: @branch goes through Branch#to_param (now `code`) into params[:branch_id]; ClosuresController#index reads params[:branch_id] by id (Branch.find(params[:branch_id]), app/controllers/closures_controller.rb:11)
+      test: Render app/views/branches/show.html.erb:2 with a Branch whose to_param differs from its id, follow the URL branch_closures_path(@branch) builds, and check ClosuresController#index finds that same Branch.
+  not seen: receivers named unlike their model (`x = Branch.first; link_to x`); dispatch names built at run time from data outside the source (a DB column, a request param); routes drawn by `draw`, loops, or concerns; `to_param` reached through a gem's helper; serializers, jbuilder, and other template languages than ERB; callbacks and validations added by concerns or gems; config read through ENV or a YAML file at boot
+```
+
+行は、場所(`git show` に渡せる `commit:path:line`)、値の読み方(`mechanism`)、スコア、`rank:`(そのスコアの理由)、`why:`(ソースに書いてあること)、`also:`(同じ値を同じ読み方で読む別の場所)、`test:`(テストで確かめること)を持つ。
+`note:` は、変更そのものが編集した行にある読み手に付く。
+行はスコアの高い順に、全部で最大 10 行出る。
+1 行目が残りの数を数え、`--all-readers` はテキストでも `--json` でも全行を出す。
+メソッドの `callsites:` にすでにある行と、定数の `read_by:` にすでにあるメソッドの中のただの読み出しは出さない。
+`not seen:` は、見えないものを挙げる。
+レコードのモデルは変数名かメソッド名(`@branch`、`home_branch`、`branches`)で決めるので、`x = Branch.first; link_to x` は出ない。
 
 ## インストール
 

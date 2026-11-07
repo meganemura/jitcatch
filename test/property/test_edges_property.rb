@@ -19,7 +19,7 @@ class TestEdgesProperty < Minitest::Test
       end
       caller_src = "class Caller\n  def initialize(kept)\n    @held = K0.new\n    @kept = kept\n  end\n\n#{bodies.each_with_index.map { |body, i| "  def c#{i}(value)\n    #{body}\n  end\n" }.join("\n")}end\n"
       index = JitCatch::SourceIndex.parse(classes.join("\n") + caller_src, file: "lib/x.rb")
-      edges = JitCatch::Changes.allocate.send(:edges_for, { "methods" => index.methods, "calls" => index.calls, "namespaces" => index.namespaces, "superclasses" => index.superclasses })
+      edges = JitCatch::Changes.allocate.send(:edges_for, { "methods" => index.methods, "calls" => index.calls, "template_calls" => [], "namespaces" => index.namespaces, "superclasses" => index.superclasses })
         .select { |edge| edge["from"].start_with?("Caller#c") }
 
       expected = calls.each_with_index.flat_map do |(shape, klass, name), i|
@@ -49,7 +49,7 @@ class TestEdgesProperty < Minitest::Test
       classes = defined.map { |klass, defs| "class #{klass}\n#{defs.map { |item| "  def #{item}\n    1\n  end\n" }.join}end\n" }
       caller_src = "class Caller\n  def call(value)\n    pick(value).#{name}\n  end\n\n  def pick(value)\n    #{body}\n  end\nend\n"
       index = JitCatch::SourceIndex.parse(classes.join("\n") + caller_src, file: "lib/x.rb")
-      edges = JitCatch::Changes.allocate.send(:edges_for, { "methods" => index.methods, "calls" => index.calls, "namespaces" => index.namespaces, "superclasses" => index.superclasses })
+      edges = JitCatch::Changes.allocate.send(:edges_for, { "methods" => index.methods, "calls" => index.calls, "template_calls" => [], "namespaces" => index.namespaces, "superclasses" => index.superclasses })
         .select { |edge| edge["from"] == "Caller#call" && edge["to"].start_with?("K") }
 
       constants = returned.include?("value") ? [] : returned.grep(/\AK/).uniq

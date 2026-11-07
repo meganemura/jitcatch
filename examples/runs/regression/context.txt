@@ -14,7 +14,7 @@ constants:
   [k01] added Shop::UnknownCoupon lib/shop/cart.rb:6
     old: (none)
     new: class UnknownCoupon < StandardError
-    readers: m02
+    read_by: m02
 methods:
   [m01] added Shop::Cart#apply_coupon lib/shop/cart.rb:29-32 signature=added visibility=public
     callsites: (none)
@@ -86,6 +86,8 @@ methods:
       
         Money.percent(subtotal_cents, VOLUME_PERCENT)
       end
+readers: (none)
+  not seen: receivers named unlike their model (`x = Branch.first; link_to x`); dispatch names built at run time from data outside the source (a DB column, a request param); routes drawn by `draw`, loops, or concerns; `to_param` reached through a gem's helper; serializers, jbuilder, and other template languages than ERB; callbacks and validations added by concerns or gems; config read through ENV or a YAML file at boot
 entrypoints Shop::Cart:
   Shop::Cart.new modified
   Shop::Cart#apply_coupon added

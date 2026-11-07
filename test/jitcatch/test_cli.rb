@@ -317,4 +317,29 @@ class TestCLI < Minitest::Test
     stdout, stderr = capture_io { status = JitCatch::CLI.start(args, finished_in_time: finished_in_time) }
     [stdout, stderr, status]
   end
+  # A change read in many places prints the ten readers that score highest,
+  # how many it left out, and the flag that prints them all.
+  def test_context_shows_ten_readers_unless_asked_for_all
+    with_repo do |repo|
+      repo.write("app/models/loan.rb", "class Loan < ApplicationRecord\nend\n")
+      repo.write("app/controllers/loans_controller.rb", "class LoansController < ApplicationController\n" +
+        (1..12).map { |n| "  def a#{n}\n    Loan.find(#{n})\n  end\n" }.join + "end\n")
+      repo.commit("App", date: "2026-11-01T00:00:00Z")
+      repo.branch("base")
+      repo.write("app/models/loan.rb", "class Loan < ApplicationRecord\n  default_scope { order(:due_on) }\nend\n")
+      repo.commit("Order loans by due date", date: "2026-11-02T00:00:00Z")
+
+      text, = cli("context", "--repo", repo.dir, "base", "HEAD")
+      assert_includes text, "readers: 12 for 1 changed value, showing 10; --all-readers shows all\n"
+      assert_equal 10, text.scan(/^    50 default_scope_query /).size
+      assert_match(/^  not seen: receivers named unlike their model/, text)
+      all, = cli("context", "--all-readers", "--repo", repo.dir, "base", "HEAD")
+      assert_equal 12, all.scan(/^    50 default_scope_query /).size
+      json = JSON.parse(cli("context", "--json", "--repo", repo.dir, "base", "HEAD").first)["readers"]
+      assert_equal [10, 2], [json["rows"].size, json["omitted"]]
+      assert_equal %w[also edited_by_change file id line mechanism rank rev score test value why], json["rows"].first.keys.sort
+      assert_equal "Loan.default_scope", json["values"].first["value"]
+      assert_equal 12, JSON.parse(cli("context", "--json", "--all-readers", "--repo", repo.dir, "base", "HEAD").first)["readers"]["rows"].size
+    end
+  end
 end

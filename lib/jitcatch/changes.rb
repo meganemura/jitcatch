@@ -16,14 +16,17 @@ module JitCatch
     # The classes and modules head defines, after `build`.
     attr_reader :head_constants
 
-    def self.between(repo, base_ref, head_ref, coverage: nil, setup: nil, databases: [])
-      new(repo, base_ref, head_ref, coverage: coverage, setup: setup, databases: databases).build
+    # `readers: true` adds the code that reads each changed value without
+    # calling it by name, which only `context` prints.
+    def self.between(repo, base_ref, head_ref, coverage: nil, setup: nil, databases: [], readers: false)
+      new(repo, base_ref, head_ref, coverage: coverage, setup: setup, databases: databases, readers: readers).build
     end
 
     # `setup` is the command `run --setup` runs in each checkout, and
     # `databases` the numbered test databases, base and head in turn.
-    def initialize(repo, base_ref, head_ref, coverage: nil, setup: nil, databases: [])
+    def initialize(repo, base_ref, head_ref, coverage: nil, setup: nil, databases: [], readers: false)
       @git = repo.is_a?(GitRepo) ? repo : GitRepo.new(repo)
+      @readers = readers
       @setup = setup
       @databases = databases
       @base_ref = base_ref
@@ -38,7 +41,8 @@ module JitCatch
       base = @git.base_rev(@base_ref)
       head = @git.rev(@head_ref)
       files = DiffParser.name_status(@git.name_status(base, head))
-      hunks = index_hunks(DiffParser.parse(@git.diff(base, head)))
+      diff = DiffParser.parse(@git.diff(base, head))
+      hunks = index_hunks(diff)
       base_idx = index_ref(base, "base")
       head_idx = index_ref(head, "head")
       @head_constants = lookups(head_idx)[2].keys.reject(&:empty?).sort
@@ -58,6 +62,7 @@ module JitCatch
       decorate_callbacks(methods, base_idx, head_idx, factories, head_edges, base_edges)
       decorate_tests(methods, base_idx, head_idx, builders)
       entrypoints = entrypoints_for(methods, head_idx, base_idx)
+      readers = @readers ? implicit_readers(base_idx, head_idx, diff, methods, constants, base, head) : nil
 
       {
         "version" => VERSION,
@@ -74,7 +79,7 @@ module JitCatch
         "changed_lines" => changed_lines(hunks),
         "entrypoints" => entrypoints,
         "factories_skipped" => factories.select(&:reason).map { |factory| { "file" => factory.file, "line" => factory.line, "name" => factory.name, "reason" => factory.reason } }
-      }
+      }.merge(readers ? { "readers" => readers } : {})
     end
 
     private
@@ -181,8 +186,18 @@ module JitCatch
       errors = []
       sources = {}
       indexes = {}
-      listed = @git.ruby_blobs(sha).select { |blob| blob.size <= MAX_BLOB }
+      templates = {}
+      template_calls = []
+      listed = @git.source_blobs(sha).select { |blob| blob.size <= MAX_BLOB }
       @texts.merge!(@git.read_blobs(listed.map(&:oid).uniq - @texts.keys))
+      listed, views = listed.partition { |blob| blob.path.end_with?(".rb") }
+      # A template defines no method, so its calls only add call sites, each
+      # made from the template itself.
+      views.each do |blob|
+        templates[blob.path] = @texts.fetch(blob.oid)
+        index = (@parsed[[blob.path, blob.oid]] ||= SourceIndex.parse(Template.as_ruby(templates[blob.path]), file: blob.path))
+        template_calls.concat(index.calls.map { |call| call.with(enclosing: call.enclosing || blob.path) }) unless index.parse_error
+      end
       listed.each do |blob|
         file = blob.path
         sources[file] = @texts.fetch(blob.oid)
@@ -202,7 +217,8 @@ module JitCatch
         hidden_new.concat(index.hidden_new)
       end
       methods = SourceIndex.hide_private_constants(methods, private_constants.uniq)
-      { "methods" => methods, "constants" => constants, "namespaces" => namespaces, "superclasses" => superclasses, "calls" => calls, "hidden_new" => hidden_new, "errors" => errors, "sources" => sources, "indexes" => indexes }
+      { "methods" => methods, "constants" => constants, "namespaces" => namespaces, "superclasses" => superclasses, "calls" => calls, "hidden_new" => hidden_new, "errors" => errors, "sources" => sources, "indexes" => indexes,
+        "templates" => templates, "template_calls" => template_calls }
     end
 
     def changed_methods(base_idx, head_idx, hunks)
@@ -289,7 +305,7 @@ module JitCatch
         end
         next unless change
 
-        found << { "change" => change, "old" => old_c, "new" => new_c, "readers" => [] }
+        found << { "change" => change, "old" => old_c, "new" => new_c, "read_by" => [] }
       end
       # A constant that keeps its value in its new file is moved, and its
       # readers see nothing new; one whose value changed on the way is modified.
@@ -310,10 +326,10 @@ module JitCatch
       removed = base_idx["namespaces"].reject { |node| new_names.include?(node.qualified) }
       added = head_idx["namespaces"].reject { |node| old_names.include?(node.qualified) }
       found = removed.uniq(&:qualified).filter_map { |node|
-        { "change" => "removed", "old" => node, "new" => nil, "readers" => [], "namespace" => true } if hunks[node.file] && !test_file?(node.file)
+        { "change" => "removed", "old" => node, "new" => nil, "read_by" => [], "namespace" => true } if hunks[node.file] && !test_file?(node.file)
       }
       found + added.uniq(&:qualified).filter_map { |node|
-        { "change" => "added", "old" => nil, "new" => node, "readers" => [], "namespace" => true } if hunks[node.file] && !test_file?(node.file)
+        { "change" => "added", "old" => nil, "new" => node, "read_by" => [], "namespace" => true } if hunks[node.file] && !test_file?(node.file)
       }
     end
 
@@ -347,7 +363,7 @@ module JitCatch
       constants.each do |const|
         bare = (const["new"] || const["old"]).bare_name
         pattern = /\b#{Regexp.escape(bare)}\b/
-        const["readers"] = methods.filter_map { |method|
+        const["read_by"] = methods.filter_map { |method|
           sources = [method["old"]&.source, method["new"]&.source].compact
           method["id"] if sources.any? { |source| source.match?(pattern) }
         }.uniq.sort
@@ -355,7 +371,7 @@ module JitCatch
       methods.each do |method|
         next unless method["change"] == "affected"
 
-        related = constants.select { |const| const["readers"].include?(method["id"]) }
+        related = constants.select { |const| const["read_by"].include?(method["id"]) }
         method["via_constant"] = related.map { |const| const["id"] }.min
       end
     end
@@ -519,7 +535,60 @@ module JitCatch
     end
 
     def app_routes(idx)
-      Routes.parse(idx["sources"]["config/routes.rb"], Inflections.read(idx["sources"]["config/initializers/inflections.rb"]))
+      Routes.parse(idx["sources"]["config/routes.rb"], app_inflections(idx))
+    end
+
+    def app_inflections(idx)
+      Inflections.read(idx["sources"]["config/initializers/inflections.rb"])
+    end
+
+    # Each value the change edits, with the code at head that reads it some
+    # way other than a call by name. A row at one of a method's call sites,
+    # or a plain read inside a method a constant already lists as reading
+    # it, says nothing those lists do not, so it is left out.
+    def implicit_readers(base_idx, head_idx, diff, methods, constants, base, head)
+      values, rows = Readers.between(
+        base_sources: base_idx["sources"], head_sources: head_idx["sources"].merge(head_idx["templates"]),
+        diff: diff, routes: app_routes(head_idx), inflections: app_inflections(head_idx)
+      )
+      items = values.to_h { |value| [value, listed_item(value, methods, constants)] }
+      rows = rows.reject { |row| shown_elsewhere?(row, items[row.value], methods) }
+      counts = rows.group_by(&:value).transform_values(&:size)
+      {
+        "values" => values.map { |value|
+          { "value" => value.label, "kind" => value.kind.to_s, "change" => value.state.to_s, "id" => items[value]&.fetch("id"),
+            "rev" => value.state == :removed ? base : head, "file" => value.file, "line" => value.line, "readers" => counts.fetch(value, 0) }
+        },
+        "rows" => rows.map { |row|
+          { "value" => row.value.label, "id" => items[row.value]&.fetch("id"), "rev" => head, "file" => row.file, "line" => row.line,
+            "edited_by_change" => row.edited, "mechanism" => row.mechanism.to_s, "score" => row.score, "rank" => row.rank,
+            "why" => row.why, "also" => row.also, "test" => row.test }
+        },
+        "not_seen" => Readers::BLIND
+      }
+    end
+
+    # The method or constant entry a value is, by its name and where it is
+    # declared. A setting, a callback, or a default has none.
+    def listed_item(value, methods, constants)
+      items = { constant: constants, method: methods, scope: methods }.fetch(value.kind, [])
+      items.find do |item|
+        node = value.state == :removed ? item["old"] : item["new"]
+        node && node.file == value.file && node.start_line == value.line && node.bare_name == value.name
+      end
+    end
+
+    def shown_elsewhere?(row, item, methods)
+      return false unless item
+
+      if item.key?("callsites")
+        item["callsites"].any? { |site| site["file"] == row.file && site["line"] == row.line }
+      else
+        row.mechanism == :constant_read && methods.any? do |method|
+          node = method["new"]
+          item["read_by"].include?(method["id"]) && node && node.file == row.file && row.line.between?(node.start_line, node.end_line)
+        end
+      end
     end
 
     # The files whose requests the routes send to the action, as `run`
@@ -744,10 +813,15 @@ module JitCatch
       by_class, by_bare, qualifiers, parents = lookups(idx)
       edges = []
       named_owners = {}
-      idx["calls"].each do |call|
+      (idx["calls"] + idx["template_calls"]).each do |call|
         next if call.enclosing.nil? || test_file?(call.file)
 
-        Array(call_target(call, by_class, by_bare, qualifiers, parents, named_owners)).each do |target|
+        targets = if call.enclosing == call.file && call.receiver.kind == "self"
+          helper_target(call, by_bare)
+        else
+          call_target(call, by_class, by_bare, qualifiers, parents, named_owners)
+        end
+        Array(targets).each do |target|
           next if target.qualified == call.enclosing
 
           edges << { "from" => call.enclosing, "to" => target.qualified, "file" => call.file, "line" => call.line }
@@ -755,6 +829,13 @@ module JitCatch
       end
       edges.uniq { |edge| [edge["from"], edge["to"], edge["file"], edge["line"]] }
         .sort_by { |edge| [edge["file"], edge["line"], edge["from"], edge["to"]] }
+    end
+
+    # A template calls a bare name on its view, which holds the app's helper
+    # modules, so only a helper method answers it.
+    def helper_target(call, by_bare)
+      found = (by_bare[call.bare_name] || []).select { |method| method.kind == "instance" && method.file.start_with?("app/helpers/") }
+      found.first if found.size == 1
     end
 
     def lookups(idx)
@@ -935,7 +1016,7 @@ module JitCatch
         "end_line" => node.end_line,
         "old_source" => item["old"]&.source,
         "new_source" => item["new"]&.source,
-        "readers" => item["readers"],
+        "read_by" => item["read_by"],
         "moved_from" => item["moved_from"]
       }
     end

@@ -50,12 +50,13 @@ module JitCatch
     end
 
     def command_context(argv)
-      opts, positional = parse_options(argv, %i[repo coverage])
+      opts, positional = parse_options(argv, %i[repo coverage all_readers])
       return write_help if opts[:help]
       raise UsageError, "usage: jitcatch context BASE HEAD" unless positional.size == 2
 
-      doc = Changes.between(repo_at(opts), positional[0], positional[1], coverage: opts[:coverage])
-      $stdout.write(opts[:json] ? Render.dump(Render.context_json(doc)) : Render.context_text(doc))
+      doc = Changes.between(repo_at(opts), positional[0], positional[1], coverage: opts[:coverage], readers: true)
+      limit = opts[:all_readers] ? nil : Render::READERS_SHOWN
+      $stdout.write(opts[:json] ? Render.dump(Render.context_json(doc, readers_limit: limit)) : Render.context_text(doc, readers_limit: limit))
       0
     end
 
@@ -115,6 +116,8 @@ module JitCatch
           opts[:help] = true
         elsif arg == "--json"
           opts[:json] = true
+        elsif arg == "--all-readers" && allowed.include?(:all_readers)
+          opts[:all_readers] = true
         elsif arg == "--serial" && allowed.include?(:serial)
           opts[:serial] = true
         elsif arg == "--number-database-url" && allowed.include?(:number_database_url)
@@ -180,12 +183,13 @@ module JitCatch
         This tool never calls an LLM. An agent writes the tests and judges intent.
 
         Usage:
-          jitcatch context [--json] [--repo DIR] [--coverage FILE] BASE HEAD
+          jitcatch context [--json] [--repo DIR] [--coverage FILE] [--all-readers] BASE HEAD
           jitcatch run [--json] [--repo DIR] [--reruns N] [--timeout SEC] [--workers N | --serial] [--env NAME]... [--number-database-url] [--setup CMD] BASE HEAD TESTS_DIR
           jitcatch assess [--json] RUN.json
           jitcatch --version
 
-        context   Short brief of changed methods, old/new source, call sites, and tests.
+        context   Short brief of changed methods, old/new source, call sites, tests, and the code that reads
+                  each changed value without calling it by name.
         run       Run each candidate file on base and head. Keep pass/fail, drop flakes.
         assess    Re-apply the rule assessor to a run JSON file.
 
