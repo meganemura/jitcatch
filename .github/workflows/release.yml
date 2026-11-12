@@ -92,7 +92,24 @@ jobs:
         run: |
           gem build jitcatch.gemspec
           test -f "jitcatch-${TAG#v}.gem"
-      - uses: rubygems/configure-rubygems-credentials@dc5a8d8553e6ee01fc26761a49e99e733d17954a # v2.1.0
+      # RubyGems creates a new gem from a pending trusted publisher only when the
+      # exchange names the account that will own it, and no release of
+      # rubygems/configure-rubygems-credentials sends that yet. 70209 is the
+      # RubyGems.org id of meganemura; an id, unlike a handle, cannot be recycled.
+      - name: Exchange the OIDC token for a RubyGems API key
+        env:
+          RUBYGEMS_OWNER: "70209"
+        run: |
+          jwt=$(curl -fsS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=rubygems.org" | jq -r .value)
+          response=$(jq -n --arg jwt "$jwt" --arg owner "$RUBYGEMS_OWNER" '{jwt: $jwt, owner: $owner}' |
+            curl -sS -X POST -H "Content-Type: application/json" -H "Accept: application/json" --data @- https://rubygems.org/api/v1/oidc/trusted_publisher/exchange_token)
+          key=$(echo "$response" | jq -r ".rubygems_api_key // empty")
+          if [ -z "$key" ]; then
+            echo "$response" >&2
+            exit 1
+          fi
+          echo "::add-mask::$key"
+          echo "GEM_HOST_API_KEY=$key" >> "$GITHUB_ENV"
       # A rerun after a successful push gets "Repushing of gem versions is not
       # allowed"; that is the only failure worth skipping.
       - name: Push the gem to RubyGems
