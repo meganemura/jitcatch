@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.1.0] - 2026-11-13
 
 First release. jitcatch keeps the Ruby tests that pass on the parent of a change and fail on the change, and names the changed method each one reaches. It never calls a model: an agent writes the candidate tests and judges each result.
 
