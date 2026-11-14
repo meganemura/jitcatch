@@ -65,9 +65,13 @@ module JitCatch
     # does. A local variable is an `instance` when every assignment to it in
     # its method builds the same constant, and `named` when none builds
     # one, as for a parameter. A reader that `belongs_to` or `has_one`
-    # declares is an `instance` of the model it names.
+    # declares is an `instance` of the model it names. A local that every
+    # assignment in its method sets to a lambda or a proc literal, or that
+    # `&block` binds, is a `proc`: its `call` runs that block, never a
+    # method the repository defines.
     Receiver = Data.define(:kind, :const)
     UNKNOWN_RECEIVER = Receiver.new(kind: "unknown", const: nil)
+    PROC_RECEIVER = Receiver.new(kind: "proc", const: nil)
     # A block given to an RSpec call: a `group` (describe, context), an
     # `example` (it, specify), or a `setup` (let, subject, before). Code in
     # an example or a setup block is referred to under `key`, and so are a
@@ -219,6 +223,7 @@ module JitCatch
       @references = Hash.new { |hash, key| hash[key] = [] }
       @ivar_classes = Hash.new { |hash, key| hash[key] = [] }
       @local_classes = Hash.new { |hash, key| hash[key] = [] }
+      @local_procs = Hash.new { |hash, key| hash[key] = [] }
       @helper_classes = Hash.new { |hash, key| hash[key] = [] }
       @parse_error = nil
       @spec_blocks = []
@@ -1028,6 +1033,9 @@ module JitCatch
       @calls.map! do |call|
         next call unless call.receiver.kind == "named"
 
+        procs = @local_procs.fetch([call.enclosing, call.receiver.const], [])
+        next call.with(receiver: PROC_RECEIVER) if procs.any? && procs.all?
+
         assigned = @local_classes.fetch([call.enclosing, call.receiver.const], [])
         next call if assigned.all?(&:empty?)
 
@@ -1105,6 +1113,18 @@ module JitCatch
 
     # The constants a value builds with `Const.new`, through `a || b`,
     # `c ? a : b`, and parentheses.
+    # `-> {}`, `lambda {}`, `proc {}`, and `Proc.new {}` make a Proc.
+    def proc_literal?(node)
+      return true if node.is_a?(Prism::LambdaNode)
+      return false unless node.is_a?(Prism::CallNode) && node.block.is_a?(Prism::BlockNode)
+
+      if node.receiver.nil?
+        %i[lambda proc].include?(node.name)
+      else
+        node.name == :new && node.receiver.is_a?(Prism::ConstantReadNode) && node.receiver.name == :Proc
+      end
+    end
+
     def built_constants(node)
       case node
       when Prism::CallNode
@@ -1234,9 +1254,12 @@ module JitCatch
         @paths[enclosing] << text if text.valid_encoding? && text.match?(PATH_LIKE) && !@compared.key?(node.location.start_offset)
       when Prism::LocalVariableWriteNode
         @local_classes[[enclosing, node.name.to_s]] << built_constants(node.value).uniq
+        @local_procs[[enclosing, node.name.to_s]] << proc_literal?(node.value)
         node.compact_child_nodes.each { |child| walk(child, qualifier, singleton_context, enclosing) }
       when *LOCAL_BINDINGS
         @local_classes[[enclosing, node.name.to_s]] << [] if node.name
+        # `&block` binds the block given, which is a Proc.
+        @local_procs[[enclosing, node.name.to_s]] << node.is_a?(Prism::BlockParameterNode) if node.name
         node.compact_child_nodes.each { |child| walk(child, qualifier, singleton_context, enclosing) }
       when Prism::InstanceVariableWriteNode, Prism::InstanceVariableOrWriteNode
         @ivar_classes[[qualifier.to_s, node.name.to_s]].concat(built_constants(node.value))

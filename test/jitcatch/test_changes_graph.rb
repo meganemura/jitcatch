@@ -261,6 +261,33 @@ class TestChangesGraph < Minitest::Test
     end
   end
 
+  # `call` on a local that only ever holds a lambda, a proc, or the block
+  # given runs that block, so it reaches no `self.call` of the repository.
+  # A parameter, or a local that may hold something else, still may.
+  def test_a_call_on_a_local_that_holds_only_a_block_names_no_dynamic_caller
+    with_repo do |repo|
+      repo.write("lib/sync.rb", "class Sync\n  def self.call(id) = id\nend\n")
+      repo.write("lib/jobs.rb", <<~RUBY)
+        class Jobs
+          def given(&block) = block.call(1)
+          def stabby = (step = ->(id) { id }; step.(1))
+          def named = (step = lambda { |id| id }; step.call(1))
+          def built = (step = Proc.new { |id| id }; step.call(1))
+          def passed(job) = job.call(2)
+          def either(job) = (step = job || proc { |id| id }; step.call(3))
+        end
+      RUBY
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/sync.rb", "class Sync\n  def self.call(id) = id + 1\nend\n")
+      repo.commit("Shift the id.", date: "2026-02-12T00:00:00Z")
+
+      method = JitCatch::Changes.between(repo.dir, "base", "HEAD")["methods"].fetch(0)
+
+      assert_equal %w[Jobs#either Jobs#passed], method["dynamic_callers"].map { |caller| caller["from"] }
+    end
+  end
+
   def test_a_block_pass_of_a_symbol_calls_that_name
     with_repo do |repo|
       repo.write("lib/order.rb", "class Line\nend\n\nclass Order\n  def initialize(lines) = @lines = lines\n  def total_cents = @lines.sum(&:total_cents)\nend\n")
