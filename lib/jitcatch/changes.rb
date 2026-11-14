@@ -6,11 +6,11 @@ module JitCatch
   #
   # An entry of the change (`item`) and an index of one side (`idx`) are
   # hashes, typed as `doc`. A node is a SourceIndex::Method or a
-  # SourceIndex::Constant, and the helpers that take either take it untyped.
+  # SourceIndex::Constant.
   class Changes
     # @rbs!
     #   type node = SourceIndex::Method | SourceIndex::Constant
-    #   type edge = Hash[String, untyped]
+    #   type edge = { "from" => String, "to" => String, "file" => String, "line" => Integer }
     #   type lookups = [Hash[[String, String], Array[SourceIndex::Method]], Hash[String, Array[SourceIndex::Method]], Hash[String, Array[SourceIndex::Method]], Hash[String, String]]
 
     MAX_BLOB = 200_000 #: Integer
@@ -309,7 +309,7 @@ module JitCatch
     # into test/, where no change of its own is listed. A file the diff
     # touched is the likelier destination than an older copy elsewhere.
     # The block names the change a move is, from the old and the new node.
-    #: (Array[doc] found, Array[untyped] head_nodes, Hash[String, doc] hunks) { (untyped, untyped) -> String } -> Array[doc]
+    #: [N < node] (Array[doc] found, Array[N] head_nodes, Hash[String, doc] hunks) { (N, N) -> String } -> Array[doc]
     def mark_moves(found, head_nodes, hunks)
       by_name = head_nodes.group_by(&:qualified)
       found.select { |item| item["change"] == "removed" && !item["namespace"] }.each do |item|
@@ -871,7 +871,9 @@ module JitCatch
       when "self" then "#{qualifier}#{sep}#{call.bare_name}"
       when "singleton" then "#{receiver.const}.#{call.bare_name}"
       when "instance" then "#{receiver.const}##{call.bare_name}"
-      when "named" then "#{SourceIndex.model_name(receiver.const)}##{call.bare_name}"
+      when "named"
+        name = receiver.const #: String
+        "#{SourceIndex.model_name(name)}##{call.bare_name}"
       end
     end
 
@@ -892,7 +894,7 @@ module JitCatch
       calls.include?("#{callback.qualifier}.create") ? calls + factory_mentions(callback.qualifier, factories) : calls
     end
 
-    #: (untyped node) -> bool
+    #: (SourceIndex::Method node) -> bool
     def constructor?(node)
       node.bare_name == "initialize" && node.kind == "instance" && !node.qualifier.empty?
     end
@@ -995,7 +997,7 @@ module JitCatch
     def edges_for(idx)
       by_class, by_bare, qualifiers, parents = lookups(idx)
       edges = [] #: Array[edge]
-      named_owners = {} #: Hash[[String, untyped], String?]
+      named_owners = {} #: Hash[[String, String], String?]
       (idx["calls"] + idx["template_calls"]).each do |call|
         next if call.enclosing.nil? || test_file?(call.file)
 
@@ -1044,7 +1046,7 @@ module JitCatch
     # an instance method, since no mixin turns a class method into one.
     # `named_owners` keeps the class each name resolves to from each
     # namespace, since a repository sends to the same few names many times.
-    #: (SourceIndex::Call call, Hash[[String, String], Array[SourceIndex::Method]] by_class, Hash[String, Array[SourceIndex::Method]] by_bare, Hash[String, Array[SourceIndex::Method]] qualifiers, Hash[String, String] parents, ?Hash[[String, untyped], String?] named_owners) -> (SourceIndex::Method | Array[SourceIndex::Method] | nil)
+    #: (SourceIndex::Call call, Hash[[String, String], Array[SourceIndex::Method]] by_class, Hash[String, Array[SourceIndex::Method]] by_bare, Hash[String, Array[SourceIndex::Method]] qualifiers, Hash[String, String] parents, ?Hash[[String, String], String?] named_owners) -> (SourceIndex::Method | Array[SourceIndex::Method] | nil)
     def call_target(call, by_class, by_bare, qualifiers, parents, named_owners = {})
       # The caller skips a call made outside any method.
       enclosing = call.enclosing #: String
@@ -1065,7 +1067,8 @@ module JitCatch
           inherited.first if inherited.size == 1
         end
       when "singleton", "instance"
-        owner = receiver.const.nil? ? qualifier : resolve_constant(receiver.const, qualifier, qualifiers)
+        const = receiver.const #: String?
+        owner = const.nil? ? qualifier : resolve_constant(const, qualifier, qualifiers)
         found = (by_class[[owner, call.bare_name]] || []).select { |method| method.kind == receiver.kind }
         if found.size == 1
           found.first
@@ -1073,14 +1076,16 @@ module JitCatch
           constructor_of(owner, call.bare_name, by_class, parents)
         end
       when "named"
-        key = [qualifier, receiver.const] #: [String, untyped]
-        owner = named_owners.fetch(key) { named_owners[key] = resolve_constant(SourceIndex.model_name(receiver.const), qualifier, qualifiers) }
+        name = receiver.const #: String
+        key = [qualifier, name] #: [String, String]
+        owner = named_owners.fetch(key) { named_owners[key] = resolve_constant(SourceIndex.model_name(name), qualifier, qualifiers) }
         return nil unless owner
 
         found = (by_class[[owner, call.bare_name]] || []).select { |method| method.kind == "instance" }
         found.first if found.size == 1
       when "one_of"
-        receiver.const.filter_map do |const|
+        consts = receiver.const #: Array[String]
+        consts.filter_map do |const|
           found = (by_class[[resolve_constant(const, qualifier, qualifiers), call.bare_name]] || []).select { |method| method.kind == "singleton" }
           found.first if found.size == 1
         end
@@ -1115,7 +1120,7 @@ module JitCatch
     # Ruby looks a constant up from the innermost enclosing namespace out.
     # A class header reads its superclass before it defines the class, so
     # the superclass is never the class it heads.
-    #: (String const, String qualifier, Hash[String, untyped] qualifiers, ?defining: String?) -> String?
+    #: (String const, String qualifier, Hash[String, Array[SourceIndex::Method]] qualifiers, ?defining: String?) -> String?
     def resolve_constant(const, qualifier, qualifiers, defining: nil)
       parts = qualifier.split("::")
       parts.size.downto(0).map { |n| [*parts.first(n), const].join("::") }.find { |name| name != defining && qualifiers.key?(name) }
@@ -1245,12 +1250,12 @@ module JitCatch
       [node.file, node.qualified, item["change"]]
     end
 
-    #: (untyped node) -> [String, String]
+    #: (node node) -> [String, String]
     def identity(node)
       [node.file, node.qualified]
     end
 
-    #: (Array[untyped] nodes) -> Hash[[String, String], untyped]
+    #: [N < node] (Array[N] nodes) -> Hash[[String, String], N]
     def index_by(nodes)
       nodes.to_h { |node| [identity(node), node] }
     end

@@ -96,7 +96,7 @@ module JitCatch
     # `const` is a String, or for `one_of` an Array of them, or nil.
     Receiver = Data.define(
       :kind, #: String
-      :const #: untyped
+      :const #: String | Array[String] | nil
     )
     UNKNOWN_RECEIVER = Receiver.new(kind: "unknown", const: nil) #: Receiver
     PROC_RECEIVER = Receiver.new(kind: "proc", const: nil) #: Receiver
@@ -109,27 +109,21 @@ module JitCatch
       :key, #: String
       :start_line, #: Integer
       :end_line #: Integer
-    ) do
-      # Steep reads a def in this block as a method of SourceIndex, so it
-      # checks the method against the declaration below instead.
-      # steep:ignore:start
+    )
+
+    # Data.define's block would hold this method, but Steep reads a def in
+    # that block as a method of SourceIndex, so the class is reopened.
+    class SpecBlock
+      #: (Integer line) -> bool
       def covers?(line)
         (start_line..end_line).cover?(line)
       end
-      # steep:ignore:end
     end
     SPEC_KINDS = {
       "group" => %i[describe context feature example_group shared_examples shared_examples_for shared_context xdescribe xcontext fdescribe fcontext],
       "example" => %i[it specify example scenario its focus fit fspecify fexample xit xspecify xexample skip pending],
       "setup" => %i[let let! subject subject! before after around prepend_before append_before prepend_after append_after]
     }.flat_map { |kind, names| names.map { |name| [name, kind] } }.to_h.freeze #: Hash[Symbol, String]
-    # A local bound here can hold any value, so it types no call.
-    LOCAL_BINDINGS = [
-      Prism::RequiredParameterNode, Prism::OptionalParameterNode, Prism::RestParameterNode,
-      Prism::RequiredKeywordParameterNode, Prism::OptionalKeywordParameterNode, Prism::KeywordRestParameterNode,
-      Prism::BlockParameterNode, Prism::BlockLocalVariableNode, Prism::LocalVariableTargetNode,
-      Prism::LocalVariableOperatorWriteNode, Prism::LocalVariableOrWriteNode, Prism::LocalVariableAndWriteNode
-    ].freeze #: Array[singleton(Prism::Node)]
     SPEC_HELPERS = %i[let let! subject subject!].freeze #: Array[Symbol]
     # The Active Record macros that define a reader returning one record.
     ASSOCIATION_READERS = %i[belongs_to has_one].freeze #: Array[Symbol]
@@ -184,16 +178,18 @@ module JitCatch
       :method, #: String
       :declared, #: String
       :contexts #: Array[String]?
-    ) do
+    )
+
+    class Callback
       # The record calls, as `.create` or `#save`, that can run it.
-      # steep:ignore:start
+      #: () -> Array[String]
       def calls
         all = RECORD_CALLBACKS.fetch(macro.to_sym)
-        return all if contexts.nil? || !CONTEXT_MACROS.include?(macro.to_sym)
+        listed = contexts
+        return all if listed.nil? || !CONTEXT_MACROS.include?(macro.to_sym)
 
-        all & contexts.flat_map { |context| CONTEXT_CALLS.fetch(context, OWN_CONTEXT_CALLS) }
+        all & listed.flat_map { |context| CONTEXT_CALLS.fetch(context, OWN_CONTEXT_CALLS) }
       end
-      # steep:ignore:end
     end
 
     # One `require_relative` call with one argument. `path` is nil when the
@@ -205,15 +201,10 @@ module JitCatch
     )
 
     # @rbs!
-    #   # Data.define's block defines these; rbs-inline reads only the members,
-    #   # and Steep does not check those blocks.
-    #   class SpecBlock
-    #     def covers?: (Integer line) -> bool
-    #   end
+    #   type constant_write = Prism::ConstantWriteNode | Prism::ConstantPathWriteNode
     #
-    #   class Callback
-    #     def calls: () -> Array[String]
-    #   end
+    #   # A node whose body holds statements that a class body scan reads.
+    #   type body = Prism::ProgramNode | Prism::ClassNode | Prism::ModuleNode | Prism::SingletonClassNode | Prism::BlockNode
 
     attr_reader :methods #: Array[Method]
     attr_reader :constants #: Array[Constant]
@@ -288,7 +279,7 @@ module JitCatch
     #: (String? source) -> Array[RelativeRequire]
     def self.relative_requires(source)
       found = [] #: Array[RelativeRequire]
-      pending = [Prism.parse(source.to_s).value] #: Array[untyped]
+      pending = [Prism.parse(source.to_s).value] #: Array[Prism::Node]
       while (node = pending.pop)
         if node.is_a?(Prism::CallNode) && node.receiver.nil? && node.name == :require_relative && node.arguments&.arguments&.size == 1
           found << RelativeRequire.new(path: settled_path(node.arguments&.arguments&.first), line: node.location.start_line)
@@ -303,8 +294,9 @@ module JitCatch
       return node.unescaped if node.is_a?(Prism::StringNode)
       return nil unless node.is_a?(Prism::CallNode) && node.name == :join && node.receiver.is_a?(Prism::ConstantReadNode) && node.receiver.name == :File
 
-      parts = Array(node.arguments&.arguments) #: Array[untyped]
-      parts.all?(Prism::StringNode) && !parts.empty? ? File.join(*parts.map(&:unescaped)) : nil
+      parts = Array(node.arguments&.arguments) #: Array[Prism::Node]
+      strings = parts.grep(Prism::StringNode) #: Array[Prism::StringNode]
+      strings.size == parts.size && !parts.empty? ? File.join(*strings.map(&:unescaped)) : nil
     end
 
     #: (String? source, String file, ?bool script) -> void
@@ -604,11 +596,7 @@ module JitCatch
       end
     end
 
-    # The private readers below take Prism nodes as untyped: they branch on
-    # a node's class, on `respond_to?`, and on what Prism 0.19 and 1.x name
-    # differently, which RBS types cannot follow without a rewrite.
-
-    #: (untyped node, String qualifier, Symbol visibility, bool singleton) -> void
+    #: (body node, String qualifier, Symbol visibility, bool singleton) -> void
     def scan_body(node, qualifier, visibility, singleton)
       vis = visibility
       statements(node).each do |stmt|
@@ -616,15 +604,9 @@ module JitCatch
       end
     end
 
-    #: (untyped node) -> Array[untyped]
+    #: (body node) -> Array[Prism::Node]
     def statements(node)
-      container = if node.is_a?(Prism::ProgramNode)
-        node.statements
-      elsif node.respond_to?(:body)
-        node.body
-      else
-        node
-      end
+      container = node.is_a?(Prism::ProgramNode) ? node.statements : node.body
       case container
       when nil then []
       when Prism::StatementsNode then container.body
@@ -633,7 +615,7 @@ module JitCatch
     end
 
     # The visibility the statements after this one get.
-    #: (untyped stmt, String qualifier, Symbol visibility, bool singleton) -> Symbol
+    #: (Prism::Node? stmt, String qualifier, Symbol visibility, bool singleton) -> Symbol
     def scan_statement(stmt, qualifier, visibility, singleton)
       case stmt
       when Prism::ClassNode, Prism::ModuleNode
@@ -701,7 +683,7 @@ module JitCatch
       node.receiver.nil? && VISIBILITY.include?(node.name)
     end
 
-    #: (untyped stmt, String qualifier, Symbol visibility, bool singleton) -> Symbol
+    #: (Prism::CallNode stmt, String qualifier, Symbol visibility, bool singleton) -> Symbol
     def handle_visibility(stmt, qualifier, visibility, singleton)
       args = stmt.arguments&.arguments || []
       return stmt.name if args.empty?
@@ -721,7 +703,7 @@ module JitCatch
 
     # `module_function` makes the public method `Mod.name` that callers use;
     # the private instance copy it also makes is not listed.
-    #: (untyped stmt, String qualifier, Symbol visibility) -> Symbol
+    #: (Prism::CallNode stmt, String qualifier, Symbol visibility) -> Symbol
     def handle_module_function(stmt, qualifier, visibility)
       args = stmt.arguments&.arguments || []
       return :module_function if args.empty?
@@ -747,14 +729,14 @@ module JitCatch
       end
     end
 
-    #: (untyped stmt, String qualifier) -> void
+    #: (Prism::CallNode stmt, String qualifier) -> void
     def record_private_constants(stmt, qualifier)
       (stmt.arguments&.arguments || []).each do |arg|
         @private_constants << join_qual(qualifier, arg.unescaped.to_s) if arg.is_a?(Prism::SymbolNode) || arg.is_a?(Prism::StringNode)
       end
     end
 
-    #: (untyped stmt, String qualifier) -> void
+    #: (Prism::CallNode stmt, String qualifier) -> void
     def handle_class_visibility(stmt, qualifier)
       visibility = CLASS_VISIBILITY.fetch(stmt.name)
       (stmt.arguments&.arguments || []).each do |arg|
@@ -799,7 +781,7 @@ module JitCatch
     # is not. Its source holds only those statements, so `changes` sees
     # an edit to them by the source alone.
     # The script's method name.
-    #: (untyped program) -> String
+    #: (Prism::ProgramNode program) -> String
     def record_script(program)
       top = statements(program).reject { |stmt| [Prism::DefNode, Prism::ClassNode, Prism::ModuleNode].any? { |kind| stmt.is_a?(kind) } }
       name = self.class.script_name(@file)
@@ -816,21 +798,21 @@ module JitCatch
 
     # A string, a lambda, or a block runs code the line does not name, so
     # only symbols count.
-    #: (untyped stmt, String qualifier) -> void
+    #: (Prism::CallNode stmt, String qualifier) -> void
     def record_callbacks(stmt, qualifier)
-      arguments = Array(stmt.arguments&.arguments) #: Array[untyped]
-      options = arguments.grep(Prism::KeywordHashNode).flat_map(&:elements).grep(Prism::AssocNode)
-        .select { |pair| pair.key.is_a?(Prism::SymbolNode) && CALLBACK_CONDITIONS.include?(pair.key.unescaped) }
+      arguments = Array(stmt.arguments&.arguments) #: Array[Prism::Node]
+      pairs = symbol_pairs(keyword_elements(arguments))
+      options = pairs.select { |key, _pair| CALLBACK_CONDITIONS.include?(key) }
       # @type var named: Array[[String, String]]
-      named = stmt.name == :validates ? [] : arguments.grep(Prism::SymbolNode).map { |arg| [arg.unescaped, ":#{arg.unescaped}"] }
-      named += options.flat_map do |pair|
-        values = pair.value.is_a?(Prism::ArrayNode) ? pair.value.elements : [pair.value]
-        values.grep(Prism::SymbolNode).map { |arg| [arg.unescaped, "#{pair.key.unescaped}: :#{arg.unescaped}"] }
+      named = stmt.name == :validates ? [] : symbol_nodes(arguments).map { |arg| [arg.unescaped, ":#{arg.unescaped}"] }
+      named += options.flat_map do |key, pair|
+        value = pair.value
+        values = value.is_a?(Prism::ArrayNode) ? value.elements : [value]
+        symbol_nodes(values).map { |arg| [arg.unescaped, "#{key}: :#{arg.unescaped}"] }
       end
-      context = arguments.grep(Prism::KeywordHashNode).flat_map(&:elements).grep(Prism::AssocNode)
-        .find { |pair| pair.key.is_a?(Prism::SymbolNode) && pair.key.unescaped == "on" }&.value
+      context = pairs.find { |key, _pair| key == "on" }&.last&.value
       contexts = callback_contexts(context)
-      on = contexts && CONTEXT_MACROS.include?(stmt.name) ? ", on: #{slice_of(context)}" : ""
+      on = contexts && context && CONTEXT_MACROS.include?(stmt.name) ?", on: #{slice_of(context)}" : ""
       named.each do |method, written|
         @callbacks << Callback.new(qualifier: qualifier.to_s, macro: stmt.name.to_s, method: method, declared: "#{stmt.name} #{written}#{on}", contexts: contexts)
       end
@@ -838,13 +820,12 @@ module JitCatch
 
     # `belongs_to :cosigner, class_name: "Borrower"` reads a Borrower. A
     # polymorphic one reads whatever class the row names.
-    #: (untyped stmt, String qualifier) -> void
+    #: (Prism::CallNode stmt, String qualifier) -> void
     def record_association(stmt, qualifier)
-      name, *rest = Array(stmt.arguments&.arguments) #: Array[untyped]
+      name, *rest = Array(stmt.arguments&.arguments) #: Array[Prism::Node]
       return unless name.is_a?(Prism::SymbolNode)
 
-      options = rest.grep(Prism::KeywordHashNode).flat_map(&:elements).grep(Prism::AssocNode)
-        .select { |pair| pair.key.is_a?(Prism::SymbolNode) }.to_h { |pair| [pair.key.unescaped, pair.value] }
+      options = symbol_pairs(keyword_elements(rest)).to_h { |key, pair| [key, pair.value] }
       return if options.key?("polymorphic")
 
       written = options["class_name"]
@@ -856,15 +837,38 @@ module JitCatch
 
     # An `on:` the source does not spell as symbols could be any context,
     # so it narrows nothing.
-    #: (untyped value) -> Array[String]?
+    #: (Prism::Node? value) -> Array[String]?
     def callback_contexts(value)
       values = value.is_a?(Prism::ArrayNode) ? value.elements : [value]
-      return nil if values.empty? || !values.all?(Prism::SymbolNode)
+      symbols = symbol_nodes(values)
+      return nil if values.empty? || symbols.size != values.size
 
-      values.map(&:unescaped)
+      symbols.map(&:unescaped)
     end
 
-    #: (untyped stmt, String qualifier, Symbol visibility, bool singleton) -> void
+    #: (Array[Prism::Node?] nodes) -> Array[Prism::SymbolNode]
+    def symbol_nodes(nodes)
+      nodes.filter_map { |node| node if node.is_a?(Prism::SymbolNode) }
+    end
+
+    # The elements of the `key: value` arguments, as `to: :author`.
+    #: (Array[Prism::Node] arguments) -> Array[Prism::Node]
+    def keyword_elements(arguments)
+      arguments.flat_map { |arg| arg.is_a?(Prism::KeywordHashNode) ? arg.elements : [] }
+    end
+
+    # The pairs among `elements` whose key is a symbol, each with the key's text.
+    #: (Array[Prism::Node] elements) -> Array[[String, Prism::AssocNode]]
+    def symbol_pairs(elements)
+      elements.filter_map do |pair|
+        next unless pair.is_a?(Prism::AssocNode)
+
+        key = pair.key
+        [key.unescaped, pair] if key.is_a?(Prism::SymbolNode)
+      end
+    end
+
+    #: (Prism::CallNode stmt, String qualifier, Symbol visibility, bool singleton) -> void
     def record_attributes_as_methods(stmt, qualifier, visibility, singleton)
       suffixes = ATTRIBUTE_MACROS.fetch(stmt.name)
       member_symbols(stmt, qualifier).each do |arg|
@@ -877,24 +881,26 @@ module JitCatch
 
     # `scope :recent, -> { ... }` and `scope(:old) { ... }` define the class
     # method `Post.recent`, and its body is the whole statement.
-    #: (untyped stmt) -> bool
+    #: (Prism::CallNode stmt) -> bool
     def scope?(stmt)
       stmt.receiver.nil? && stmt.name == :scope && stmt.arguments&.arguments&.first.is_a?(Prism::SymbolNode) && !scope_body(stmt).nil?
     end
 
-    #: (untyped stmt) -> (Prism::LambdaNode | Prism::BlockNode)?
+    #: (Prism::CallNode stmt) -> (Prism::LambdaNode | Prism::BlockNode)?
     def scope_body(stmt)
-      body = stmt.arguments.arguments[1]
+      body = stmt.arguments&.arguments&.[](1)
       return body if body.is_a?(Prism::LambdaNode)
 
       stmt.block if stmt.block.is_a?(Prism::BlockNode)
     end
 
-    #: (untyped stmt, String qualifier) -> void
+    #: (Prism::CallNode stmt, String qualifier) -> void
     def record_scope(stmt, qualifier)
-      bare = stmt.arguments.arguments.first.unescaped
+      # scope? holds that the first argument is a symbol and the body is there.
+      name = stmt.arguments&.arguments&.first #: Prism::SymbolNode
+      bare = name.unescaped
       body = scope_body(stmt) #: Prism::LambdaNode | Prism::BlockNode
-      params = body.parameters #: untyped
+      params = body.parameters #: Prism::Node?
       params = params.parameters if params.is_a?(Prism::BlockParametersNode)
       @methods << self.class::Method.new(
         file: @file,
@@ -912,32 +918,33 @@ module JitCatch
     end
 
     # `prefix :api` puts its segment before every path of the class.
-    #: (untyped body) -> Array[String]
+    #: (body body) -> Array[String]
     def api_prefix(body)
-      call = statements(body).find { |stmt| stmt.is_a?(Prism::CallNode) && stmt.receiver.nil? && stmt.name == :prefix }
+      calls = statements(body).grep(Prism::CallNode) #: Array[Prism::CallNode]
+      call = calls.find { |stmt| stmt.receiver.nil? && stmt.name == :prefix }
       call ? [path_segment(call.arguments&.arguments&.first)].compact : []
     end
 
     # `described` is the line of a `desc` or `params` before the block that
     # holds these statements, which describes the first endpoint in it.
     # The line of a `desc` or `params` that no endpoint has taken yet.
-    #: (untyped body, String qualifier, Array[String] path, ?Integer? described) -> Integer?
+    #: (body body, String qualifier, Array[String] path, ?Integer? described) -> Integer?
     def record_endpoints(body, qualifier, path, described = nil)
       statements(body).each do |stmt|
-        # @type var call: untyped
-        # @type var segment: untyped
         call = stmt if stmt.is_a?(Prism::CallNode) && stmt.receiver.nil?
         if call && ENDPOINT_DESCRIPTIONS.include?(call.name)
           described ||= call.location.start_line
           next
         end
-        block = call&.block.is_a?(Prism::BlockNode)
-        segment = path_segment(call.arguments&.arguments&.first) if block
-        if block && PATH_BLOCKS.include?(call.name)
-          described = record_endpoints(call.block, qualifier, [*path, *(call.name == :route_param && segment ? ":#{segment}" : segment)], described)
-          next
-        elsif block && ENDPOINT_VERBS.include?(call.name)
-          record_endpoint(call, qualifier, [*path, *segment], described || call.location.start_line)
+        block = call&.block
+        if call && block.is_a?(Prism::BlockNode)
+          segment = path_segment(call.arguments&.arguments&.first)
+          if PATH_BLOCKS.include?(call.name)
+            described = record_endpoints(block, qualifier, [*path, call.name == :route_param && segment ? ":#{segment}" : segment].compact, described)
+            next
+          elsif ENDPOINT_VERBS.include?(call.name)
+            record_endpoint(call, qualifier, [*path, segment].compact, described || call.location.start_line)
+          end
         end
         described = nil
       end
@@ -958,7 +965,7 @@ module JitCatch
     # A path argument's segments with no slash at either end, or nil for
     # none. A part the source computes is kept as its source in braces, so
     # the endpoint's name says that its path is not known.
-    #: (untyped node) -> String?
+    #: (Prism::Node? node) -> String?
     def path_segment(node)
       return nil if node.nil? || node.is_a?(Prism::KeywordHashNode)
 
@@ -970,17 +977,16 @@ module JitCatch
     # The parts of a path the source writes: the text of each literal part,
     # and the node of each part it computes. A constant the file assigns a
     # string or a symbol is literal.
-    #: (untyped node) -> Array[String | Prism::Node]
+    #: (Prism::Node node) -> Array[String | Prism::Node]
     def path_parts(node)
       case node
       when Prism::StringNode, Prism::SymbolNode
         [node.unescaped]
       when Prism::InterpolatedStringNode, Prism::InterpolatedSymbolNode
         node.parts.flat_map do |part|
-          # @type var inner: untyped
           inner = part.statements&.body if part.is_a?(Prism::EmbeddedStatementsNode)
           if part.is_a?(Prism::StringNode) then [part.unescaped]
-          elsif inner&.size == 1 then path_parts(inner.first)
+          elsif inner && inner.size == 1 then path_parts(inner.fetch(0))
           else [part]
           end
         end
@@ -1034,17 +1040,19 @@ module JitCatch
 
     # `delegate :name, to: :author, prefix: true` defines `author_name`, and
     # a change to the options changes every name the line delegates.
-    #: (untyped stmt, String qualifier, bool singleton) -> void
+    #: (Prism::CallNode stmt, String qualifier, bool singleton) -> void
     def record_delegates(stmt, qualifier, singleton)
-      names = Array(stmt.arguments&.arguments).grep(Prism::SymbolNode) #: Array[untyped]
-      options = Array(stmt.arguments&.arguments).grep(Prism::KeywordHashNode).first #: untyped
+      arguments = Array(stmt.arguments&.arguments) #: Array[Prism::Node]
+      names = symbol_nodes(arguments)
+      options = arguments.grep(Prism::KeywordHashNode).first #: Prism::KeywordHashNode?
       return if names.empty? || options.nil?
 
-      pairs = options.elements.grep(Prism::AssocNode).select { |pair| pair.key.is_a?(Prism::SymbolNode) }.to_h { |pair| [pair.key.unescaped, pair.value] }
+      pairs = symbol_pairs(options.elements).to_h { |key, pair| [key, pair.value] }
       return unless pairs.key?("to")
 
+      to = pairs["to"]
       prefix = case (value = pairs["prefix"])
-      when Prism::TrueNode then pairs["to"].is_a?(Prism::SymbolNode) ? "#{pairs["to"].unescaped}_" : ""
+      when Prism::TrueNode then to.is_a?(Prism::SymbolNode) ? "#{to.unescaped}_" : ""
       when Prism::SymbolNode, Prism::StringNode then "#{value.unescaped}_"
       else ""
       end
@@ -1060,25 +1068,20 @@ module JitCatch
     # the scopes `Post.draft` and `Post.not_draft` for each value. Each value
     # keeps its own line, so changing one value changes that value's methods.
     # Rails 8 removed the `enum status: {...}` form, so it is not read.
-    #: (untyped stmt, String qualifier) -> void
+    #: (Prism::CallNode stmt, String qualifier) -> void
     def record_enum(stmt, qualifier)
-      name, *rest = Array(stmt.arguments&.arguments) #: Array[untyped]
+      name, *rest = Array(stmt.arguments&.arguments) #: Array[Prism::Node]
       return unless name.is_a?(Prism::SymbolNode)
 
-      # @type var listed: untyped
-      pairs = rest.grep(Prism::KeywordHashNode).flat_map(&:elements).grep(Prism::AssocNode).select { |pair| pair.key.is_a?(Prism::SymbolNode) }
-      options = pairs.select { |pair| ENUM_OPTIONS.include?(pair.key.unescaped) }
+      pairs = symbol_pairs(keyword_elements(rest))
+      options = pairs.select { |key, _pair| ENUM_OPTIONS.include?(key) }
       listed = rest.find { |arg| arg.is_a?(Prism::HashNode) || arg.is_a?(Prism::ArrayNode) }
       values = case listed
-      when Prism::HashNode
-        entries = listed.elements.grep(Prism::AssocNode) #: Array[untyped]
-        entries.select { |pair| pair.key.is_a?(Prism::SymbolNode) }.map { |pair| [pair.key.unescaped, pair] }
-      when Prism::ArrayNode
-        symbols = listed.elements.grep(Prism::SymbolNode) #: Array[untyped]
-        symbols.map { |value| [value.unescaped, value] }
-      else (pairs - options).map { |pair| [pair.key.unescaped, pair] }
-      end
-      option = options.to_h { |pair| [pair.key.unescaped, pair.value] }
+      when Prism::HashNode then symbol_pairs(listed.elements)
+      when Prism::ArrayNode then symbol_nodes(listed.elements).map { |value| [value.unescaped, value] }
+      else pairs - options
+      end #: Array[[String, Prism::Node]]
+      option = options.to_h { |key, pair| [key, pair.value] }
       affix = lambda do |key, joined|
         case (value = option[key])
         when Prism::TrueNode then joined.call(name.unescaped)
@@ -1088,7 +1091,7 @@ module JitCatch
       end
       prefix = affix.call("prefix", ->(text) { "#{text}_" })
       suffix = affix.call("suffix", ->(text) { "_#{text}" })
-      written = options.map { |pair| ", #{slice_of(pair)}" }.join
+      written = options.map { |_key, pair| ", #{slice_of(pair)}" }.join
       values.each do |value, node|
         method = "#{prefix}#{value}#{suffix}"
         source = "enum :#{name.unescaped}, #{node.is_a?(Prism::SymbolNode) ? ":#{value}" : slice_of(node)}#{written}"
@@ -1101,7 +1104,7 @@ module JitCatch
       end
     end
 
-    #: (untyped call, String qualifier) -> void
+    #: (Prism::CallNode call, String qualifier) -> void
     def record_members(call, qualifier)
       builder = const_name(call.receiver)
       writers = MEMBER_BUILDERS[[builder&.to_sym, call.name]]
@@ -1119,7 +1122,7 @@ module JitCatch
     # this file set to a list of symbols before it, looked up from the
     # innermost namespace out. Each member keeps the line of its own symbol,
     # so a change to the list is a change to that member.
-    #: (untyped call, String qualifier) -> Array[Prism::SymbolNode]
+    #: (Prism::CallNode call, String qualifier) -> Array[Prism::SymbolNode]
     def member_symbols(call, qualifier)
       Array(call.arguments&.arguments).flat_map do |arg|
         case arg
@@ -1137,7 +1140,7 @@ module JitCatch
     end
 
     # `[:a, :b]`, `%i[a b]`, and either with `.freeze`.
-    #: (untyped node) -> Array[Prism::SymbolNode]?
+    #: (Prism::Node node) -> Array[Prism::SymbolNode]?
     def symbol_list(node)
       node = node.receiver if node.is_a?(Prism::CallNode) && node.name == :freeze && node.arguments.nil?
       return nil unless node.is_a?(Prism::ArrayNode) && node.elements.all?(Prism::SymbolNode)
@@ -1198,9 +1201,11 @@ module JitCatch
       @calls.map! do |call|
         next call unless call.receiver.kind == "ivar"
 
+        # An `ivar`, `named`, `helper`, or `returned` receiver names a String.
+        ivar = call.receiver.const #: String
         qualifier, _sep, _bare = self.class.split_qualified(call.enclosing.to_s)
-        named = @ivar_classes[[qualifier, call.receiver.const]].uniq
-        call.with(receiver: typed_or_named(named, named.size == 1, call.receiver.const.delete_prefix("@")))
+        named = @ivar_classes[[qualifier, ivar]].uniq
+        call.with(receiver: typed_or_named(named, named.size == 1, ivar.delete_prefix("@")))
       end
     end
 
@@ -1211,14 +1216,15 @@ module JitCatch
       @calls.map! do |call|
         next call unless call.receiver.kind == "named"
 
-        procs = @local_procs.fetch([call.enclosing, call.receiver.const], [])
+        local = call.receiver.const #: String
+        procs = @local_procs.fetch([call.enclosing, local], [])
         next call.with(receiver: PROC_RECEIVER) if procs.any? && procs.all?
 
-        assigned = @local_classes.fetch([call.enclosing, call.receiver.const], [])
+        assigned = @local_classes.fetch([call.enclosing, local], [])
         next call if assigned.all?(&:empty?)
 
         built = assigned.flatten.uniq
-        call.with(receiver: typed_or_named(built, assigned.all? { |consts| consts.size == 1 }, call.receiver.const))
+        call.with(receiver: typed_or_named(built, assigned.all? { |consts| consts.size == 1 }, local))
       end
     end
 
@@ -1240,7 +1246,8 @@ module JitCatch
       @calls.map! do |call|
         next call unless call.receiver.kind == "helper"
 
-        built = @helper_classes[call.receiver.const].uniq
+        helper = call.receiver.const #: String
+        built = @helper_classes[helper].uniq
         typed = built.size == 1 && built.first
         call.with(receiver: typed ? Receiver.new(kind: "instance", const: typed) : UNKNOWN_RECEIVER)
       end
@@ -1254,12 +1261,13 @@ module JitCatch
       @calls.map! do |call|
         next call unless call.receiver.kind == "returned"
 
+        returned = call.receiver.const #: String
         qualifier, sep, _bare = self.class.split_qualified(call.enclosing.to_s)
-        names = [sep == ".", sep != "."].map { |singleton| self.class.qualify(qualifier, call.receiver.const, singleton) }
+        names = [sep == ".", sep != "."].map { |singleton| self.class.qualify(qualifier, returned, singleton) }
         consts = @returned.values_at(*names).compact.first.to_a.uniq
         reader = names.first
         # A singleton reader names `Loan.borrower`, which no association line records.
-        association = @association_classes[reader] unless @defined.fetch(call.receiver.const, []).include?(reader)
+        association = @association_classes[reader] unless @defined.fetch(returned, []).include?(reader)
         next call.with(receiver: Receiver.new(kind: "instance", const: association)) if association
 
         call.with(receiver: consts.empty? ? UNKNOWN_RECEIVER : Receiver.new(kind: "one_of", const: consts))
@@ -1268,7 +1276,7 @@ module JitCatch
 
     # The constants a method body can return, or nil when it can return
     # anything else. A `nil` branch adds none.
-    #: (untyped node) -> Array[String]?
+    #: (Prism::Node? node) -> Array[String]?
     def returned_constants(node)
       case node
       when nil, Prism::NilNode
@@ -1287,7 +1295,7 @@ module JitCatch
       end
     end
 
-    #: (untyped node) -> bool
+    #: (Prism::Node? node) -> bool
     def returns?(node)
       return false if node.nil? || node.is_a?(Prism::DefNode)
 
@@ -1297,7 +1305,7 @@ module JitCatch
     # The constants a value builds with `Const.new`, through `a || b`,
     # `c ? a : b`, and parentheses.
     # `-> {}`, `lambda {}`, `proc {}`, and `Proc.new {}` make a Proc.
-    #: (untyped node) -> bool
+    #: (Prism::Node? node) -> bool
     def proc_literal?(node)
       return true if node.is_a?(Prism::LambdaNode)
       return false unless node.is_a?(Prism::CallNode) && node.block.is_a?(Prism::BlockNode)
@@ -1309,7 +1317,7 @@ module JitCatch
       end
     end
 
-    #: (untyped node) -> Array[String]
+    #: (Prism::Node? node) -> Array[String]
     def built_constants(node)
       case node
       when Prism::CallNode
@@ -1337,7 +1345,7 @@ module JitCatch
       renamed.each { |from, to| @references[to] = @references.delete(from).to_a if @references.key?(from) }
     end
 
-    #: (untyped node, String qualifier) -> String
+    #: (constant_write node, String qualifier) -> String
     def constant_target(node, qualifier)
       node.is_a?(Prism::ConstantWriteNode) ? join_qual(qualifier, node.name.to_s) : const_name(node.target).to_s
     end
@@ -1346,14 +1354,14 @@ module JitCatch
     # methods for that constant. Those methods are indexed on their own, so
     # the constant keeps only the text up to the block's `do` or `{`, which
     # still shows a block that came or went.
-    #: (untyped node) -> Prism::BlockNode?
+    #: (constant_write node) -> Prism::BlockNode?
     def value_block(node)
       value = node.value
       value.block if value.is_a?(Prism::CallNode) && value.block.is_a?(Prism::BlockNode)
     end
 
     # The constant's source up to its block, and the line that ends.
-    #: (untyped node) -> [String, Integer]
+    #: (constant_write node) -> [String, Integer]
     def constant_header(node)
       block = value_block(node)
       return [slice_of(node), node.location.end_line] unless block
@@ -1363,7 +1371,7 @@ module JitCatch
       [header.force_encoding(@source.encoding).rstrip, block.location.start_line]
     end
 
-    #: (untyped node, String qualifier, bool singleton_context, String? enclosing) -> void
+    #: (Prism::Node node, String qualifier, bool singleton_context, String? enclosing) -> void
     def walk(node, qualifier, singleton_context, enclosing)
       case node
       when Prism::ClassNode
@@ -1386,13 +1394,16 @@ module JitCatch
       when Prism::CallNode
         return walk_spec_block(node, qualifier, singleton_context, enclosing) if spec_block?(node)
 
+        # record_endpoints names only a call with a block.
         endpoint = @endpoints[node.location.start_offset]
-        return walk(node.block, qualifier, singleton_context, endpoint) if endpoint
+        endpoint_block = node.block if endpoint
+        return walk(endpoint_block, qualifier, singleton_context, endpoint) if endpoint_block
 
         if enclosing.nil? && !singleton_context && scope?(node)
           scope_name = node.arguments&.arguments&.first #: Prism::SymbolNode
           scope = self.class.qualify(qualifier, scope_name.unescaped, true)
-          return walk(scope_body(node), qualifier, true, scope)
+          scope_block = scope_body(node) #: Prism::LambdaNode | Prism::BlockNode
+          return walk(scope_block, qualifier, true, scope)
         end
 
         if node.name
@@ -1449,7 +1460,11 @@ module JitCatch
         @local_classes[[enclosing, node.name.to_s]] << built_constants(node.value).uniq
         @local_procs[[enclosing, node.name.to_s]] << proc_literal?(node.value)
         node.compact_child_nodes.each { |child| walk(child, qualifier, singleton_context, enclosing) }
-      when *LOCAL_BINDINGS
+      # A local bound here can hold any value, so it types no call.
+      when Prism::RequiredParameterNode, Prism::OptionalParameterNode, Prism::RestParameterNode,
+        Prism::RequiredKeywordParameterNode, Prism::OptionalKeywordParameterNode, Prism::KeywordRestParameterNode,
+        Prism::BlockParameterNode, Prism::BlockLocalVariableNode, Prism::LocalVariableTargetNode,
+        Prism::LocalVariableOperatorWriteNode, Prism::LocalVariableOrWriteNode, Prism::LocalVariableAndWriteNode
         @local_classes[[enclosing, node.name.to_s]] << [] if node.name
         # `&block` binds the block given, which is a Proc.
         @local_procs[[enclosing, node.name.to_s]] << node.is_a?(Prism::BlockParameterNode) if node.name
@@ -1467,75 +1482,76 @@ module JitCatch
     # text the test expects, not the path of a script it starts. Only a
     # direct argument counts, so `assert_equal "1\n", IO.popen(["ruby",
     # "exe/tool"], &:read)` still names `exe/tool`.
-    #: (untyped node) -> void
+    #: (Prism::CallNode node) -> void
     def mark_compared_strings(node)
       return unless COMPARING_CALL.match?(node.name.to_s) && node.arguments
 
       node.arguments.arguments.grep(Prism::StringNode).each { |arg| @compared[arg.location.start_offset] = true }
     end
 
-    #: (untyped node) -> bool
+    #: (Prism::CallNode node) -> bool
     def spec_block?(node)
       return false unless node.block.is_a?(Prism::BlockNode) && SPEC_KINDS.key?(node.name)
 
       node.receiver.nil? || (node.receiver.is_a?(Prism::ConstantReadNode) && node.receiver.name == :RSpec)
     end
 
-    #: (untyped node, String qualifier, bool singleton_context, String? enclosing) -> void
+    #: (Prism::CallNode node, String qualifier, bool singleton_context, String? enclosing) -> void
     def walk_spec_block(node, qualifier, singleton_context, enclosing)
       kind = SPEC_KINDS.fetch(node.name)
+      # spec_block? holds that the block is a BlockNode.
+      body = node.block #: Prism::BlockNode
       block = SpecBlock.new(kind: kind, key: "#{kind}:#{node.location.start_line}", start_line: node.location.start_line, end_line: node.location.end_line)
       @spec_blocks << block
-      record_spec_helper(node) if SPEC_HELPERS.include?(node.name)
+      record_spec_helper(node, body) if SPEC_HELPERS.include?(node.name)
       arguments = Array(node.arguments&.arguments)
       arguments.each { |arg| walk(arg, qualifier, singleton_context, block.key) unless spec_helper_name?(node, arg) }
       described = kind == "group" ? arguments.first : nil
       if described.is_a?(Prism::StringNode) && (match = described.unescaped.match(DESCRIBED_METHOD))
         refer(block.key, match[1])
       end
-      return walk(node.block, qualifier, singleton_context, block.key) unless kind == "group"
+      return walk(body, qualifier, singleton_context, block.key) unless kind == "group"
 
       @described.push(const_name(described) || @described.last)
-      walk(node.block, qualifier, singleton_context, enclosing)
+      walk(body, qualifier, singleton_context, enclosing)
       @described.pop
     end
 
     # `let(:result)` and `subject(:result)` name a helper of the spec, so the
     # symbol and a bare `result` call refer to the spec's own helper, not to
     # a method `result` of the code under test.
-    #: (untyped node) -> Array[String]
+    #: (Prism::Node node) -> Array[String]
     def spec_helper_names(node)
       # @type var own: Array[String]
-      # @type var named: untyped
       named = node.arguments&.arguments&.first if node.is_a?(Prism::CallNode)
-      own = node.is_a?(Prism::CallNode) && spec_helper_name?(node, named) ? [named.unescaped] : []
+      own = node.is_a?(Prism::CallNode) && named.is_a?(Prism::SymbolNode) && spec_helper_name?(node, named) ? [named.unescaped] : []
       own << "subject" if node.is_a?(Prism::CallNode) && node.receiver.nil? && node.block && %i[subject subject!].include?(node.name)
       own + node.compact_child_nodes.flat_map { |child| spec_helper_names(child) }
     end
 
     # An unnamed `subject` is called as `subject`, and a named one answers
     # to both names.
-    #: (untyped node) -> void
-    def record_spec_helper(node)
+    #: (Prism::CallNode node, Prism::BlockNode block) -> void
+    def record_spec_helper(node, block)
       first = node.arguments&.arguments&.first
       names = first.is_a?(Prism::SymbolNode) ? [first.unescaped] : [] #: Array[String]
       names << "subject" if node.name.start_with?("subject")
-      built = built_constants(node.block.body).uniq
+      built = built_constants(block.body).uniq
       names.each { |name| @helper_classes[name] << (built.size == 1 ? built.first : nil) }
     end
 
-    #: (untyped node, untyped arg) -> bool
+    #: (Prism::CallNode node, Prism::Node? arg) -> bool
     def spec_helper_name?(node, arg)
-      SPEC_HELPERS.include?(node.name) && node.receiver.nil? && arg.is_a?(Prism::SymbolNode) && node.arguments.arguments.first.equal?(arg)
+      SPEC_HELPERS.include?(node.name) && node.receiver.nil? && arg.is_a?(Prism::SymbolNode) && arg.equal?(node.arguments&.arguments&.first)
     end
 
-    #: (untyped node) -> bool
+    #: (Prism::CallNode node) -> bool
     def spec_helper_call?(node)
       node.receiver.nil? && node.arguments.nil? && @spec_helpers.include?(node.name.to_s)
     end
 
     # `described_class.new` builds the constant the enclosing group describes.
-    #: (untyped node) -> String?
+    #: (Prism::CallNode node) -> String?
     def described_owner(node)
       return nil unless node.name == :new && node.receiver.is_a?(Prism::CallNode)
       return nil unless node.receiver.name == :described_class && node.receiver.receiver.nil?
@@ -1554,15 +1570,14 @@ module JitCatch
     end
 
     # `create(:loan, :cosigned)` names the trait :cosigned after the factory.
-    #: (untyped node) -> Array[String]
+    #: (Prism::CallNode node) -> Array[String]
     def factory_traits(node)
-      traits = Array(node.arguments&.arguments).drop(1).grep(Prism::SymbolNode) #: Array[untyped]
-      traits.map(&:unescaped)
+      symbol_nodes(Array(node.arguments&.arguments).drop(1)).map(&:unescaped)
     end
 
     # `create(:loan)` or `FactoryBot.build("loan")` builds from the factory
     # `loan`. A name a run computes cannot be read.
-    #: (untyped node) -> String?
+    #: (Prism::CallNode node) -> String?
     def factory_built(node)
       return nil unless FACTORY_CALLS.include?(node.name)
       return nil unless node.receiver.nil? || (node.receiver.is_a?(Prism::ConstantReadNode) && node.receiver.name == :FactoryBot)
@@ -1571,14 +1586,14 @@ module JitCatch
       first.unescaped if first.is_a?(Prism::SymbolNode) || first.is_a?(Prism::StringNode)
     end
 
-    #: (String? enclosing, String | Symbol name) -> void
+    #: (String? enclosing, String | Symbol | nil name) -> void
     def refer(enclosing, name)
       @references[enclosing] << name.to_s
     end
 
 
     # `emitter.send(:write)` calls `write` on the receiver of `send`.
-    #: (untyped node) -> String?
+    #: (Prism::CallNode node) -> String?
     def sent_name(node)
       return nil unless SEND_CALLS.include?(node.name)
 
@@ -1586,7 +1601,7 @@ module JitCatch
       first.unescaped if first.is_a?(Prism::SymbolNode) || first.is_a?(Prism::StringNode)
     end
 
-    #: (untyped node) -> String?
+    #: (Prism::CallNode node) -> String?
     def reflective_name(node)
       return nil unless REFLECTIVE_CALLS.include?(node.name)
 
@@ -1594,7 +1609,7 @@ module JitCatch
       first.unescaped if first.is_a?(Prism::StringNode)
     end
 
-    #: (untyped node) -> Receiver
+    #: (Prism::Node? node) -> Receiver
     def receiver_of(node)
       case node
       when nil, Prism::SelfNode
@@ -1629,7 +1644,7 @@ module JitCatch
       end
     end
 
-    #: (untyped node) -> String?
+    #: (Prism::CallNode node) -> String?
     def constructor_owner(node)
       return nil unless node.name == :new
 
@@ -1640,12 +1655,16 @@ module JitCatch
     # Prism 0.19, the default on Ruby 3.3, has no ConstantPathNode#name: the
     # last segment is a ConstantReadNode in `child`, which Prism 1.x deprecates.
     # `full_name` and the source text after `::` are not the same on both.
-    #: (untyped node) -> Symbol
+    # Prism 1.x gives a ConstantPathNode with a missing last segment no name.
+    #: (Prism::ConstantReadNode | Prism::ConstantPathNode | Prism::CallTargetNode node) -> Symbol?
     def name_of(node)
-      node.respond_to?(:name) ? node.name : node.child.name
+      return node.name if !node.is_a?(Prism::ConstantPathNode) || node.respond_to?(:name)
+
+      child = node.child #: Prism::ConstantReadNode
+      child.name
     end
 
-    #: (untyped node) -> String?
+    #: (Prism::Node? node) -> String?
     def const_name(node)
       case node
       when Prism::ConstantReadNode, Prism::ConstantWriteNode
