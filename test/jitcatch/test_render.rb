@@ -263,7 +263,10 @@ class TestRender < Minitest::Test
           "head" => { "status" => "pass" } },
         { "id" => "t05", "file" => "e_test.rb", "name" => "E#test_e", "classification" => "fail_on_base",
           "base" => { "status" => "fail", "error_class" => "Minitest::Assertion", "message" => "Expected: 1\n  Actual: 2", "message_first_line" => "Expected: 1" },
-          "head" => { "status" => "pass" } }
+          "head" => { "status" => "fail", "error_class" => "Minitest::Assertion", "message" => "Expected: 1\n  Actual: 2", "message_first_line" => "Expected: 1" } },
+        { "id" => "t06", "file" => "f_test.rb", "name" => "F#test_f", "classification" => "fail_on_base",
+          "base" => { "status" => "fail", "error_class" => "Minitest::Assertion", "message" => "Expected: 1\n  Actual: 2", "message_first_line" => "Expected: 1" },
+          "head" => { "status" => "fail", "error_class" => "Minitest::Assertion", "message" => "Expected: 1\n  Actual: 3", "message_first_line" => "Expected: 1" } }
       ]
     })
     assert_includes JitCatch::Render.run_text(doc), <<~TEXT.chomp
@@ -276,10 +279,17 @@ class TestRender < Minitest::Test
         t03 no_signal C#test_c c_test.rb
         t04 fail_on_base D#test_d d_test.rb
           base: error NoMethodError undefined method 'coupon' for an instance of Cart
+          head: pass
         t05 fail_on_base E#test_e e_test.rb
           base: fail Minitest::Assertion Expected: 1
             Actual: 2
-      counts generated=5
+          head: fail, the same as base
+        t06 fail_on_base F#test_f f_test.rb
+          base: fail Minitest::Assertion Expected: 1
+            Actual: 2
+          head: fail Minitest::Assertion Expected: 1
+            Actual: 3
+      counts generated=6
     TEXT
   end
 
@@ -405,6 +415,7 @@ class TestRender < Minitest::Test
     refute_includes mixed, "warning:", "the first two lines already say to load the schema"
     assert_equal "jitcatch: no row compared base with head (6 of 7 found no table, and 1 failed on base), so this run cannot tell base from head\n", mixed.lines.first
     assert_includes mixed, "  t01 fail_on_base Loan t01 loan_spec.rb\n    base: error ActiveRecord::StatementInvalid PG::UndefinedTable: ERROR:  relation \"loans\" does not exist\n" \
+                           "    head: error, the same as base\n" \
                            "    hint: base found no table, so this row checked nothing; load base's schema into app_test_1\n"
     ran = text.(hidden_rows + [passing])
     assert_equal "jitcatch run\n", ran.lines.first

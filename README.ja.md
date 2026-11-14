@@ -181,6 +181,7 @@ tests:
   t01 fail_on_base ShippingTest#test_empty_order_has_no_fee shipping_test.rb
     base: fail Minitest::Assertion Expected: 0
       Actual: 5
+    head: pass
   t02 reported ShippingTest#test_fifty_ships_free shipping_test.rb m01
   t03 no_signal ShippingTest#test_small_order_pays_five shipping_test.rb
 counts generated=3 no_signal=1 fail_on_base=1 candidates=1 flaky=0 discarded=0 reported=1
@@ -447,7 +448,7 @@ bin/jitcatch assess --json run.json
 | 区分 | 意味 |
 | --- | --- |
 | `no_signal` | base でも head でも通った。 |
-| `fail_on_base` | 親がそのテストを満たさなかった。新しい機能だけを書いていることが多い。テキストの報告は、その行の下に base で起きたことを `base: error NoMethodError undefined method 'apply_coupon' for an instance of Shop::Cart` のように出す。 |
+| `fail_on_base` | 親がそのテストを満たさなかった。新しい機能だけを書いていることが多い。テキストの報告は、その行の下に base で起きたことを `base: error NoMethodError undefined method 'apply_coupon' for an instance of Shop::Cart` のように出し、次の行に head で起きたことを出す。変更でテストが通るようになったときは `head: pass`、head が別の失敗をしたときはその失敗、同じ失敗のときは `head: fail, the same as base` となる。 |
 | `flaky` | base で通り head で落ちたあと、再実行が同じ落ち方をしなかった。捨てる。 |
 | `discarded` | base で通り head で落ちたあと、ルールが除いた。`assess:` には残る。 |
 | `reported` | base で通り head で落ち、ルールは除かなかった。この行を判断する。 |

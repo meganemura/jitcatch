@@ -191,7 +191,7 @@ Each candidate row under `assess:` ends with `rerun:`, the command that runs tha
 | Bucket | Meaning |
 | --- | --- |
 | `no_signal` | Passed on both sides. Not evidence. |
-| `fail_on_base` | The parent did not satisfy the test. Often a new feature. Not a candidate. The text report prints the base outcome under the row (`base: fail RSpec::Expectations::ExpectationNotMetError expected block to output to stdout, but did not`), with the `got:` or `Actual:` line of a value comparison under it, so a test that does not run on base can be fixed. |
+| `fail_on_base` | The parent did not satisfy the test. Often a new feature. Not a candidate. The text report prints the base outcome under the row (`base: fail RSpec::Expectations::ExpectationNotMetError expected block to output to stdout, but did not`), with the `got:` or `Actual:` line of a value comparison under it, so a test that does not run on base can be fixed. A `head:` line follows: `head: pass` for a test that pins what the change fixes, head's own failure, or `head: fail, the same as base`. |
 | `flaky` | Passed on base, failed on head, then a rerun disagreed. Dropped. The text prints each rerun under the row (`rerun 1: pass`), and the `--json` row keeps them in `reruns`. |
 | `discarded` | Stable pass-on-base / fail-on-head, removed by a rule. Still listed under `assess:`. |
 | `reported` | You must judge this one. |

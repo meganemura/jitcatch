@@ -347,12 +347,26 @@ module JitCatch
 
       first, *rest = message_lines(base)
       outcome = [base["status"], base["error_class"], first].reject { |part| part.to_s.empty? }
-      lines = ["    base: #{outcome.join(" ")}", *rest.map { |line| "      #{line}" }]
+      lines = ["    base: #{outcome.join(" ")}", *rest.map { |line| "      #{line}" }, *head_outcome_lines(test)]
       return lines unless Assessor.no_table?(base)
 
       databases = base_databases(doc)
       into = databases.empty? ? "its test database" : databases.join(" and ")
       lines << "    hint: base found no table, so this row checked nothing; load base's schema into #{into}"
+    end
+
+    # A test written to pin what a change fixes fails on base by design, and
+    # head's result is what it checks: `pass`, head's own failure, or that
+    # head failed as base did.
+    def head_outcome_lines(test)
+      head = test["head"]
+      return [] unless head
+
+      same = %w[status error_class message].all? { |key| head[key] == test["base"][key] }
+      return ["    head: #{head["status"]}, the same as base"] if same && head["status"] != "pass"
+
+      first, *rest = message_lines(head)
+      ["    head: #{[head["status"], head["error_class"], first].reject { |part| part.to_s.empty? }.join(" ")}", *rest.map { |line| "      #{line}" }]
     end
 
     # Only the numbered databases have names the reader can load a schema

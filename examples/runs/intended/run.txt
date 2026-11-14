@@ -8,6 +8,7 @@ tests:
   t01 fail_on_base NewThresholdTest#test_five_thousand_receives_volume_discount new_threshold_test.rb
     base: fail Minitest::Assertion Expected: 500
       Actual: 0
+    head: pass
   t02 no_signal ThresholdTest#test_above_old_threshold_total_is_unchanged threshold_test.rb
   t03 no_signal ThresholdTest#test_below_five_thousand_has_no_discount threshold_test.rb
   t04 reported ThresholdTest#test_between_old_and_new_threshold_total_had_no_discount threshold_test.rb m01

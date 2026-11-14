@@ -7,10 +7,13 @@ timeout_s 10
 tests:
   t01 fail_on_base CouponTest#test_save5_comes_off_before_tax coupon_test.rb
     base: error NoMethodError undefined method 'apply_coupon' for an instance of Shop::Cart
+    head: pass
   t02 fail_on_base CouponTest#test_save5_floors_taxable_at_zero coupon_test.rb
     base: error NoMethodError undefined method 'apply_coupon' for an instance of Shop::Cart
+    head: pass
   t03 fail_on_base CouponTest#test_unknown_coupon_raises coupon_test.rb
     base: error NameError uninitialized constant Shop::UnknownCoupon
+    head: pass
   t04 no_signal GuardsTest#test_rejects_blank_sku guards_test.rb
   t05 no_signal GuardsTest#test_rejects_negative_price guards_test.rb
   t06 no_signal GuardsTest#test_rejects_zero_qty guards_test.rb

@@ -154,6 +154,7 @@ tests:
   t01 fail_on_base ShippingTest#test_empty_order_has_no_fee shipping_test.rb
     base: fail Minitest::Assertion Expected: 0
       Actual: 5
+    head: pass
   t02 reported ShippingTest#test_fifty_ships_free shipping_test.rb m01
   t03 no_signal ShippingTest#test_small_order_pays_five shipping_test.rb
 counts generated=3 no_signal=1 fail_on_base=1 candidates=1 flaky=0 discarded=0 reported=1
@@ -344,7 +345,7 @@ bin/jitcatch assess --json run.json
 | Bucket | Meaning |
 | --- | --- |
 | `no_signal` | Passed on base and on head. |
-| `fail_on_base` | The parent did not satisfy the test. Often the test only describes a new feature. The text report prints what base did under the row, as `base: error NoMethodError undefined method 'apply_coupon' for an instance of Shop::Cart`. |
+| `fail_on_base` | The parent did not satisfy the test. Often the test only describes a new feature. The text report prints what base did under the row, as `base: error NoMethodError undefined method 'apply_coupon' for an instance of Shop::Cart`, and what head did on the next line: `head: pass` when the change makes the test pass, head's own failure, or `head: fail, the same as base`. |
 | `flaky` | Passed on base, failed on head, then a rerun did not fail the same way. Dropped. |
 | `discarded` | Passed on base and failed on head, then a rule removed it. Still listed under `assess:`. |
 | `reported` | Passed on base and failed on head, and no rule removed it. Judge this row. |
