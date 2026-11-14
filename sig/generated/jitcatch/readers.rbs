@@ -35,14 +35,21 @@ module JitCatch
 
       attr_reader state(): Symbol?
 
-      attr_reader node(): untyped
+      attr_reader node(): Prism::Node
 
-      def self.new: (Symbol kind, String? owner, String? scope, String name, String file, Integer line, Integer last_line, Symbol? state, untyped node) -> instance
-                  | (kind: Symbol, owner: String?, scope: String?, name: String, file: String, line: Integer, last_line: Integer, state: Symbol?, node: untyped) -> instance
+      def self.new: (Symbol kind, String? owner, String? scope, String name, String file, Integer line, Integer last_line, Symbol? state, Prism::Node node) -> instance
+                  | (kind: Symbol, owner: String?, scope: String?, name: String, file: String, line: Integer, last_line: Integer, state: Symbol?, node: Prism::Node) -> instance
 
       def self.members: () -> [ :kind, :owner, :scope, :name, :file, :line, :last_line, :state, :node ]
 
       def members: () -> [ :kind, :owner, :scope, :name, :file, :line, :last_line, :state, :node ]
+    end
+
+    # Data.define's block would hold this method, but Steep reads a def in
+    # that block as a method of Readers, so the class is reopened.
+    class Value
+      # : () -> String
+      def label: () -> String
     end
 
     class Row < Data
@@ -109,12 +116,6 @@ module JitCatch
       def members: () -> [ :score, :rank, :test ]
     end
 
-    # Data.define's block defines this; rbs-inline reads only the members,
-    # and Steep does not check those blocks.
-    class Value
-      def label: () -> String
-    end
-
     BLIND: Array[String]
 
     # What a repository with no `config/application.rb` can still hide:
@@ -145,13 +146,17 @@ module JitCatch
     # The rules each kind of changed value has.
     RULES: Hash[Symbol, ^(Readers, Value) -> Array[Row]]
 
-    @parents: Hash[String?, Array[[ untyped, Array[String] ]]]
+    @parents: Hash[String?, Array[[ Prism::Node, Array[String] ]]]
 
-    @calls: Array[[ Source, Prism::CallNode, Array[untyped] ]]?
-
-    @references: Array[[ Source, untyped, Array[untyped] ]]?
+    @defined: Hash[String, bool]
 
     @tables: Hash[String, String]?
+
+    @calls: Array[[ Source, Prism::CallNode, Array[Prism::Node] ]]?
+
+    @references: Array[[ Source, Prism::ConstantReadNode | Prism::ConstantPathNode, Array[Prism::Node] ]]?
+
+    @suffixes: Array[String]
 
     @names: Hash[String, [ String, Symbol ]]
 
@@ -168,10 +173,6 @@ module JitCatch
     @head_sources: Hash[String, String]
 
     @base_sources: Hash[String, String]
-
-    @suffixes: Array[String]
-
-    @defined: Hash[String, bool]
 
     # `head_sources` and `base_sources` map a path to its text on each side;
     # `diff` is every file's hunks, as `DiffParser.parse` gives them.
@@ -243,12 +244,12 @@ module JitCatch
 
     private
 
-    # : (Value value, Source src, untyped node, Symbol mechanism, String why, ?group: String?, **untyped fields) -> Row
-    def row: (Value value, Source src, untyped node, Symbol mechanism, String why, ?group: String?, **untyped fields) -> Row
+    # : (Value value, Source src, Prism::Node node, Symbol mechanism, String why, ?group: String?, **String | Symbol | nil fields) -> Row
+    def row: (Value value, Source src, Prism::Node node, Symbol mechanism, String why, ?group: String?, **String | Symbol | nil fields) -> Row
 
     # A dispatch on another known model cannot reach this owner.
-    # : (Value value, Prism::CallNode node, Array[untyped] stack) -> boolish
-    def dispatch_on_other_model?: (Value value, Prism::CallNode node, Array[untyped] stack) -> boolish
+    # : (Value value, Prism::CallNode node, Array[Prism::Node] stack) -> boolish
+    def dispatch_on_other_model?: (Value value, Prism::CallNode node, Array[Prism::Node] stack) -> boolish
 
     # A symbol or string spelled like the method, in code that also
     # dispatches by a name it computes. Only a name kept in a list
@@ -262,21 +263,21 @@ module JitCatch
     # : (Value value, String owner, String attr) -> Array[Row]
     def default_taker_rows: (Value value, String owner, String attr) -> Array[Row]
 
-    # : (Value value, Source src, untyped node, Array[untyped] stack) -> Row
-    def constant_row: (Value value, Source src, untyped node, Array[untyped] stack) -> Row
+    # : (Value value, Source src, Prism::Node node, Array[Prism::Node] stack) -> Row
+    def constant_row: (Value value, Source src, Prism::Node node, Array[Prism::Node] stack) -> Row
 
     # `Order.where`, `orders.where`, a bare `where` in a scope: a query.
     # `f.select` on a form builder is not.
-    # : (untyped call) -> boolish
-    def query?: (untyped call) -> boolish
+    # : (Prism::CallNode call) -> boolish
+    def query?: (Prism::CallNode call) -> boolish
 
     # A reference that names its owner from a file the change does not touch
     # is a reader nobody looked at; one that resolves to nothing visible may
     # come through a gem or a concern the index cannot see. A read beside the
     # edit, in a file the change touches, was in front of its author; a query
     # there still changes which rows come back, so it keeps its score.
-    # : (Row row, untyped node, String? target) -> Row
-    def ranked_constant: (Row row, untyped node, String? target) -> Row
+    # : (Row row, Prism::Node node, String? target) -> Row
+    def ranked_constant: (Row row, Prism::Node node, String? target) -> Row
 
     # What a `to_param` body returns, when it is one attribute: `code`,
     # `"#{id}-#{name}"`, or `id`.
@@ -288,17 +289,17 @@ module JitCatch
 
     # How an action reads one param: `find(params[:id])`, `find_by(id: ...)`,
     # `where(branch_id: ...)` compare it to an id; `find_by(code: ...)` does not.
-    # : (Array[untyped] action_nodes, String key) -> Array[[Integer, String, String]]
-    def param_lookups: (Array[untyped] action_nodes, String key) -> Array[[ Integer, String, String ]]
+    # : (Array[Prism::DefNode] action_nodes, String key) -> Array[[Integer, String, String]]
+    def param_lookups: (Array[Prism::DefNode] action_nodes, String key) -> Array[[ Integer, String, String ]]
 
-    # : (untyped node) -> boolish
-    def params_read?: (untyped node) -> boolish
+    # : (Prism::CallNode node) -> boolish
+    def params_read?: (Prism::CallNode node) -> boolish
 
     # The controller file of a route's action, and the nodes that run for
     # it: the action's def and its before_action filters. A filter's
     # `only:`/`except:` is not read, so every filter counts.
-    # : (String action) -> [Source, Array[untyped]]?
-    def action_def: (String action) -> [ Source, Array[untyped] ]?
+    # : (String action) -> [Source, Array[Prism::DefNode]]?
+    def action_def: (String action) -> [ Source, Array[Prism::DefNode] ]?
 
     # Variable and method names that hold a model, by name: `branch`,
     # `@branch`, `home_branch` (from `class_name: "Branch"`), and plurals.
@@ -307,8 +308,8 @@ module JitCatch
 
     # The model an expression holds, and whether one or many, judged by its
     # last name only.
-    # : (untyped node) -> [String, Symbol]?
-    def model_of: (untyped node) -> [ String, Symbol ]?
+    # : (Prism::Node? node) -> [String, Symbol]?
+    def model_of: (Prism::Node? node) -> [ String, Symbol ]?
 
     # : (String word) -> String
     def plural: (String word) -> String
@@ -335,42 +336,46 @@ module JitCatch
     # ancestors, then the top level. `also` counts as defined (a value the
     # change removed). nil when nothing visible defines it. `seen` stops a
     # class whose `include` names itself through its ancestors from looping.
-    # : (untyped node, Array[String] crefs, ?String? also, ?Hash[String?, bool] seen) -> String?
-    def resolve: (untyped node, Array[String] crefs, ?String? also, ?Hash[String?, bool] seen) -> String?
+    # : (Prism::Node? node, Array[String] crefs, ?String? also, ?Hash[String?, bool] seen) -> String?
+    def resolve: (Prism::Node? node, Array[String] crefs, ?String? also, ?Hash[String?, bool] seen) -> String?
 
     # : (String? full, ?Hash[String?, bool] seen) -> Array[String]
     def ancestors: (String? full, ?Hash[String?, bool] seen) -> Array[String]
 
     # Every call at head with the nodes around it. Each rule walks them for
     # each value, so they are collected once.
-    # : () { (Source, Prism::CallNode, Array[untyped]) -> void } -> void
-    def each_call: () { (Source, Prism::CallNode, Array[untyped]) -> void } -> void
+    # : () { (Source, Prism::CallNode, Array[Prism::Node]) -> void } -> void
+    def each_call: () { (Source, Prism::CallNode, Array[Prism::Node]) -> void } -> void
 
-    # : (untyped node, ?Array[untyped] stack) { (untyped, Array[untyped]) -> void } -> void
-    def each_node: (untyped node, ?Array[untyped] stack) { (untyped, Array[untyped]) -> void } -> void
+    # : (Prism::Node? node, ?Array[Prism::Node] stack) { (Prism::Node, Array[Prism::Node]) -> void } -> void
+    def each_node: (Prism::Node? node, ?Array[Prism::Node] stack) { (Prism::Node, Array[Prism::Node]) -> void } -> void
 
-    # : (untyped node) -> Array[untyped]
-    def arguments: (untyped node) -> Array[untyped]
+    # : (Prism::CallNode node) -> Array[Prism::Node]
+    def arguments: (Prism::CallNode node) -> Array[Prism::Node]
 
-    # : (untyped node) -> String?
-    def literal_name: (untyped node) -> String?
+    # : (Prism::Node? node) -> String?
+    def literal_name: (Prism::Node? node) -> String?
 
-    # : (Array[untyped] args) -> Hash[String, untyped]
-    def keywords: (Array[untyped] args) -> Hash[String, untyped]
+    # : (Array[Prism::Node] args) -> Hash[String, Prism::Node]
+    def keywords: (Array[Prism::Node] args) -> Hash[String, Prism::Node]
 
     # Prism 0.19, which Ruby 3.3 ships, names a path's last part through `child`.
-    # : (untyped node) -> String
-    def path_name: (untyped node) -> String
+    # : (Prism::ConstantPathNode node) -> String
+    def path_name: (Prism::ConstantPathNode node) -> String
 
-    # : (Array[untyped] stack) -> String?
-    def enclosing_class: (Array[untyped] stack) -> String?
+    # : (Array[Prism::Node] stack) -> String?
+    def enclosing_class: (Array[Prism::Node] stack) -> String?
 
     # The lexical scopes around a node, outermost first, as full names:
     # `module Admin; class OrdersController` gives Admin, Admin::OrdersController.
-    # : (Array[untyped] stack) -> Array[String]
-    def nesting: (Array[untyped] stack) -> Array[String]
+    # : (Array[Prism::Node] stack) -> Array[String]
+    def nesting: (Array[Prism::Node] stack) -> Array[String]
 
-    # : (Array[untyped] stack) -> Symbol?
-    def enclosing_def: (Array[untyped] stack) -> Symbol?
+    # The constant paths of the classes and modules around a node, as written.
+    # : (Array[Prism::Node] stack) -> Array[String]
+    def class_paths: (Array[Prism::Node] stack) -> Array[String]
+
+    # : (Array[Prism::Node] stack) -> Symbol?
+    def enclosing_def: (Array[Prism::Node] stack) -> Symbol?
   end
 end

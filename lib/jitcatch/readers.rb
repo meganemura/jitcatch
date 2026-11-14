@@ -30,9 +30,13 @@ module JitCatch
       :line, #: Integer
       :last_line, #: Integer
       :state, #: Symbol?
-      :node #: untyped
-    ) do
-      # steep:ignore:start
+      :node #: Prism::Node
+    )
+
+    # Data.define's block would hold this method, but Steep reads a def in
+    # that block as a method of Readers, so the class is reopened.
+    class Value
+      #: () -> String
       def label
         case kind
         when :constant then "#{scope}::#{name}"
@@ -41,8 +45,8 @@ module JitCatch
         else "#{scope}.#{name}"
         end
       end
-      # steep:ignore:end
     end
+
     Row = Data.define(
       :value, #: Value
       :file, #: String
@@ -69,13 +73,6 @@ module JitCatch
       :rank, #: String
       :test #: String
     )
-
-    # @rbs!
-    #   # Data.define's block defines this; rbs-inline reads only the members,
-    #   # and Steep does not check those blocks.
-    #   class Value
-    #     def label: () -> String
-    #   end
 
     BLIND = [
       "receivers named unlike their model (`x = Branch.first; link_to x`)",
@@ -171,11 +168,11 @@ module JitCatch
     # @rbs @models: Array[String]
     # @rbs @names: Hash[String, [String, Symbol]]
     # @rbs @suffixes: Array[String]
-    # @rbs @references: Array[[Source, untyped, Array[untyped]]]?
-    # @rbs @calls: Array[[Source, Prism::CallNode, Array[untyped]]]?
+    # @rbs @references: Array[[Source, Prism::ConstantReadNode | Prism::ConstantPathNode, Array[Prism::Node]]]?
+    # @rbs @calls: Array[[Source, Prism::CallNode, Array[Prism::Node]]]?
     # @rbs @tables: Hash[String, String]?
     # @rbs @defined: Hash[String, bool]
-    # @rbs @parents: Hash[String?, Array[[untyped, Array[String]]]]
+    # @rbs @parents: Hash[String?, Array[[Prism::Node, Array[String]]]]
 
     # `head_sources` and `base_sources` map a path to its text on each side;
     # `diff` is every file's hunks, as `DiffParser.parse` gives them.
@@ -316,10 +313,6 @@ module JitCatch
     private :changed_lines, :changed_values, :declarations
 
     # Each rule below takes a Value and returns the Rows that read it.
-    #
-    # The private readers further down take Prism nodes as untyped: they
-    # branch on a node's class, on `respond_to?`, and on what Prism 0.19 and
-    # 1.x name differently, which RBS types cannot follow without a rewrite.
 
     # Actions that turn a param back into the model, whoever built the URL.
     #: (Value value) -> Array[Row]
@@ -330,10 +323,10 @@ module JitCatch
       rows = [] #: Array[Row]
       @sources.select { |src| src.path.start_with?("app/controllers/") }.each do |src|
         each_node(src.tree) do |node, stack|
-          next unless params_read?(node)
+          next unless node.is_a?(Prism::CallNode) && params_read?(node)
 
           key = literal_name(arguments(node).first)
-          user = stack.reverse.find { |up| up.is_a?(Prism::CallNode) && %i[find find_by find_by! where].include?(up.name) }
+          user = stack.reverse.find { |up| up.is_a?(Prism::CallNode) && %i[find find_by find_by! where].include?(up.name) } #: Prism::CallNode?
           next unless user && key
 
           on_model = user.receiver&.slice == value.owner
@@ -357,7 +350,7 @@ module JitCatch
 
         args = arguments(node)
         segments = route.path.scan(/:(\w+)/).flatten
-        # @type var pairs: Array[[String?, untyped]]
+        # @type var pairs: Array[[String?, Prism::Node]]
         pairs = args.reject { |arg| arg.is_a?(Prism::KeywordHashNode) }.each_with_index.map { |arg, i| [segments[i], arg] }
         pairs += keywords(args).to_a
         pairs.each do |key, arg|
@@ -388,7 +381,7 @@ module JitCatch
         when :link_to, :button_to then args[1..] || []
         when :redirect_to, :url_for, :polymorphic_path, :polymorphic_url, :render, :form_for then args.first(1)
         when :form_with then [keywords(args)["model"]].compact
-        else [] #: Array[untyped]
+        else [] #: Array[Prism::Node]
         end
         json = keywords(args)["json"] if node.name == :render
         targets += [json] if json
@@ -424,7 +417,7 @@ module JitCatch
           next unless model == value.owner && many == :one
 
           via = if node.is_a?(Prism::EmbeddedStatementsNode) then "interpolates"
-          elsif node.name == Template::OUTPUT then "prints"
+          elsif node.is_a?(Prism::CallNode) && node.name == Template::OUTPUT then "prints"
           else "uses as link text"
           end
           rows << row(value, src, node, :to_s_output, "#{via} #{arg.slice}, which calls #{value.owner}#to_s")
@@ -534,7 +527,7 @@ module JitCatch
       name = value.name
       full = [value.owner, name].compact.join("::")
       references = @references ||= @sources.flat_map do |src|
-        found = [] #: Array[[Source, untyped, Array[untyped]]]
+        found = [] #: Array[[Source, Prism::ConstantReadNode | Prism::ConstantPathNode, Array[Prism::Node]]]
         each_node(src.tree) do |node, stack|
           if node.is_a?(Prism::ConstantPathNode) || (node.is_a?(Prism::ConstantReadNode) && !stack.last.is_a?(Prism::ConstantPathNode))
             found << [src, node, stack.dup]
@@ -638,7 +631,7 @@ module JitCatch
 
     private
 
-    #: (Value value, Source src, untyped node, Symbol mechanism, String why, ?group: String?, **untyped fields) -> Row
+    #: (Value value, Source src, Prism::Node node, Symbol mechanism, String why, ?group: String?, **String | Symbol | nil fields) -> Row
     def row(value, src, node, mechanism, why, group: nil, **fields)
       kind = MECHANISMS.fetch(mechanism)
       where = "#{src.path}:#{node.location.start_line}"
@@ -649,7 +642,7 @@ module JitCatch
     end
 
     # A dispatch on another known model cannot reach this owner.
-    #: (Value value, Prism::CallNode node, Array[untyped] stack) -> boolish
+    #: (Value value, Prism::CallNode node, Array[Prism::Node] stack) -> boolish
     def dispatch_on_other_model?(value, node, stack)
       receiver = node.receiver
       if receiver.nil?
@@ -668,7 +661,7 @@ module JitCatch
     #: (Value value, Array[[Source, Prism::CallNode]] dynamic) -> Array[Row]
     def computed_dispatch_rows(value, dynamic)
       name = value.name
-      sources = [] #: Array[[Source, untyped]]
+      sources = [] #: Array[[Source, Prism::Node]]
       unless dynamic.empty?
         @sources.each do |src|
           next if src.path == SCHEMA || src.path.start_with?("config/")
@@ -723,15 +716,15 @@ module JitCatch
       rows
     end
 
-    #: (Value value, Source src, untyped node, Array[untyped] stack) -> Row
+    #: (Value value, Source src, Prism::Node node, Array[Prism::Node] stack) -> Row
     def constant_row(value, src, node, stack)
       name = value.name
-      sql = stack.reverse.find { |up| up.is_a?(Prism::CallNode) && SQL_CALLS.include?(up.name) && query?(up) }
-      string = stack.reverse.find { |up| up.is_a?(Prism::InterpolatedStringNode) || up.is_a?(Prism::InterpolatedXStringNode) }
+      sql = stack.reverse.find { |up| up.is_a?(Prism::CallNode) && SQL_CALLS.include?(up.name) && query?(up) } #: Prism::CallNode?
+      string = stack.reverse.find { |up| up.is_a?(Prism::InterpolatedStringNode) || up.is_a?(Prism::InterpolatedXStringNode) } #: Prism::InterpolatedStringNode | Prism::InterpolatedXStringNode | nil
       sql_text = string && !sql && string.parts.any? { |part| part.is_a?(Prism::StringNode) && part.unescaped.match?(SQL_TEXT) }
-      validation = stack.find { |up| up.is_a?(Prism::CallNode) && VALIDATIONS.include?(up.name) }
+      validation = stack.find { |up| up.is_a?(Prism::CallNode) && VALIDATIONS.include?(up.name) } #: Prism::CallNode?
       if sql || sql_text
-        row(value, src, node, :sql_constant, sql_text ? "#{name} is interpolated into SQL text" : "#{name} is #{string ? "interpolated into" : "passed to"} the SQL of #{sql.name}")
+        row(value, src, node, :sql_constant, sql_text ? "#{name} is interpolated into SQL text" : "#{name} is #{string ? "interpolated into" : "passed to"} the SQL of #{sql&.name}")
       elsif validation
         row(value, src, validation, :validation_reads, "#{validation.slice[0, 60]} reads #{name}", owner: enclosing_class(stack) || value.owner)
       elsif src.template
@@ -745,7 +738,7 @@ module JitCatch
 
     # `Order.where`, `orders.where`, a bare `where` in a scope: a query.
     # `f.select` on a form builder is not.
-    #: (untyped call) -> boolish
+    #: (Prism::CallNode call) -> boolish
     def query?(call)
       root = call
       root = root.receiver while root.is_a?(Prism::CallNode) && root.receiver
@@ -758,7 +751,7 @@ module JitCatch
     # come through a gem or a concern the index cannot see. A read beside the
     # edit, in a file the change touches, was in front of its author; a query
     # there still changes which rows come back, so it keeps its score.
-    #: (Row row, untyped node, String? target) -> Row
+    #: (Row row, Prism::Node node, String? target) -> Row
     def ranked_constant(row, node, target)
       in_diff = @lines.key?(row.file)
       if target.nil?
@@ -787,18 +780,18 @@ module JitCatch
 
     # How an action reads one param: `find(params[:id])`, `find_by(id: ...)`,
     # `where(branch_id: ...)` compare it to an id; `find_by(code: ...)` does not.
-    #: (Array[untyped] action_nodes, String key) -> Array[[Integer, String, String]]
+    #: (Array[Prism::DefNode] action_nodes, String key) -> Array[[Integer, String, String]]
     def param_lookups(action_nodes, key)
       found = [] #: Array[[Integer, String, String]]
       action_nodes.each do |action_node|
         each_node(action_node) do |node, stack|
-          next unless params_read?(node) && literal_name(arguments(node).first) == key
+          next unless node.is_a?(Prism::CallNode) && params_read?(node) && literal_name(arguments(node).first) == key
 
-          user = stack.reverse.find { |up| up.is_a?(Prism::CallNode) && %i[find find_by find_by! where find_or_create_by].include?(up.name) }
+          user = stack.reverse.find { |up| up.is_a?(Prism::CallNode) && %i[find find_by find_by! where find_or_create_by].include?(up.name) } #: Prism::CallNode?
           by = if user.nil? then "used as given"
           elsif user.name == :find then "id"
           else
-            assoc = stack.reverse.find { |up| up.is_a?(Prism::AssocNode) }
+            assoc = stack.reverse.find { |up| up.is_a?(Prism::AssocNode) } #: Prism::AssocNode?
             assoc ? literal_name(assoc.key).to_s : "id"
           end
           found << [node.location.start_line, by, user&.slice&.slice(0, 60) || node.slice]
@@ -807,20 +800,20 @@ module JitCatch
       found
     end
 
-    #: (untyped node) -> boolish
+    #: (Prism::CallNode node) -> boolish
     def params_read?(node)
-      node.is_a?(Prism::CallNode) && node.name == :[] && node.receiver&.slice&.end_with?("params")
+      node.name == :[] && node.receiver&.slice&.end_with?("params")
     end
 
     # The controller file of a route's action, and the nodes that run for
     # it: the action's def and its before_action filters. A filter's
     # `only:`/`except:` is not read, so every filter counts.
-    #: (String action) -> [Source, Array[untyped]]?
+    #: (String action) -> [Source, Array[Prism::DefNode]]?
     def action_def(action)
       controller, name = action.split("#") #: [String, String]
       src = @sources.find { |source| source.path == "app/controllers/#{underscore_path(controller)}.rb" } or return
 
-      defs = {} #: Hash[String, untyped]
+      defs = {} #: Hash[String, Prism::DefNode]
       filters = [] #: Array[String]
       each_node(src.tree) do |node, stack|
         defs[node.name.to_s] ||= node if node.is_a?(Prism::DefNode)
@@ -859,7 +852,7 @@ module JitCatch
 
     # The model an expression holds, and whether one or many, judged by its
     # last name only.
-    #: (untyped node) -> [String, Symbol]?
+    #: (Prism::Node? node) -> [String, Symbol]?
     def model_of(node)
       name = case node
       when Prism::InstanceVariableReadNode then node.name.to_s.delete_prefix("@")
@@ -927,7 +920,7 @@ module JitCatch
     # ancestors, then the top level. `also` counts as defined (a value the
     # change removed). nil when nothing visible defines it. `seen` stops a
     # class whose `include` names itself through its ancestors from looping.
-    #: (untyped node, Array[String] crefs, ?String? also, ?Hash[String?, bool] seen) -> String?
+    #: (Prism::Node? node, Array[String] crefs, ?String? also, ?Hash[String?, bool] seen) -> String?
     def resolve(node, crefs, also = nil, seen = {})
       known = ->(full) { @defined[full] || full == also }
       case node
@@ -957,17 +950,17 @@ module JitCatch
 
     # Every call at head with the nodes around it. Each rule walks them for
     # each value, so they are collected once.
-    #: () { (Source, Prism::CallNode, Array[untyped]) -> void } -> void
+    #: () { (Source, Prism::CallNode, Array[Prism::Node]) -> void } -> void
     def each_call(&block)
       calls = @calls ||= @sources.flat_map do |src|
-        found = [] #: Array[[Source, Prism::CallNode, Array[untyped]]]
+        found = [] #: Array[[Source, Prism::CallNode, Array[Prism::Node]]]
         each_node(src.tree) { |node, stack| found << [src, node, stack.dup] if node.is_a?(Prism::CallNode) }
         found
       end
       calls.each { |src, node, stack| block.call(src, node, stack) }
     end
 
-    #: (untyped node, ?Array[untyped] stack) { (untyped, Array[untyped]) -> void } -> void
+    #: (Prism::Node? node, ?Array[Prism::Node] stack) { (Prism::Node, Array[Prism::Node]) -> void } -> void
     def each_node(node, stack = [], &block)
       return unless node
 
@@ -977,22 +970,22 @@ module JitCatch
       stack.pop
     end
 
-    #: (untyped node) -> Array[untyped]
+    #: (Prism::CallNode node) -> Array[Prism::Node]
     def arguments(node)
       node.arguments&.arguments || []
     end
 
-    #: (untyped node) -> String?
+    #: (Prism::Node? node) -> String?
     def literal_name(node)
       node.unescaped if node.is_a?(Prism::SymbolNode) || node.is_a?(Prism::StringNode)
     end
 
-    #: (Array[untyped] args) -> Hash[String, untyped]
+    #: (Array[Prism::Node] args) -> Hash[String, Prism::Node]
     def keywords(args)
-      hash = args.find { |arg| arg.is_a?(Prism::KeywordHashNode) || arg.is_a?(Prism::HashNode) }
+      hash = args.find { |arg| arg.is_a?(Prism::KeywordHashNode) || arg.is_a?(Prism::HashNode) } #: Prism::KeywordHashNode | Prism::HashNode | nil
       return {} unless hash
 
-      found = {} #: Hash[String, untyped]
+      found = {} #: Hash[String, Prism::Node]
       hash.elements.each_with_object(found) do |assoc, acc|
         next unless assoc.is_a?(Prism::AssocNode)
 
@@ -1002,29 +995,38 @@ module JitCatch
     end
 
     # Prism 0.19, which Ruby 3.3 ships, names a path's last part through `child`.
-    #: (untyped node) -> String
+    #: (Prism::ConstantPathNode node) -> String
     def path_name(node)
-      (node.respond_to?(:name) ? node.name : node.child.name).to_s
+      return node.name.to_s if node.respond_to?(:name)
+
+      child = node.child #: Prism::ConstantReadNode
+      child.name.to_s
     end
 
-    #: (Array[untyped] stack) -> String?
+    #: (Array[Prism::Node] stack) -> String?
     def enclosing_class(stack)
-      stack.select { |node| node.is_a?(Prism::ClassNode) || node.is_a?(Prism::ModuleNode) }.map { |klass| klass.constant_path.slice }.last
+      class_paths(stack).last
     end
 
     # The lexical scopes around a node, outermost first, as full names:
     # `module Admin; class OrdersController` gives Admin, Admin::OrdersController.
-    #: (Array[untyped] stack) -> Array[String]
+    #: (Array[Prism::Node] stack) -> Array[String]
     def nesting(stack)
-      stack.select { |node| node.is_a?(Prism::ClassNode) || node.is_a?(Prism::ModuleNode) }.each_with_object([]) do |klass, crefs|
-        path = klass.constant_path.slice
+      class_paths(stack).each_with_object([]) do |path, crefs|
         crefs << (path.start_with?("::") ? path.delete_prefix("::") : [crefs.last, path].compact.join("::"))
       end
     end
 
-    #: (Array[untyped] stack) -> Symbol?
+    # The constant paths of the classes and modules around a node, as written.
+    #: (Array[Prism::Node] stack) -> Array[String]
+    def class_paths(stack)
+      stack.filter_map { |node| node.constant_path.slice if node.is_a?(Prism::ClassNode) || node.is_a?(Prism::ModuleNode) }
+    end
+
+    #: (Array[Prism::Node] stack) -> Symbol?
     def enclosing_def(stack)
-      stack.grep(Prism::DefNode).last&.name
+      defs = stack.grep(Prism::DefNode) #: Array[Prism::DefNode]
+      defs.last&.name
     end
   end
 end
