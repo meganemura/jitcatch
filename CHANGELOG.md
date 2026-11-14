@@ -8,6 +8,7 @@
 - A `fail_on_base` row in the text report prints a `head:` line under its `base:` line: `head: pass` for a test that pins what the change fixes, head's own failure, or `head: fail, the same as base`. Before, only `--json` said what head did.
 - `tests:` lists a grep hit for a reader or member from `attr_reader`, `attr_writer`, `Struct.new`, or `Data.define` only in a file that also names its class or the namespace around it, so `Targets::Hit#code` no longer lists every test that says `code`. The code of a fixture project under `test/` or `spec/` (its `app/`, `lib/`, `config/`, and `db/`) is no longer listed as a test.
 - In a history with no `app/`, `config/routes.rb`, or `config/application.rb`, such as a gem's, the `not seen:` line under `readers:` names only what any Ruby hides (dispatch names built at run time, config read at load time), not the Rails models, routes, and templates.
+- The skill's Context section reads in parts: change kinds, what counts as a method in any Ruby, and Rails and Grape definitions under their own heading, so an agent on a plain gem can skip the Rails rules.
 
 ## [0.1.0] - 2026-11-13
 
