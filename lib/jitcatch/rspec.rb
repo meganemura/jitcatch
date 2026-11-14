@@ -1,4 +1,5 @@
 # frozen_string_literal: true
+# rbs_inline: enabled
 
 # What a rerun line loads with `rspec -r jitcatch/rspec`. RSpec cuts an
 # object it prints to 200 characters, which can cut the class and message a

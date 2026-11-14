@@ -1089,6 +1089,15 @@ ruby -Ilib test/run.rb
 エンジンテストは一時 git リポジトリを作り、context、実行、フレーク、タイムアウト、シグネチャ変更の破棄を見る。
 `test/jitcatch/test_shop_demo.rb` はショップのフィクスチャを作り直し、`context` と `run` を `examples/runs/*/context.txt` および `run.txt` とバイト単位で比べる。
 
+gem は RBS のシグネチャを `sig/generated/` に入れて配る。
+これは `lib/` の rbs-inline コメントから書き出したものだ。
+Ruby 3.4 以降では、次のコマンドでシグネチャを書き直し、Steep で `lib/` を検査する。
+
+```sh
+bundle exec rbs-inline --output=sig/generated lib
+bundle exec steep check
+```
+
 ## ライセンス
 
 MIT

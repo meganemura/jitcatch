@@ -539,6 +539,13 @@ ruby -Ilib test/run.rb
 
 The engine tests build temporary git repositories and cover context, execution, flakes, timeouts, and signature-change discards. `test/jitcatch/test_shop_demo.rb` rebuilds the shop fixture and compares `context` and `run` with `examples/runs/*/context.txt` and `run.txt`, byte for byte.
 
+The gem ships RBS signatures in `sig/generated/`, written from the rbs-inline comments in `lib/`. On Ruby 3.4 or newer, these commands write them again and check `lib/` with Steep:
+
+```sh
+bundle exec rbs-inline --output=sig/generated lib
+bundle exec steep check
+```
+
 ## License
 
 MIT

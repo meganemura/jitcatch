@@ -1,0 +1,80 @@
+# Generated from lib/jitcatch/inflections.rb with RBS::Inline
+
+module JitCatch
+  # The English inflections Active Support starts from, and the literal
+  # `irregular`, `uncountable`, `singular`, `plural`, and `acronym` calls of
+  # an app's `config/initializers/inflections.rb`, read as source, so a
+  # route's helper and controller take the names Rails gives them
+  # (`resources :people` draws `person_path`, `inflect.acronym "API"` makes
+  # `APIKeysController`). A rule built at run time is not read.
+  class Inflections
+    # A rule's pattern, and the text that replaces what it matched.
+    type rule = [ Regexp | String, String ]
+
+    @acronyms: Hash[String, String]
+
+    @uncountables: Array[String]
+
+    @singulars: Array[rule]
+
+    @plurals: Array[rule]
+
+    # : (String? source) -> Inflections
+    def self.read: (String? source) -> Inflections
+
+    # Active Support's own list, applied as an app's file would be, in the
+    # same order, so a later rule takes precedence as it does there.
+    # : () -> Inflections
+    def self.rails: () -> Inflections
+
+    # : () -> void
+    def initialize: () -> void
+
+    # : (String word) -> String
+    def pluralize: (String word) -> String
+
+    # : (String word) -> String
+    def singularize: (String word) -> String
+
+    # `api_keys` is `APIKeys` once `API` is an acronym.
+    # : (String word) -> String
+    def camelize: (String word) -> String
+
+    # The other way: `APIKeysController` is `api_keys_controller`, as Active
+    # Support's `underscore` splits a run of capitals before its last one.
+    # : (String camel) -> String
+    def underscore: (String camel) -> String
+
+    # : (Regexp | String rule, String replacement) -> Array[rule]
+    def plural: (Regexp | String rule, String replacement) -> Array[rule]
+
+    # : (Regexp | String rule, String replacement) -> Array[rule]
+    def singular: (Regexp | String rule, String replacement) -> Array[rule]
+
+    # : (String one, String many) -> void
+    def irregular: (String one, String many) -> void
+
+    # : (*String words) -> Array[String]
+    def uncountable: (*String words) -> Array[String]
+
+    # : (String word) -> String
+    def acronym: (String word) -> String
+
+    # Each call in the file whose arguments are all literals, in order.
+    # : (Prism::Node node) -> void
+    def apply_calls: (Prism::Node node) -> void
+
+    READ: Array[Symbol]
+
+    UNREAD: Object
+
+    private
+
+    # : (String word, Array[rule] rules) -> String
+    def apply: (String word, Array[rule] rules) -> String
+
+    # A string, a regular expression, an array of them, or UNREAD.
+    # : (Prism::Node node) -> untyped
+    def literal: (Prism::Node node) -> untyped
+  end
+end

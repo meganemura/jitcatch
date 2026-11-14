@@ -1,4 +1,5 @@
 # frozen_string_literal: true
+# rbs_inline: enabled
 
 require "prism"
 
@@ -11,14 +12,36 @@ module JitCatch
   # controllers with the app's inflections. A route that a `draw` file, a
   # loop, or a concern draws is not read, so its helper stays unknown.
   class Routes
-    Route = Data.define(:verb, :path, :helper, :action)
+    Route = Data.define(
+      :verb, #: String
+      :path, #: String
+      :helper, #: String?
+      :action #: String
+    )
     # `resource` is the resource whose block the statements are in: the
     # path and helper of one member, and its controller. `controller` is
     # the one `scope controller:` names.
-    Scope = Data.define(:path, :helper, :modules, :resource, :controller)
-    Resource = Data.define(:member_path, :collection_path, :member_helper, :collection_helper, :controller)
+    Scope = Data.define(
+      :path, #: String
+      :helper, #: String
+      :modules, #: Array[String]
+      :resource, #: Resource?
+      :controller #: String?
+    )
+    Resource = Data.define(
+      :member_path, #: String
+      :collection_path, #: String
+      :member_helper, #: String
+      :collection_helper, #: String
+      :controller #: String
+    )
 
-    VERBS = %i[get post put patch delete].freeze
+    # @rbs!
+    #   # An action `resources` or `resource` draws: its name, its verb, its
+    #   # path after the collection's, and the kind of helper that names it.
+    #   type drawn_action = [Symbol, String, String, Symbol]
+
+    VERBS = %i[get post put patch delete].freeze #: Array[Symbol]
     # The actions `resources` draws, in the order Rails matches them: the
     # verb, the path after the collection's, and whether the helper names
     # the collection, a member, or the member with a prefix.
@@ -26,14 +49,18 @@ module JitCatch
       [:index, "GET", "", :collection], [:create, "POST", "", :collection], [:new, "GET", "/new", :new_member],
       [:edit, "GET", "/:id/edit", :edit_member], [:show, "GET", "/:id", :member], [:update, "PATCH", "/:id", :member],
       [:update, "PUT", "/:id", :member], [:destroy, "DELETE", "/:id", :member]
-    ].freeze
+    ].freeze #: Array[drawn_action]
     SINGULAR_ACTIONS = [
       [:new, "GET", "/new", :new_member], [:edit, "GET", "/edit", :edit_member], [:show, "GET", "", :member],
       [:create, "POST", "", :member], [:update, "PATCH", "", :member], [:update, "PUT", "", :member], [:destroy, "DELETE", "", :member]
-    ].freeze
+    ].freeze #: Array[drawn_action]
     # Blocks whose routes keep the scope around them.
-    PASS_THROUGH = %i[constraints defaults].freeze
+    PASS_THROUGH = %i[constraints defaults].freeze #: Array[Symbol]
 
+    # @rbs @inflections: Inflections
+    # @rbs @routes: Array[Route]
+
+    #: (String? source, ?Inflections inflections) -> Routes
     def self.parse(source, inflections = Inflections.rails)
       routes = new(inflections)
       result = source ? Prism.parse(source) : nil
@@ -41,20 +68,24 @@ module JitCatch
       routes
     end
 
+    #: (Inflections inflections) -> void
     def initialize(inflections)
       @inflections = inflections
       @routes = []
     end
 
+    #: (String action) -> bool
     def drawn?(action)
       @routes.any? { |route| route.action == action }
     end
 
+    #: (String name) -> bool
     def helper?(name)
       !route_for_helper(name).nil?
     end
 
     # The first route a `*_path` or `*_url` helper builds a URL for, or nil.
+    #: (String name) -> Route?
     def route_for_helper(name)
       return nil unless name.end_with?("_path", "_url")
 
@@ -67,8 +98,9 @@ module JitCatch
     # helper, each action that helper serves for the verb; by path, the
     # first route Rails would match, a computed segment preferring a
     # `:param` to a literal one.
+    #: (String request) -> Array[String]
     def actions(request)
-      verb, target = request.split(" ", 2)
+      verb, target = request.split(" ", 2) #: [String, String]
       if SourceIndex.route_helper_request?(request)
         bare = target.delete_suffix("_path")
         return @routes.select { |route| route.verb == verb && route.helper == bare }.map(&:action).uniq
@@ -81,6 +113,7 @@ module JitCatch
 
     # A path the app serves itself, so the request names every segment of
     # the route, unless it starts with a part the test computes.
+    #: (String sent_path, String route_path, bool computed_matches_literal) -> bool
     def reaches?(sent_path, route_path, computed_matches_literal)
       sent = sent_path.split("/").reject(&:empty?)
       open_mount = sent.first == SourceIndex::COMPUTED_SEGMENT
@@ -89,10 +122,11 @@ module JitCatch
       return false if open_mount ? sent.size > wanted.size : sent.size != wanted.size
 
       sent.zip(wanted.last(sent.size)).all? do |part, want|
-        want.start_with?(":") || part == want || (part == SourceIndex::COMPUTED_SEGMENT && computed_matches_literal)
+        want.to_s.start_with?(":") || part == want || (part == SourceIndex::COMPUTED_SEGMENT && computed_matches_literal)
       end
     end
 
+    #: (Prism::Node? node, Scope scope) -> void
     def read(node, scope)
       statements(node).each do |stmt|
         next unless stmt.is_a?(Prism::CallNode) && stmt.receiver.nil?
@@ -136,6 +170,7 @@ module JitCatch
 
     # Rails names the helpers after `as:` when it is given, and adds
     # `_index` to the collection's when the name has one form for both.
+    #: (String name, bool plural, Hash[String, Prism::Node] options, Prism::BlockNode? block, Scope scope) -> void
     def read_resource(name, plural, options, block, scope)
       only = symbol_list(options["only"])
       except = symbol_list(options["except"]) || []
@@ -168,6 +203,7 @@ module JitCatch
     end
 
     # `post :shelve` in a `member` or `collection` block, or with `on:`.
+    #: (Prism::Node? body, Scope scope, String path, String helper, String controller) -> void
     def read_actions(body, scope, path, helper, controller)
       statements(body).each do |stmt|
         next unless stmt.is_a?(Prism::CallNode) && stmt.receiver.nil? && VERBS.include?(stmt.name)
@@ -178,10 +214,12 @@ module JitCatch
       end
     end
 
+    #: (Symbol verb, String path, String helper, String controller, String action, Scope scope) -> Array[Route]
     def add_action(verb, path, helper, controller, action, scope)
       @routes << Route.new(verb: verb.to_s.upcase, path: path, helper: helper, action: action(scope.modules, controller, action))
     end
 
+    #: (Symbol verb, Array[Prism::Node] args, Hash[String, Prism::Node] options, Scope scope) -> void
     def read_verb(verb, args, options, scope)
       resource = scope.resource
       on = string_of(options["on"])
@@ -195,8 +233,9 @@ module JitCatch
 
       # In a `resources` block with no `on:`, Rails nests the action under
       # the member's id, as `/things/:thing_id/refresh`.
-      if resource && args.first.is_a?(Prism::SymbolNode) && !options.key?("to")
-        action = args.first.unescaped
+      first = args.first
+      if resource && first.is_a?(Prism::SymbolNode) && !options.key?("to")
+        action = first.unescaped
         return add_action(verb, "#{scope.path}/#{action}", "#{scope.helper}#{action}", resource.controller, action, scope)
       end
 
@@ -211,16 +250,21 @@ module JitCatch
     # `get "about", controller: :pages, action: :about`, whose controller
     # can come from `scope controller:` and whose action defaults to the
     # path.
+    #: (Array[Prism::Node] args, Hash[String, Prism::Node] options, Scope scope) -> [String?, String?]
     def path_and_target(args, options, scope)
       first = args.first
       if first.is_a?(Prism::KeywordHashNode)
-        pair = first.elements.grep(Prism::AssocNode).find { |assoc| assoc.key.is_a?(Prism::StringNode) }
+        # Array#grep does not narrow its elements to the class it is given.
+        pairs = first.elements.grep(Prism::AssocNode) #: Array[untyped]
+        pair = pairs.find { |assoc| assoc.key.is_a?(Prism::StringNode) }
         return [pair.key.unescaped, string_of(pair.value)] if pair
       end
       path = string_of(first)
       [path, target_of(options, scope, path)]
     end
 
+    # The `controller#action` a route serves, or nil.
+    #: (Hash[String, Prism::Node] options, Scope scope, String? path) -> String?
     def target_of(options, scope, path)
       to = string_of(options["to"])
       return to if to
@@ -230,10 +274,12 @@ module JitCatch
       "#{controller}##{action}" if controller && action
     end
 
+    #: (Scope scope, Hash[String, Prism::Node] options) -> Array[String]
     def modules_of(scope, options)
       (module_name = string_of(options["module"])) ? [*scope.modules, module_name] : scope.modules
     end
 
+    #: (String verb, String path, String? helper, String? target, Scope scope) -> void
     def add(verb, path, helper, target, scope)
       controller, action = target.to_s.split("#", 2)
       return unless controller && action
@@ -242,11 +288,14 @@ module JitCatch
     end
 
     # Rails camelizes `admin/api_keys` with the app's acronyms.
+    #: (Array[String] modules, String controller, String action) -> String
     def action(modules, controller, action)
       names = [*modules, *controller.split("/")]
-      "#{names[0...-1].map { |name| @inflections.camelize(name) }.push("#{@inflections.camelize(names.last)}Controller").join("::")}##{action}"
+      outer = names[0...-1] #: Array[String]
+      "#{outer.map { |name| @inflections.camelize(name) }.push("#{@inflections.camelize(names.last)}Controller").join("::")}##{action}"
     end
 
+    #: (Prism::Node? node) -> Array[Prism::Node]
     def statements(node)
       case node
       when nil then []
@@ -258,23 +307,29 @@ module JitCatch
     end
 
     # The statements of `Rails.application.routes.draw do ... end`.
+    #: (Prism::Node stmt) -> Array[Prism::Node]
     def draw_body(stmt)
       return [stmt] unless stmt.is_a?(Prism::CallNode) && stmt.name == :draw && stmt.block.is_a?(Prism::BlockNode)
 
       statements(stmt.block.body)
     end
 
+    # The options a call passes by symbol, by name.
+    #: (Array[Prism::Node] args) -> Hash[String, Prism::Node]
     def keyword_options(args)
-      hash = args.grep(Prism::KeywordHashNode).first
+      hash = args.grep(Prism::KeywordHashNode).first #: Prism::KeywordHashNode?
       return {} unless hash
 
-      hash.elements.grep(Prism::AssocNode).select { |pair| pair.key.is_a?(Prism::SymbolNode) }.to_h { |pair| [pair.key.unescaped, pair.value] }
+      pairs = hash.elements.grep(Prism::AssocNode) #: Array[untyped]
+      pairs.select { |pair| pair.key.is_a?(Prism::SymbolNode) }.to_h { |pair| [pair.key.unescaped, pair.value] }
     end
 
+    #: (Array[Prism::Node] args) -> Array[String]
     def symbol_names(args)
-      args.select { |arg| arg.is_a?(Prism::SymbolNode) || arg.is_a?(Prism::StringNode) }.map(&:unescaped)
+      args.filter_map { |arg| arg.unescaped if arg.is_a?(Prism::SymbolNode) || arg.is_a?(Prism::StringNode) }
     end
 
+    #: (Prism::Node? node) -> Array[String]?
     def symbol_list(node)
       case node
       when nil then nil
@@ -283,6 +338,7 @@ module JitCatch
       end
     end
 
+    #: (Prism::Node? node) -> String?
     def string_of(node)
       node.unescaped if node.is_a?(Prism::SymbolNode) || node.is_a?(Prism::StringNode)
     end

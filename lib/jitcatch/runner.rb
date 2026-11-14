@@ -1,4 +1,5 @@
 # frozen_string_literal: true
+# rbs_inline: enabled
 
 require "fileutils"
 require "open3"
@@ -10,45 +11,45 @@ require "uri"
 module JitCatch
   # Runs each candidate file on base and head worktrees and classifies it.
   class Runner
-    FILE_CAP = 40
-    PASSED_ENV = %w[PATH HOME USER LOGNAME TMPDIR TEMP TMP LD_LIBRARY_PATH GEM_HOME GEM_PATH].freeze
-    FIXED_ENV = { "LANG" => "C.UTF-8", "LC_ALL" => "C.UTF-8", "TERM" => "dumb" }.freeze
+    FILE_CAP = 40 #: Integer
+    PASSED_ENV = %w[PATH HOME USER LOGNAME TMPDIR TEMP TMP LD_LIBRARY_PATH GEM_HOME GEM_PATH].freeze #: Array[String]
+    FIXED_ENV = { "LANG" => "C.UTF-8", "LC_ALL" => "C.UTF-8", "TERM" => "dumb" }.freeze #: Hash[String, String]
     # Names jitcatch sets itself, so --env cannot pass them.
-    RESERVED_ENV = (FIXED_ENV.keys + %w[BUNDLE_GEMFILE TEST_ENV_NUMBER]).freeze
+    RESERVED_ENV = (FIXED_ENV.keys + %w[BUNDLE_GEMFILE TEST_ENV_NUMBER]).freeze #: Array[String]
     # How a child reaches the network. Tools read both https_proxy and
     # HTTPS_PROXY, so the case does not matter.
-    NETWORK_ENV = /\A(?:(?:HTTPS?|NO|ALL)_PROXY|SSL_CERT_(?:FILE|DIR)|NODE_EXTRA_CA_CERTS)\z/i
-    ENV_READ = /ENV(?:\.fetch\(\s*|\.key\?\(\s*|\[\s*)["']([A-Za-z_][A-Za-z0-9_]*)["']/
-    ENV_READ_GREP = %q{ENV(\.fetch\(|\.key\?\(|\[) *["'][A-Za-z_][A-Za-z0-9_]*["']}
+    NETWORK_ENV = /\A(?:(?:HTTPS?|NO|ALL)_PROXY|SSL_CERT_(?:FILE|DIR)|NODE_EXTRA_CA_CERTS)\z/i #: Regexp
+    ENV_READ = /ENV(?:\.fetch\(\s*|\.key\?\(\s*|\[\s*)["']([A-Za-z_][A-Za-z0-9_]*)["']/ #: Regexp
+    ENV_READ_GREP = %q{ENV(\.fetch\(|\.key\?\(|\[) *["'][A-Za-z_][A-Za-z0-9_]*["']} #: String
     # What reads a proxy or CA setting: an HTTP client, by the name a file
     # requires or a Gemfile.lock lists, and a command a file starts that
     # fetches, such as `npx --yes` or `bundle install`, in a string, a
     # backtick, or an argument list. A spec of a local SQLite app uses none,
     # so the host's proxy settings are noise there. A command spelled any
     # other way, as in a script file, is not seen.
-    NETWORK_REQUIRES = %w[net/http net/https open-uri faraday httparty excon http httpx httpclient rest-client typhoeus].freeze
-    NETWORK_GEMS = %w[net-http faraday httparty excon http httpx httpclient rest-client typhoeus].freeze
-    NETWORK_COMMANDS = %w[npx npm curl wget].freeze
-    FETCHING_TOOLS = %w[bundle gem git].freeze
-    FETCHING_SUBCOMMANDS = %w[install update clone fetch pull].freeze
+    NETWORK_REQUIRES = %w[net/http net/https open-uri faraday httparty excon http httpx httpclient rest-client typhoeus].freeze #: Array[String]
+    NETWORK_GEMS = %w[net-http faraday httparty excon http httpx httpclient rest-client typhoeus].freeze #: Array[String]
+    NETWORK_COMMANDS = %w[npx npm curl wget].freeze #: Array[String]
+    FETCHING_TOOLS = %w[bundle gem git].freeze #: Array[String]
+    FETCHING_SUBCOMMANDS = %w[install update clone fetch pull].freeze #: Array[String]
     NETWORK_USE_GREP = "require *\\(? *[\"'](#{NETWORK_REQUIRES.join("|")})[\"']|[\"'`](#{NETWORK_COMMANDS.join("|")}) " \
-                       "|[\"'`](#{FETCHING_TOOLS.join("|")})([\"'], *[\"']| +)(#{FETCHING_SUBCOMMANDS.join("|")})"
-    NETWORK_USE = Regexp.new(NETWORK_USE_GREP)
+                       "|[\"'`](#{FETCHING_TOOLS.join("|")})([\"'], *[\"']| +)(#{FETCHING_SUBCOMMANDS.join("|")})" #: String
+    NETWORK_USE = Regexp.new(NETWORK_USE_GREP) #: Regexp
     # Rescuing in the child keeps Bundler's own message and drops its backtrace.
-    BUNDLE_SETUP = 'begin; require "bundler/setup"; rescue Exception => e; $stderr.puts e.message; exit 1; end'
-    SETUP_STDERR_LINES = 10
+    BUNDLE_SETUP = 'begin; require "bundler/setup"; rescue Exception => e; $stderr.puts e.message; exit 1; end' #: String
+    SETUP_STDERR_LINES = 10 #: Integer
     # A database server that refused the connection, as PostgreSQL and MySQL
     # clients word it. The client then took its host and port from a default,
     # often because the shell's setting for them was not passed.
-    DATABASE_REFUSED = /Connection refused|could not connect to server|Can't connect to (?:local )?(?:MySQL )?server/
+    DATABASE_REFUSED = /Connection refused|could not connect to server|Can't connect to (?:local )?(?:MySQL )?server/ #: Regexp
     # What an app's database.yml or its client library reads: libpq reads
     # PG* itself, and Rails reads DATABASE_URL and its per-database forms.
-    DATABASE_ENV = /\A(?:(?:\w+_)?DATABASE_URL|DB_\w+|PG[A-Z]+|MYSQL_\w+)\z/
-    SQLITE_RELATIVE = "relative path, as sqlite3:storage/test.sqlite3, so each checkout opens a file under its own root"
+    DATABASE_ENV = /\A(?:(?:\w+_)?DATABASE_URL|DB_\w+|PG[A-Z]+|MYSQL_\w+)\z/ #: Regexp
+    SQLITE_RELATIVE = "relative path, as sqlite3:storage/test.sqlite3, so each checkout opens a file under its own root" #: String
     # The test databases of a side, as Active Record reads config/database.yml
     # with that side's TEST_ENV_NUMBER and the variables --env passes, so a
     # DATABASE_URL merges in as it does when rails_helper sets RAILS_ENV.
-    TEST_DATABASES = <<~'SCRIPT'
+    TEST_DATABASES = <<~'SCRIPT' #: String
       ENV["RAILS_ENV"] ||= "test"
       require "json"
       require "active_record"
@@ -58,15 +59,49 @@ module JitCatch
       print JSON.generate(configs.map { |config| config.configuration_hash.slice(:adapter, :host, :port, :socket, :database).transform_values(&:to_s) })
     SCRIPT
     # `lines` maps an RSpec example's name to the line it starts on.
-    Result = Data.define(:tests, :lines, :file_error, :timed_out, :exit_code, :seconds)
+    Result = Data.define(
+      :tests, #: Hash[String, doc]
+      :lines, #: Hash[String, Integer]
+      :file_error, #: doc?
+      :timed_out, #: bool
+      :exit_code, #: Integer?
+      :seconds #: Float
+    )
     # One worker's two checkouts. A worker runs one file at a time in them.
-    Pair = Data.define(:base, :head)
+    Pair = Data.define(
+      :base, #: String
+      :head #: String
+    )
     # The names a test can mention, and the constants head defines.
     # `unsaved` maps a `build(:loan)` that only a callback lists to the
     # record calls that make it run that callback.
     # `routes` are the routes head's config/routes.rb draws.
-    Known = Data.define(:names, :constants, :unsaved, :routes)
+    Known = Data.define(
+      :names, #: Array[String]
+      :constants, #: Array[String]
+      :unsaved, #: Hash[String, Array[String]]
+      :routes #: Routes
+    )
 
+    # @rbs @git: GitRepo
+    # @rbs @setup: String?
+    # @rbs @base_ref: String
+    # @rbs @head_ref: String
+    # @rbs @tests_dir: String
+    # @rbs @reruns: Integer
+    # @rbs @timeout: Integer | Float | nil
+    # @rbs @finished_in_time: finished_in_time
+    # @rbs @env_names: Array[String]
+    # @rbs @workers: Integer
+    # @rbs @serial: bool
+    # @rbs @number_database_url: bool
+    # @rbs @frameworks: Hash[String, Framework::framework]
+    # @rbs @pair_count: Integer
+    # @rbs @test_env_numbers: Hash[String, String]
+    # @rbs @temp_roots: Array[String]?
+    # @rbs @tests_from_root: String?
+
+    #: (GitRepo | String repo, String base_ref, String head_ref, String tests_dir, ?reruns: Integer, ?timeout: Integer | Float | nil, ?env: Array[String], ?workers: Integer, ?serial: bool, ?number_database_url: bool, ?setup: String?, ?finished_in_time: finished_in_time?) -> doc
     def self.run(repo, base_ref, head_ref, tests_dir, reruns: 2, timeout: nil, env: [], workers: 1, serial: false, number_database_url: false, setup: nil, finished_in_time: nil)
       new(repo, base_ref, head_ref, tests_dir, reruns: reruns, timeout: timeout, env: env, workers: workers, serial: serial,
         number_database_url: number_database_url, setup: setup, finished_in_time: finished_in_time).run
@@ -77,6 +112,7 @@ module JitCatch
     # that which child times out does not depend on the machine's load.
     # `setup` is a shell command run once in each checkout before its
     # candidates, such as a schema load into that checkout's database.
+    #: (GitRepo | String repo, String base_ref, String head_ref, String tests_dir, reruns: Integer, timeout: Integer | Float | nil, env: Array[String], ?workers: Integer, ?serial: bool, ?number_database_url: bool, ?setup: String?, ?finished_in_time: finished_in_time?) -> void
     def initialize(repo, base_ref, head_ref, tests_dir, reruns:, timeout:, env:, workers: 1, serial: false, number_database_url: false, setup: nil, finished_in_time: nil)
       @git = repo.is_a?(GitRepo) ? repo : GitRepo.new(repo)
       @setup = setup
@@ -100,6 +136,7 @@ module JitCatch
       check_database_url if number_database_url
     end
 
+    #: () -> void
     def check_database_url
       raise UsageError, "--number-database-url numbers the DATABASE_URL that --env passes, so pass --env DATABASE_URL" unless @env_names.include?("DATABASE_URL")
       return if ENV["DATABASE_URL"] && numbered_database_url(ENV["DATABASE_URL"], "1")
@@ -111,6 +148,7 @@ module JitCatch
     # An SQLite URL names a file, not a database on a server, so there is
     # no database to number; a relative path already gives each checkout
     # its own file.
+    #: (String? url) -> bool
     def sqlite_url?(url)
       url.to_s.match?(/\Asqlite3?:/i)
     end
@@ -118,10 +156,12 @@ module JitCatch
     # `postgresql://host/app_test_wt1?sslmode=disable` with number 2 is
     # `postgresql://host/app_test_wt1_2?sslmode=disable`. Nil when the URL
     # names no database on a server.
+    #: (String? url, String number) -> String?
     def numbered_database_url(url, number)
       return nil if sqlite_url?(url)
 
-      uri = URI.parse(url)
+      # A missing URL parses as an empty one, which names no database either.
+      uri = URI.parse(url.to_s)
       name = uri.path.to_s.delete_prefix("/")
       return nil if name.empty? || name.include?("/")
 
@@ -131,6 +171,7 @@ module JitCatch
       nil
     end
 
+    #: () -> doc
     def run
       files, omitted = candidate_files
       @frameworks = files.to_h { |relative| [relative, Framework.for(relative, read_candidate(relative))] }
@@ -151,7 +192,8 @@ module JitCatch
       @test_env_numbers = pairs.each_with_index.flat_map { |pair, index| [[pair.base, (2 * index + 1).to_s], [pair.head, (2 * index + 2).to_s]] }.to_h
       begin
         # One at a time: git takes a lock on the repository for each add.
-        checkouts.zip(pairs).each { |checkout, pair| check_out(checkout, pair, change) }
+        each_pair = checkouts.zip(pairs) #: Array[[Pair, Pair]]
+        each_pair.each { |checkout, pair| check_out(checkout, pair, change) }
         rails_app = File.file?(File.join(pairs.first.head, "config", "application.rb"))
         # A Rails app boots and loads db/schema.rb in each new checkout.
         @timeout ||= rails_app ? 60 : 10
@@ -175,7 +217,7 @@ module JitCatch
         routes_file = File.join(first.head, "config", "routes.rb")
         inflections_file = File.join(first.head, "config", "initializers", "inflections.rb")
         routes = Routes.parse(File.file?(routes_file) ? read_text(routes_file) : nil, Inflections.read(File.file?(inflections_file) ? read_text(inflections_file) : nil))
-        helper_warnings = File.file?(routes_file) ? route_helper_warnings(files, routes) : []
+        helper_warnings = File.file?(routes_file) ? route_helper_warnings(files, routes) : [] #: Array[String]
         known = Known.new(names: mention_names(change), constants: changes.head_constants, unsaved: unsaved_mentions(change), routes: routes)
         rows = classify_files(files, shared ? [first] : pairs, normalizer, known)
         bundled = gemfile?(first.head)
@@ -224,6 +266,7 @@ module JitCatch
 
     # A side that has no copy of the directory yet, as the base of the
     # commit that adds it, gets an empty one, as the empty tree does.
+    #: (Pair checkout, Pair pair, doc change) -> void
     def check_out(checkout, pair, change)
       if @git.empty_tree?(change["base"])
         FileUtils.mkdir_p(checkout.base)
@@ -238,30 +281,34 @@ module JitCatch
       end
     end
 
+    #: (String checkout) -> String
     def inside(checkout)
       @git.prefix.empty? ? checkout : File.join(checkout, @git.prefix.chomp("/"))
     end
 
     # The checkout a directory from `inside` is in.
+    #: (String dir) -> String
     def top_of(dir)
       @git.prefix.empty? ? dir : dir.delete_suffix("/#{@git.prefix.chomp("/")}")
     end
 
     # Said only from a directory inside the repository, so a run from its
     # top keeps the same bytes.
+    #: () -> Hash[String, String]
     def directory
       @git.prefix.empty? ? {} : { "directory" => @git.prefix.chomp("/") }
     end
 
     # Each worker takes the next file and runs it in its own pair, so the
     # rows do not depend on which worker ran which file.
+    #: (Array[String] files, Array[Pair] pairs, normalizer normalizer, Known known) -> Array[doc]
     def classify_files(files, pairs, normalizer, known)
       queue = Queue.new
       files.each { |relative| queue << relative }
       queue.close
       threads = pairs.map { |pair|
         Thread.new do
-          found = []
+          found = [] #: Array[doc]
           while (relative = queue.pop)
             found.concat(classify_file(relative, pair.base, pair.head, normalizer, known))
           end
@@ -271,6 +318,7 @@ module JitCatch
       threads.flat_map(&:value)
     end
 
+    #: (String relative, String base_dir, String head_dir, normalizer normalizer, Known known) -> Array[doc]
     def classify_file(relative, base_dir, head_dir, normalizer, known)
       source = read_candidate(relative)
       index = SourceIndex.parse(source, file: relative)
@@ -313,6 +361,7 @@ module JitCatch
     # message that moves, such as a random id, still caught the change when
     # base passes each time too. A test that fails at random is caught here
     # instead: its base fails once in a while as well.
+    #: (Array[doc] rows, String base_dir, String relative, normalizer normalizer) -> void
     def confirm_on_base(rows, base_dir, relative, normalizer)
       return if rows.empty?
 
@@ -326,6 +375,7 @@ module JitCatch
       end
     end
 
+    #: (String relative, Result base_run, Result head_run, SourceIndex index, Known known, String head_dir) -> Array[doc]
     def rows_for(relative, base_run, head_run, index, known, head_dir)
       if file_level?(base_run) || file_level?(head_run)
         name = file_level_name(relative, base_run, head_run)
@@ -351,20 +401,24 @@ module JitCatch
       end
     end
 
+    #: (Result execution) -> boolish
     def file_level?(execution)
       execution.timed_out || execution.file_error
     end
 
     # A test of its own can also end in "#load", so match the whole name.
+    #: (doc row) -> bool
     def load_row?(row)
       row["name"] == "#{File.basename(row["file"])}#load"
     end
 
+    #: (String relative, Result base_run, Result head_run) -> String
     def file_level_name(relative, base_run, head_run)
       timed_out = base_run.timed_out || head_run.timed_out
       "#{File.basename(relative)}##{timed_out ? "timeout" : "load"}"
     end
 
+    #: (Result execution) -> doc
     def side_result(execution)
       return timeout_result if execution.timed_out
       return execution.file_error if execution.file_error
@@ -377,6 +431,7 @@ module JitCatch
       failed || Failure.result("error", "RuntimeError", "no tests ran", [])
     end
 
+    #: (String relative, String name, Integer? line, doc? base_result, doc? head_result, Array[String] mentions) -> doc
     def build_row(relative, name, line, base_result, head_result, mentions)
       base_result = missing_result if base_result.nil?
       head_result = missing_result if head_result.nil?
@@ -394,6 +449,7 @@ module JitCatch
     # A base that timed out may pass with more time, so a head that did not
     # pass is a candidate the assessor discards, not a test that failed on
     # base.
+    #: (doc base_result, doc head_result) -> String
     def classify(base_result, head_result)
       base_pass = base_result["status"] == "pass"
       head_status = head_result["status"]
@@ -408,21 +464,25 @@ module JitCatch
 
     # The whole message is compared: an assertion's first line names the
     # expected value, and the value that moves between runs is on a later line.
+    #: (doc result) -> String
     def failure_key(result)
       lines = result["message"].to_s.lines.map(&:strip).reject(&:empty?).join("\n")
       message = Text.mask_times(Text.mask_addresses(temp_roots.reduce(lines) { |text, root| Text.mask_temp_names(text, root) }))
       [result["status"], result["error_class"].to_s, message].join("\x1f")
     end
 
+    #: (doc result) -> [String?, String]
     def outcome_key(result)
       [result["status"], result["error_class"].to_s]
     end
 
     # A symlinked temp directory (macOS /tmp) can appear under either name.
+    #: () -> Array[String]
     def temp_roots
       @temp_roots ||= [Dir.tmpdir, File.realpath(Dir.tmpdir)].uniq.sort_by { |root| -root.length }
     end
 
+    #: (String worktree, String relative, normalizer normalizer) -> Result
     def execute(worktree, relative, normalizer)
       framework = @frameworks.fetch(relative)
       stdout_path = File.join(worktree, ".jitcatch-stdout")
@@ -435,7 +495,7 @@ module JitCatch
         "-I#{File.join(worktree, "lib")}",
         "-I#{worktree}",
         *framework.arguments(File.join(".jitcatch", relative))
-      ]
+      ] #: Array[String]
       status, stdout, stderr, timed_out, seconds = run_process(
         cmd,
         chdir: worktree,
@@ -458,6 +518,7 @@ module JitCatch
       )
     end
 
+    #: (Array[String] cmd, chdir: String, stdout_path: String, stderr_path: String, env: Hash[String, String?]) -> [Process::Status?, String, String, bool, Float]
     def run_process(cmd, chdir:, stdout_path:, stderr_path:, env:)
       started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       pid = Process.spawn(env, *cmd, chdir: chdir, out: stdout_path, err: stderr_path, pgroup: true, unsetenv_others: true)
@@ -469,6 +530,7 @@ module JitCatch
       [status, read_text(stdout_path), read_text(stderr_path), timed_out, seconds]
     end
 
+    #: (Integer pid) -> void
     def kill_group(pid)
       Process.kill("-TERM", pid)
     rescue Errno::ESRCH
@@ -482,6 +544,7 @@ module JitCatch
       end
     end
 
+    #: (String path) -> String
     def read_text(path)
       return "" unless File.file?(path)
 
@@ -490,6 +553,7 @@ module JitCatch
       text.valid_encoding? ? text : text.scrub("?")
     end
 
+    #: (String worktree) -> Hash[String, String?]
     def child_env(worktree)
       env = (PASSED_ENV + @env_names).to_h { |key| [key, ENV[key]] }.compact
       env["BUNDLE_GEMFILE"] = File.join(worktree, "Gemfile") if gemfile?(worktree)
@@ -498,6 +562,7 @@ module JitCatch
       env.merge(FIXED_ENV)
     end
 
+    #: (String worktree) -> bool
     def gemfile?(worktree)
       File.file?(File.join(worktree, "Gemfile"))
     end
@@ -507,12 +572,14 @@ module JitCatch
     # runs; an SQLite file at a relative path is a file of each worktree.
     # Nil when they share none, or when a side's config/database.yml does
     # not read without booting the app.
+    #: (Pair pair) -> String?
     def shared_test_database(pair)
       base = Thread.new { test_databases(pair.base) }
       head = test_databases(pair.head)
       (base.value.to_a & head.to_a).first&.last
     end
 
+    #: (String worktree) -> Array[[Array[String?], String]]?
     def test_databases(worktree)
       return nil unless File.file?(File.join(worktree, "config", "database.yml"))
 
@@ -533,10 +600,15 @@ module JitCatch
 
     # The names to create, without the rest of the URL, which can hold a
     # password.
+    #: () -> Array[String]
     def numbered_databases
       return [] unless @number_database_url
 
-      (1..2 * @pair_count).map { |number| URI.parse(numbered_database_url(ENV["DATABASE_URL"], number.to_s)).path.delete_prefix("/") }
+      (1..2 * @pair_count).map do |number|
+        # check_database_url has made sure DATABASE_URL names a database.
+        url = numbered_database_url(ENV["DATABASE_URL"], number.to_s) #: String
+        URI.parse(url).path.to_s.delete_prefix("/")
+      end
     end
 
     # One line says what happened, and one says how to run both sides at
@@ -545,6 +617,7 @@ module JitCatch
     # one that names none takes `database:` from the file. A past commit's
     # database.yml cannot change, so for it the run one process at a time is
     # the one to keep.
+    #: (String name) -> Array[String]
     def shared_database_warnings(name)
       numbers = @test_env_numbers.values.sort_by(&:to_i)
       happened = "base and head use one test database, #{name}, so jitcatch ran one process at a time; that changes how long the run takes, not its results."
@@ -566,13 +639,16 @@ module JitCatch
     # One check per side, so a side that cannot load its bundle or a
     # framework is said once, as the setup failure it is, instead of as a
     # load error on every candidate file.
+    #: (String side, String commit, String worktree, normalizer normalizer, Array[Framework::framework] frameworks) -> doc
     def setup_status(side, commit, worktree, normalizer, frameworks)
       bundled = gemfile?(worktree)
       bundle = bundled ? "ok" : "none"
       # Every framework is tried, so one run names all that are missing.
+      # Steep cannot read a constant through a union of modules, as
+      # `framework::LIBRARY` does, so those two lines are not checked.
       checks = frameworks.map { |framework|
-        "begin; require #{framework::LIBRARY.inspect}; rescue LoadError; $stderr.puts #{framework.missing(bundled).inspect}; missing = true; end"
-      }
+        "begin; require #{framework::LIBRARY.inspect}; rescue LoadError; $stderr.puts #{framework.missing(bundled).inspect}; missing = true; end" # steep:ignore
+      } #: Array[String]
       status, _stdout, stderr, timed_out = run_process(
         [RbConfig.ruby, "-e", [*(BUNDLE_SETUP if bundled), "missing = false", *checks, "exit 1 if missing"].join("; ")],
         chdir: worktree,
@@ -582,14 +658,14 @@ module JitCatch
       )
       return { "bundle" => bundle, "failure" => nil } if !timed_out && status&.success?
 
-      requires = [*("bundler/setup" if bundled), *frameworks.map { |framework| framework::LIBRARY }]
+      requires = [*("bundler/setup" if bundled), *frameworks.map { |framework| framework::LIBRARY }] # steep:ignore
       tail = Text.message_lines(normalizer.call(stderr)).last(SETUP_STDERR_LINES)
       failure = {
         "side" => side,
         "commit" => commit,
         "command" => "ruby -e #{Framework::Minitest.quote(requires.map { |library| %(require "#{library}") }.join("; "))}",
         "stderr" => timed_out ? ["timed out after #{@timeout}s"] : tail,
-        "not_passed" => bundled ? unpassed_bundler_settings : []
+        "not_passed" => bundled ? unpassed_bundler_settings : [] #: Array[String]
       }
       { "bundle" => bundle, "failure" => failure }
     end
@@ -598,13 +674,17 @@ module JitCatch
     # first. One at a time: two loads into one shared database would race.
     # RAILS_ENV is test unless --env passes one, so a schema load never
     # reaches the development database.
+    #: (Array[Pair] pairs, doc change, normalizer normalizer) -> Array[doc]
     def run_setup(pairs, change, normalizer)
-      return [] unless @setup
+      setup = @setup or return []
 
-      pairs.flat_map { |pair| [["base", pair.base], ["head", pair.head]] }.filter_map do |side, worktree|
+      sides = pairs.flat_map do |pair|
+        [["base", pair.base], ["head", pair.head]] #: Array[[String, String]]
+      end
+      sides.filter_map do |side, worktree|
         env = { "RAILS_ENV" => "test" }.merge(child_env(worktree))
         status, _stdout, stderr, timed_out = run_process(
-          ["/bin/sh", "-c", @setup],
+          ["/bin/sh", "-c", setup],
           chdir: worktree,
           stdout_path: File.join(worktree, ".jitcatch-stdout"),
           stderr_path: File.join(worktree, ".jitcatch-stderr"),
@@ -616,10 +696,10 @@ module JitCatch
         {
           "side" => side,
           "commit" => change[side],
-          "command" => @setup,
+          "command" => setup,
           "stderr" => timed_out ? ["timed out after #{@timeout}s"] : lines.last(SETUP_STDERR_LINES),
-          "not_passed" => [],
-          "database_not_passed" => timed_out ? [] : database_not_passed(lines)
+          "not_passed" => [], #: Array[String]
+          "database_not_passed" => timed_out ? [] : database_not_passed(lines) #: Array[String]
         }
       end.uniq { |failure| failure["side"] }
     end
@@ -627,11 +707,12 @@ module JitCatch
     # A side that loads its bundle can still fail to boot what every
     # candidate requires, such as a Rails app whose database does not exist.
     # When no file loaded on either side, no row can tell base from head.
+    #: (doc change, Array[doc] rows, bool bundled, bool rails_app) -> doc?
     def load_failure_doc(change, rows, bundled, rails_app)
       return nil if rows.empty?
       return nil unless rows.all? { |row| load_row?(row) && row["base"]["status"] == "error" && row["head"]["status"] == "error" }
 
-      first = rows.min_by { |row| row["file"] }
+      first = rows.min_by { |row| row["file"] } #: doc
       failed = %w[base head].map { |side|
         result = first[side]
         lines = Text.message_lines(result["message"].to_s)
@@ -642,7 +723,7 @@ module JitCatch
           "commit" => change[side],
           "command" => first["rerun"],
           "stderr" => lines.first(SETUP_STDERR_LINES),
-          "not_passed" => bundled ? unpassed_bundler_settings : [],
+          "not_passed" => bundled ? unpassed_bundler_settings : [], #: Array[String]
           "database_not_passed" => database_not_passed(lines)
         }
       }
@@ -651,6 +732,7 @@ module JitCatch
 
     # rails_app: the head has config/application.rb, so a credential that
     # git ignores, such as config/master.key, is a likely cause.
+    #: (doc change, Array[doc] failed, rails_app: bool, ?stage: String) -> doc
     def setup_failed_doc(change, failed, rails_app:, stage: "setup")
       {
         "version" => VERSION,
@@ -673,6 +755,7 @@ module JitCatch
     # Names the parent has and the child does not get that a child often
     # waits on: names the head's Ruby source or a candidate reads from ENV,
     # and network settings when either loads an HTTP client.
+    #: (String head, Array[String] files) -> Array[String]
     def env_not_passed(head, files)
       candidates = files.map { |relative| read_candidate(relative) }
       read = [@git.ruby_matches(head, ENV_READ_GREP), *candidates].flat_map { |text| text.scan(ENV_READ).flatten }
@@ -681,17 +764,20 @@ module JitCatch
       ENV.keys.select { |name| (network && name.match?(NETWORK_ENV)) || read.include?(name) }.reject { |name| passed.include?(name) }.sort
     end
 
+    #: (String head, Array[String] candidates) -> bool
     def network_library?(head, candidates)
       locked = @git.show(head, "#{@git.prefix}Gemfile.lock").to_s.scan(/^    (\S+) \(/).flatten
       (locked & NETWORK_GEMS).any? || [@git.ruby_matches(head, NETWORK_USE_GREP), *candidates].any? { |text| text.match?(NETWORK_USE) }
     end
 
+    #: (Array[String] lines) -> Array[String]
     def database_not_passed(lines)
       return [] unless lines.any? { |line| line.match?(DATABASE_REFUSED) }
 
       ENV.keys.grep(DATABASE_ENV).sort - @env_names
     end
 
+    #: () -> Array[String]
     def unpassed_bundler_settings
       ENV.keys.grep(/\ABUNDLE_/).sort - %w[BUNDLE_BIN_PATH BUNDLE_GEMFILE BUNDLE_LOCKFILE] - @env_names
     end
@@ -700,16 +786,18 @@ module JitCatch
     # track, so a worktree would load its bundle without the checkout's
     # settings, such as BUNDLE_WITHOUT. A relative BUNDLE_PATH names a
     # directory of the checkout, so it is written out from there.
+    #: (String worktree) -> void
     def copy_bundler_settings(worktree)
       source = File.join(@git.dir, ".bundle", "config")
       target = File.join(worktree, ".bundle", "config")
       return unless gemfile?(worktree) && File.file?(source) && !File.exist?(target)
 
-      text = File.read(source).gsub(/^BUNDLE_PATH: "?([^"\n]*)"?$/) { %(BUNDLE_PATH: "#{File.expand_path(Regexp.last_match(1), @git.dir)}") }
+      text = File.read(source).gsub(/^BUNDLE_PATH: "?([^"\n]*)"?$/) { %(BUNDLE_PATH: "#{File.expand_path(Regexp.last_match(1).to_s, @git.dir)}") }
       FileUtils.mkdir_p(File.dirname(target))
       File.write(target, text)
     end
 
+    #: (String worktree) -> void
     def install(worktree)
       dest = File.join(worktree, ".jitcatch")
       FileUtils.rm_rf(dest)
@@ -719,10 +807,12 @@ module JitCatch
       end
     end
 
+    #: (String relative) -> String
     def read_candidate(relative)
       File.read(File.join(@tests_dir, relative), mode: "r:bom|utf-8")
     end
 
+    #: () -> [Array[String], Integer]
     def candidate_files
       all = Dir.glob("**/*.rb", base: @tests_dir).sort
       named = all.select { |path| Framework.named?(path) }
@@ -739,6 +829,7 @@ module JitCatch
     # `Owner.new`, so a constructor is mentioned as `Owner.new`, with the
     # owner's last name segment, the shortest way a test can write it, and
     # so is a record builder or a save that runs a changed callback.
+    #: (doc change) -> Array[String]
     def mention_names(change)
       names = change["methods"].flat_map { |method|
         [method["name"], *method["reached_by"], *method["dynamic_callers"].map { |caller| caller["from"] }].map { |name| Assessor.mention_of(name) } +
@@ -751,6 +842,7 @@ module JitCatch
 
     # Mentions are taken from the test method and the same-file helpers it
     # calls, so a neighbor test in the same file does not change its tags.
+    #: (SourceIndex index, String test_name, Integer? line, Known known, String relative, String head_dir) -> Array[String]
     def mentions_for(index, test_name, line, known, relative, head_dir)
       referenced = (line && index.example_references(line)) || index.referenced_names(test_name)
       referenced -= foreign_calls(index, test_name, line, known.constants)
@@ -776,6 +868,7 @@ module JitCatch
     # A `build(:loan)` that builds a changed class runs its constructor
     # whatever the test does next, so only one that no method lists as a
     # builder waits for a save or a validation.
+    #: (doc change) -> Hash[String, Array[String]]
     def unsaved_mentions(change)
       builders = change["methods"].flat_map { |method| Array(method["builders"]) }
       change["methods"].each_with_object(Hash.new { |hash, key| hash[key] = [] }) { |method, found|
@@ -788,6 +881,7 @@ module JitCatch
     # `File.write` reaches no method of the repository, so neither it nor
     # the bare `write` it refers to is a mention of `Emitter.write`. A
     # constant counts as the repository's when one it defines ends in it.
+    #: (SourceIndex index, String test_name, Integer? line, Array[String] constants) -> Array[String]
     def foreign_calls(index, test_name, line, constants)
       index.names_sent_only_to_constants(test_name, line).flat_map { |bare, receivers|
         next [] if receivers.any? { |const| constants.any? { |name| name == const || name.end_with?("::#{const}") } }
@@ -804,6 +898,7 @@ module JitCatch
     # head outside `.jitcatch/`; the names it refers to count as mentions.
     # The test runs in head_dir, and the script is named from the
     # checkout's top, as the diff names it.
+    #: (Array[String] paths, String relative, String head_dir) -> Array[String]
     def script_names(paths, relative, head_dir)
       candidate = File.join(head_dir, ".jitcatch", relative)
       root = File.join(top_of(head_dir), "")
@@ -816,7 +911,7 @@ module JitCatch
         script = SourceIndex.parse(read_text(full), file: relative_path)
         # Starting an executable runs its top-level code, which the change
         # document lists as one method when the diff edits it.
-        main = SourceIndex.script_path?(relative_path) ? [SourceIndex.script_name(relative_path)] : []
+        main = SourceIndex.script_path?(relative_path) ? [SourceIndex.script_name(relative_path)] : [] #: Array[String]
         script.parse_error ? main : main + script.referenced_names("")
       }
     end
@@ -826,6 +921,7 @@ module JitCatch
 # TESTS_DIR resolves to two files unless TESTS_DIR sits at the root.
     # A helper that config/routes.rb draws through `draw`, a loop, or a
     # concern is not read, so a request to it ties its row to no action.
+    #: (Array[String] files, Routes routes) -> Array[String]
     def route_helper_warnings(files, routes)
       helpers = files.flat_map { |relative|
         SourceIndex.parse(read_candidate(relative), file: relative).referenced_names(nil)
@@ -837,6 +933,7 @@ module JitCatch
       ["#{requests} config/routes.rb does not draw (#{helpers.join(", ")}), so #{helpers.one? ? "it is" : "they are"} tied to no controller action."]
     end
 
+    #: (Array[String] files) -> Array[String]
     def require_warnings(files)
       tests = File.realpath(@tests_dir)
       # From a directory directly under the root, a path that stays in
@@ -864,6 +961,7 @@ module JitCatch
     end
 
     # A file-level row (`file#load`, `file#timeout`) reruns the whole file.
+    #: (doc row, bool bundled, bool pin_root, bool launcher) -> String
     def rerun_command(row, bundled, pin_root, launcher)
       file_level = row["line"].nil? && row["name"].start_with?("#{File.basename(row["file"])}#")
       name = file_level ? nil : row["name"]
@@ -874,6 +972,7 @@ module JitCatch
     # The rerun line runs in the reader's checkout, whose Gemfile can list
     # jitcatch while the commits under test do not, so the launcher is
     # tried there, with that Gemfile, and not in a worktree.
+    #: () -> bool
     def launcher_loads?
       bundled = gemfile?(@git.dir)
       env = (PASSED_ENV + @env_names).to_h { |key| [key, ENV[key]] }.compact.merge(FIXED_ENV)
@@ -885,6 +984,7 @@ module JitCatch
     # root, or a directory inside it), so the tests directory is named by
     # its path from there, outside the repository too: a quoted line then
     # names no directory of one machine.
+    #: () -> String
     def tests_from_root
       @tests_from_root ||= from_root(File.realpath(@tests_dir))
     end
@@ -893,25 +993,30 @@ module JitCatch
     # shorter than its absolute path, as `../catch` beside the checkout is.
     # A climb out of a checkout deep in a home directory to a directory
     # under /tmp is longer than the absolute path, and says less.
+    #: (String full) -> String
     def from_root(full)
       relative = Pathname(full).relative_path_from(Pathname(File.realpath(@git.dir))).to_s
       relative.start_with?("../") && full.length < relative.length ? full : relative
     end
 
+    #: (Array[doc] rows) -> void
     def assign_test_ids(rows)
       rows.sort_by! { |row| [row["file"], row["name"]] }
       width = [2, rows.size.to_s.length].max
       rows.each_with_index { |row, index| row["id"] = format("t%0#{width}d", index + 1) }
     end
 
+    #: (doc method) -> doc
     def slim_method(method)
       method.reject { |key, _| %w[old_source new_source callsites existing_tests entry_point_tests].include?(key) }
     end
 
+    #: (doc const) -> doc
     def slim_constant(const)
       const.reject { |key, _| %w[old_source new_source].include?(key) }
     end
 
+    #: (Array[String?] roots) -> normalizer
     def build_normalizer(roots)
       prefix = RbConfig::CONFIG["prefix"].to_s.sub(%r{/+\z}, "")
       ordered = roots.compact.map { |root| File.expand_path(root).sub(%r{/+\z}, "") }.uniq.sort_by { |item| -item.length }
@@ -927,14 +1032,17 @@ module JitCatch
       end
     end
 
+    #: () -> doc
     def pass_result
       Failure.passed("pass")
     end
 
+    #: () -> doc
     def missing_result
       Failure.result("error", "Missing", "test did not run", [])
     end
 
+    #: () -> doc
     def timeout_result
       Failure.result("timeout", "Timeout", "timeout", [])
     end

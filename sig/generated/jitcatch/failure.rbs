@@ -1,0 +1,57 @@
+# Generated from lib/jitcatch/failure.rb with RBS::Inline
+
+module JitCatch
+  # The result a parser gives each test, and the one it gives a file that
+  # fails before any test reports.
+  module Failure
+    FRAME: Regexp
+
+    # The runner writes this where a worktree root was, so a message still
+    # shows that a path stood there. Frames drop it to match the diff's paths.
+    WORKTREE: String
+
+    # Where the runner copies the tests directory in each worktree.
+    TESTS_COPY: Regexp
+
+    COPY_FRAME: Regexp
+
+    # Ruby names the file it was started on by the path it was given, so the
+    # error report of a file that fails to load starts a line with the copy's
+    # relative path. Elsewhere a relative path may be what a test compared.
+    COPY_PATH: Regexp
+
+    MESSAGE_LINES: Integer
+
+    FRAMES: Integer
+
+    # +cause+ is the error the failing one was raised from, when the
+    # framework printed it: {"error_class", "message"}.
+    # : (String status, String? error_class, untyped message, Array[doc] frames, ?cause: doc?) -> doc
+    def self?.result: (String status, String? error_class, untyped message, Array[doc] frames, ?cause: doc?) -> doc
+
+    # A test reads its own files from the copy, and the rerun line names
+    # +tests+, the tests directory from the repository root, so a message
+    # names it after the root, and a frame names it, where either named the
+    # copy. An absolute +tests+ is outside every worktree, so it stands alone.
+    # +prefix+ is the directory the run ran in, from the worktree root, as
+    # `ruby/`, where the copy sits and from where +tests+ is named.
+    # : (doc? result, String tests, ?String prefix) -> doc?
+    def self?.naming_tests: (doc? result, String tests, ?String prefix) -> doc?
+
+    # : (String status) -> doc
+    def self?.passed: (String status) -> doc
+
+    # : (String file, String | Integer line) -> doc
+    def self?.frame: (String file, String | Integer line) -> doc
+
+    # : (Array[String] lines) -> Array[doc]
+    def self?.frames_in: (Array[String] lines) -> Array[doc]
+
+    # What a process printed when it stopped before its framework reported.
+    # : (String stdout, String stderr) -> doc?
+    def self?.from_streams: (String stdout, String stderr) -> doc?
+
+    # : (untyped message) -> String
+    def self?.first_line: (untyped message) -> String
+  end
+end

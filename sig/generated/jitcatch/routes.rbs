@@ -1,0 +1,180 @@
+# Generated from lib/jitcatch/routes.rb with RBS::Inline
+
+module JitCatch
+  # Reads the routes `config/routes.rb` draws as source, without booting the
+  # app, so a request a test sends to a path or a path helper names the
+  # controller action that serves it. It reads `resources`, `resource`,
+  # `namespace`, `scope`, `member`, `collection`, `root`, and a verb with
+  # `to:`, `=>`, or `controller:` and `action:`, and names helpers and
+  # controllers with the app's inflections. A route that a `draw` file, a
+  # loop, or a concern draws is not read, so its helper stays unknown.
+  class Routes
+    class Route < Data
+      attr_reader verb(): String
+
+      attr_reader path(): String
+
+      attr_reader helper(): String?
+
+      attr_reader action(): String
+
+      def self.new: (String verb, String path, String? helper, String action) -> instance
+                  | (verb: String, path: String, helper: String?, action: String) -> instance
+
+      def self.members: () -> [ :verb, :path, :helper, :action ]
+
+      def members: () -> [ :verb, :path, :helper, :action ]
+    end
+
+    # `resource` is the resource whose block the statements are in: the
+    # path and helper of one member, and its controller. `controller` is
+    # the one `scope controller:` names.
+    class Scope < Data
+      attr_reader path(): String
+
+      attr_reader helper(): String
+
+      attr_reader modules(): Array[String]
+
+      attr_reader resource(): Resource?
+
+      attr_reader controller(): String?
+
+      def self.new: (String path, String helper, Array[String] modules, Resource? resource, String? controller) -> instance
+                  | (path: String, helper: String, modules: Array[String], resource: Resource?, controller: String?) -> instance
+
+      def self.members: () -> [ :path, :helper, :modules, :resource, :controller ]
+
+      def members: () -> [ :path, :helper, :modules, :resource, :controller ]
+    end
+
+    class Resource < Data
+      attr_reader member_path(): String
+
+      attr_reader collection_path(): String
+
+      attr_reader member_helper(): String
+
+      attr_reader collection_helper(): String
+
+      attr_reader controller(): String
+
+      def self.new: (String member_path, String collection_path, String member_helper, String collection_helper, String controller) -> instance
+                  | (member_path: String, collection_path: String, member_helper: String, collection_helper: String, controller: String) -> instance
+
+      def self.members: () -> [ :member_path, :collection_path, :member_helper, :collection_helper, :controller ]
+
+      def members: () -> [ :member_path, :collection_path, :member_helper, :collection_helper, :controller ]
+    end
+
+    # An action `resources` or `resource` draws: its name, its verb, its
+    # path after the collection's, and the kind of helper that names it.
+    type drawn_action = [ Symbol, String, String, Symbol ]
+
+    VERBS: Array[Symbol]
+
+    # The actions `resources` draws, in the order Rails matches them: the
+    # verb, the path after the collection's, and whether the helper names
+    # the collection, a member, or the member with a prefix.
+    PLURAL_ACTIONS: Array[drawn_action]
+
+    SINGULAR_ACTIONS: Array[drawn_action]
+
+    # Blocks whose routes keep the scope around them.
+    PASS_THROUGH: Array[Symbol]
+
+    @routes: Array[Route]
+
+    @inflections: Inflections
+
+    # : (String? source, ?Inflections inflections) -> Routes
+    def self.parse: (String? source, ?Inflections inflections) -> Routes
+
+    # : (Inflections inflections) -> void
+    def initialize: (Inflections inflections) -> void
+
+    # : (String action) -> bool
+    def drawn?: (String action) -> bool
+
+    # : (String name) -> bool
+    def helper?: (String name) -> bool
+
+    # The first route a `*_path` or `*_url` helper builds a URL for, or nil.
+    # : (String name) -> Route?
+    def route_for_helper: (String name) -> Route?
+
+    # The controller actions a request (`POST things_path`, or
+    # `GET /things/7`, `*` for a segment the test computes) reaches: by
+    # helper, each action that helper serves for the verb; by path, the
+    # first route Rails would match, a computed segment preferring a
+    # `:param` to a literal one.
+    # : (String request) -> Array[String]
+    def actions: (String request) -> Array[String]
+
+    # A path the app serves itself, so the request names every segment of
+    # the route, unless it starts with a part the test computes.
+    # : (String sent_path, String route_path, bool computed_matches_literal) -> bool
+    def reaches?: (String sent_path, String route_path, bool computed_matches_literal) -> bool
+
+    # : (Prism::Node? node, Scope scope) -> void
+    def read: (Prism::Node? node, Scope scope) -> void
+
+    private
+
+    # Rails names the helpers after `as:` when it is given, and adds
+    # `_index` to the collection's when the name has one form for both.
+    # : (String name, bool plural, Hash[String, Prism::Node] options, Prism::BlockNode? block, Scope scope) -> void
+    def read_resource: (String name, bool plural, Hash[String, Prism::Node] options, Prism::BlockNode? block, Scope scope) -> void
+
+    # `post :shelve` in a `member` or `collection` block, or with `on:`.
+    # : (Prism::Node? body, Scope scope, String path, String helper, String controller) -> void
+    def read_actions: (Prism::Node? body, Scope scope, String path, String helper, String controller) -> void
+
+    # : (Symbol verb, String path, String helper, String controller, String action, Scope scope) -> Array[Route]
+    def add_action: (Symbol verb, String path, String helper, String controller, String action, Scope scope) -> Array[Route]
+
+    # : (Symbol verb, Array[Prism::Node] args, Hash[String, Prism::Node] options, Scope scope) -> void
+    def read_verb: (Symbol verb, Array[Prism::Node] args, Hash[String, Prism::Node] options, Scope scope) -> void
+
+    # `get "about", to: "pages#about"`, `get "about" => "pages#about"`, and
+    # `get "about", controller: :pages, action: :about`, whose controller
+    # can come from `scope controller:` and whose action defaults to the
+    # path.
+    # : (Array[Prism::Node] args, Hash[String, Prism::Node] options, Scope scope) -> [String?, String?]
+    def path_and_target: (Array[Prism::Node] args, Hash[String, Prism::Node] options, Scope scope) -> [ String?, String? ]
+
+    # The `controller#action` a route serves, or nil.
+    # : (Hash[String, Prism::Node] options, Scope scope, String? path) -> String?
+    def target_of: (Hash[String, Prism::Node] options, Scope scope, String? path) -> String?
+
+    # : (Scope scope, Hash[String, Prism::Node] options) -> Array[String]
+    def modules_of: (Scope scope, Hash[String, Prism::Node] options) -> Array[String]
+
+    # : (String verb, String path, String? helper, String? target, Scope scope) -> void
+    def add: (String verb, String path, String? helper, String? target, Scope scope) -> void
+
+    # Rails camelizes `admin/api_keys` with the app's acronyms.
+    # : (Array[String] modules, String controller, String action) -> String
+    def action: (Array[String] modules, String controller, String action) -> String
+
+    # : (Prism::Node? node) -> Array[Prism::Node]
+    def statements: (Prism::Node? node) -> Array[Prism::Node]
+
+    # The statements of `Rails.application.routes.draw do ... end`.
+    # : (Prism::Node stmt) -> Array[Prism::Node]
+    def draw_body: (Prism::Node stmt) -> Array[Prism::Node]
+
+    # The options a call passes by symbol, by name.
+    # : (Array[Prism::Node] args) -> Hash[String, Prism::Node]
+    def keyword_options: (Array[Prism::Node] args) -> Hash[String, Prism::Node]
+
+    # : (Array[Prism::Node] args) -> Array[String]
+    def symbol_names: (Array[Prism::Node] args) -> Array[String]
+
+    # : (Prism::Node? node) -> Array[String]?
+    def symbol_list: (Prism::Node? node) -> Array[String]?
+
+    # : (Prism::Node? node) -> String?
+    def string_of: (Prism::Node? node) -> String?
+  end
+end

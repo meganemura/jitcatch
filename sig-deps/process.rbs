@@ -1,0 +1,14 @@
+# Steep reads this file to check lib/. The gem does not ship it.
+#
+# The core signatures of rbs 4.2.0 declare spawn on Kernel only, and give
+# Open3.capture2 none of the spawn options. Ruby takes these calls as
+# Kernel#spawn takes them, so these overloads describe the calls lib/ makes.
+
+module Process
+  def self.spawn: (Hash[String, String?] env, *String command, **untyped options) -> Integer
+end
+
+module Open3
+  def self.capture2: (Hash[String, String?] env, *String command, **untyped options) -> [String, Process::Status]
+                   | ...
+end

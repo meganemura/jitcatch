@@ -1,4 +1,5 @@
 # frozen_string_literal: true
+# rbs_inline: enabled
 
 require "prism"
 
@@ -20,7 +21,18 @@ module JitCatch
     # with its enclosing modules. `line` and `last_line` are the lines it is
     # declared on, `state` is added, modified, or removed, and `node` is its
     # declaration (the default value, for a default).
-    Value = Data.define(:kind, :owner, :scope, :name, :file, :line, :last_line, :state, :node) do
+    Value = Data.define(
+      :kind, #: Symbol
+      :owner, #: String?
+      :scope, #: String?
+      :name, #: String
+      :file, #: String
+      :line, #: Integer
+      :last_line, #: Integer
+      :state, #: Symbol?
+      :node #: untyped
+    ) do
+      # steep:ignore:start
       def label
         case kind
         when :constant then "#{scope}::#{name}"
@@ -29,13 +41,41 @@ module JitCatch
         else "#{scope}.#{name}"
         end
       end
+      # steep:ignore:end
     end
-    Row = Data.define(:value, :file, :line, :mechanism, :why, :score, :rank, :test, :group, :also, :edited)
-    Source = Data.define(:path, :tree, :template)
+    Row = Data.define(
+      :value, #: Value
+      :file, #: String
+      :line, #: Integer
+      :mechanism, #: Symbol
+      :why, #: String
+      :score, #: Integer
+      :rank, #: String
+      :test, #: String
+      :group, #: String
+      :also, #: Array[String]
+      :edited #: bool
+    )
+    Source = Data.define(
+      :path, #: String
+      :tree, #: Prism::ProgramNode
+      :template #: bool
+    )
     # How strongly a mechanism points at a test, the reason that ranks it,
     # and the test sentence, with `%<where>s` and the other fields a rule
     # fills in.
-    Mechanism = Data.define(:score, :rank, :test)
+    Mechanism = Data.define(
+      :score, #: Integer
+      :rank, #: String
+      :test #: String
+    )
+
+    # @rbs!
+    #   # Data.define's block defines this; rbs-inline reads only the members,
+    #   # and Steep does not check those blocks.
+    #   class Value
+    #     def label: () -> String
+    #   end
 
     BLIND = [
       "receivers named unlike their model (`x = Branch.first; link_to x`)",
@@ -44,23 +84,23 @@ module JitCatch
       "serializers, jbuilder, and other template languages than ERB",
       "callbacks and validations added by concerns or gems",
       "config read through ENV or a YAML file at boot"
-    ].freeze
+    ].freeze #: Array[String]
 
     # What a repository with no `config/application.rb` can still hide:
     # models, routes, and templates are Rails's, and a gem has none.
     BLIND_OUTSIDE_RAILS = [
       "dispatch names built at run time from data outside the source (a file, an argument)",
       "config read through ENV or a YAML file at load time"
-    ].freeze
+    ].freeze #: Array[String]
 
-    DISPATCH = %i[send public_send __send__ try try! method public_method respond_to? instance_method].freeze
-    SQL_CALLS = %i[where order reorder select joins group having pluck find_by_sql exec_query execute from not count_by_sql].freeze
-    QUERY_CALLS = %i[all find find_by find_by! where first last take count exists? pluck order includes find_each].freeze
-    CALLBACKS = /\A(before|after|around)_(validation|save|create|update|destroy|commit|initialize|find|touch)\z|\Aafter_(create|update|destroy|save)_commit\z/
-    VALIDATIONS = %i[validates validate validates_presence_of validates_uniqueness_of validates_inclusion_of].freeze
-    SQL_TEXT = /\b(SELECT|UPDATE|DELETE|INSERT|WHERE|JOIN)\b/
-    SCHEMA = "db/schema.rb"
-    READ_ROOTS = %w[app/ config/ lib/].freeze
+    DISPATCH = %i[send public_send __send__ try try! method public_method respond_to? instance_method].freeze #: Array[Symbol]
+    SQL_CALLS = %i[where order reorder select joins group having pluck find_by_sql exec_query execute from not count_by_sql].freeze #: Array[Symbol]
+    QUERY_CALLS = %i[all find find_by find_by! where first last take count exists? pluck order includes find_each].freeze #: Array[Symbol]
+    CALLBACKS = /\A(before|after|around)_(validation|save|create|update|destroy|commit|initialize|find|touch)\z|\Aafter_(create|update|destroy|save)_commit\z/ #: Regexp
+    VALIDATIONS = %i[validates validate validates_presence_of validates_uniqueness_of validates_inclusion_of].freeze #: Array[Symbol]
+    SQL_TEXT = /\b(SELECT|UPDATE|DELETE|INSERT|WHERE|JOIN)\b/ #: Regexp
+    SCHEMA = "db/schema.rb" #: String
+    READ_ROOTS = %w[app/ config/ lib/].freeze #: Array[String]
 
     MECHANISMS = {
       route_param_mismatch: Mechanism.new(100, "the URL value and the lookup now disagree",
@@ -98,7 +138,7 @@ module JitCatch
       constant_read: Mechanism.new(45, "code reads it, effect not classified", "Run %<where>s and check the value it derives from %<name>s."),
       template_call: Mechanism.new(55, "a page prints it", "Render %<where>s and check the text it prints from %<name>s."),
       save_site: Mechanism.new(40, "a save runs it", "Save a %<owner>s through %<where>s and check the callbacks and validations it runs.")
-    }.freeze
+    }.freeze #: Hash[Symbol, Mechanism]
 
     # The rules a method's name adds to the ones every method gets.
     SPECIAL = {
@@ -108,7 +148,7 @@ module JitCatch
       "serializable_hash" => %i[json_rows],
       "to_json" => %i[json_rows],
       "to_s" => %i[to_s_rows]
-    }.freeze
+    }.freeze #: Hash[String, Array[Symbol]]
 
     # The rules each kind of changed value has.
     RULES = {
@@ -120,14 +160,31 @@ module JitCatch
       config: ->(r, v) { r.config_rows(v) },
       callback: ->(r, v) { r.save_rows(v) },
       validation: ->(r, v) { r.save_rows(v) }
-    }.freeze
+    }.freeze #: Hash[Symbol, ^(Readers, Value) -> Array[Row]]
+
+    # @rbs @base_sources: Hash[String, String]
+    # @rbs @head_sources: Hash[String, String]
+    # @rbs @lines: Hash[String, { old: Array[Integer], new: Array[Integer] }]
+    # @rbs @routes: Routes
+    # @rbs @inflections: Inflections
+    # @rbs @sources: Array[Source]
+    # @rbs @models: Array[String]
+    # @rbs @names: Hash[String, [String, Symbol]]
+    # @rbs @suffixes: Array[String]
+    # @rbs @references: Array[[Source, untyped, Array[untyped]]]?
+    # @rbs @calls: Array[[Source, Prism::CallNode, Array[untyped]]]?
+    # @rbs @tables: Hash[String, String]?
+    # @rbs @defined: Hash[String, bool]
+    # @rbs @parents: Hash[String?, Array[[untyped, Array[String]]]]
 
     # `head_sources` and `base_sources` map a path to its text on each side;
     # `diff` is every file's hunks, as `DiffParser.parse` gives them.
+    #: (base_sources: Hash[String, String], head_sources: Hash[String, String], diff: Array[doc], routes: Routes, inflections: Inflections) -> [Array[Value], Array[Row]]
     def self.between(base_sources:, head_sources:, diff:, routes:, inflections:)
       new(base_sources, head_sources, diff, routes, inflections).found
     end
 
+    #: (Hash[String, String] base_sources, Hash[String, String] head_sources, Array[doc] diff, Routes routes, Inflections inflections) -> void
     def initialize(base_sources, head_sources, diff, routes, inflections)
       @base_sources = base_sources
       @head_sources = head_sources
@@ -143,7 +200,7 @@ module JitCatch
         Source.new(path: path, tree: result.value, template: template) if result.success?
       end.sort_by(&:path)
       @models = @sources.select { |src| src.path.start_with?("app/models/") }.flat_map do |src|
-        found = []
+        found = [] #: Array[String]
         each_node(src.tree) { |node, _| found << node.constant_path.slice if node.is_a?(Prism::ClassNode) }
         found
       end
@@ -154,6 +211,7 @@ module JitCatch
 
     # The values the change edits and the rows that read them, highest
     # score first.
+    #: () -> [Array[Value], Array[Row]]
     def found
       values = changed_values
       rows = values.flat_map { |value| RULES.fetch(value.kind).call(self, value) }
@@ -171,18 +229,23 @@ module JitCatch
     end
 
     # The lines each file's hunks cover, on the base side and the head side.
+    #: (Array[doc] diff) -> Hash[String, { old: Array[Integer], new: Array[Integer] }]
     def changed_lines(diff)
-      lines = {}
+      lines = {} #: Hash[String, { old: Array[Integer], new: Array[Integer] }]
       diff.each do |file|
         [["old_path", :old, "old"], ["new_path", :new, "new"]].each do |path_key, side, prefix|
           path = file[path_key] or next
-          covered = (lines[path] ||= { old: [], new: [] })[side]
+          covered = (lines[path] ||= {
+            old: [], #: Array[Integer]
+            new: [] #: Array[Integer]
+          })[side]
           file["hunks"].each { |hunk| covered.concat((hunk["#{prefix}_start"]...(hunk["#{prefix}_start"] + hunk["#{prefix}_count"])).to_a) }
         end
       end
       lines
     end
 
+    #: () -> Array[Value]
     def changed_values
       @lines.keys.select { |path| path.end_with?(".rb") }.sort.flat_map do |path|
         lines = @lines[path]
@@ -203,14 +266,15 @@ module JitCatch
     # The values a file declares, with no state yet: methods, scopes,
     # default scopes, constants, callbacks, validations, attributes, schema
     # column defaults, and config assignments.
+    #: (String path, String? source) -> Array[Value]
     def declarations(path, source)
       return [] unless source
 
       result = Prism.parse(source)
       return [] unless result.success?
 
-      values = []
-      table = nil
+      values = [] #: Array[Value]
+      table = nil #: String?
       each_node(result.value) do |node, stack|
         next unless node.is_a?(Prism::DefNode) || node.is_a?(Prism::ConstantWriteNode) || node.is_a?(Prism::CallNode)
 
@@ -252,13 +316,18 @@ module JitCatch
     private :changed_lines, :changed_values, :declarations
 
     # Each rule below takes a Value and returns the Rows that read it.
+    #
+    # The private readers further down take Prism nodes as untyped: they
+    # branch on a node's class, on `respond_to?`, and on what Prism 0.19 and
+    # 1.x name differently, which RBS types cannot follow without a rewrite.
 
     # Actions that turn a param back into the model, whoever built the URL.
+    #: (Value value) -> Array[Row]
     def param_lookup_rows(value)
       # A `to_param` outside any class belongs to no model a param names.
       owner = value.owner or return []
       one = snake(owner)
-      rows = []
+      rows = [] #: Array[Row]
       @sources.select { |src| src.path.start_with?("app/controllers/") }.each do |src|
         each_node(src.tree) do |node, stack|
           next unless params_read?(node)
@@ -279,14 +348,16 @@ module JitCatch
       rows
     end
 
+    #: (Value value) -> Array[Row]
     def route_rows(value)
-      rows = []
+      rows = [] #: Array[Row]
       returns = param_source(value)
       each_call do |src, node, _|
         route = @routes.route_for_helper(node.name.to_s) or next
 
         args = arguments(node)
         segments = route.path.scan(/:(\w+)/).flatten
+        # @type var pairs: Array[[String?, untyped]]
         pairs = args.reject { |arg| arg.is_a?(Prism::KeywordHashNode) }.each_with_index.map { |arg, i| [segments[i], arg] }
         pairs += keywords(args).to_a
         pairs.each do |key, arg|
@@ -294,10 +365,11 @@ module JitCatch
           next unless key && model == value.owner
 
           found = action_def(route.action)
-          lookup = found ? param_lookups(found[1], key) : []
+          lookup = found ? param_lookups(found[1], key) : [] #: Array[[Integer, String, String]]
+          action_file = found&.first&.path
           by_id = lookup.select { |_, by, _| by == "id" || by.end_with?("_id") }
           mismatch = !id_param?(returns) && by_id.any?
-          detail = lookup.map { |line, by, text| "#{route.action} reads params[:#{key}] by #{by} (#{text}, #{found[0].path}:#{line})" }.join("; ")
+          detail = lookup.map { |line, by, text| "#{route.action} reads params[:#{key}] by #{by} (#{text}, #{action_file}:#{line})" }.join("; ")
           why = "#{arg.slice} goes through #{value.owner}#to_param (now `#{returns}`) into params[:#{key}]; " +
             (detail.empty? ? "#{route.action} does not read it in its own body" : detail)
           rows << row(value, src, node, mismatch ? :route_param_mismatch : :route_param, why, helper: node.slice[0, 60], action: route.action,
@@ -307,15 +379,16 @@ module JitCatch
       rows
     end
 
+    #: (Value value) -> Array[Row]
     def polymorphic_rows(value)
-      rows = []
+      rows = [] #: Array[Row]
       each_call do |src, node, _|
         args = arguments(node)
         targets = case node.name
         when :link_to, :button_to then args[1..] || []
         when :redirect_to, :url_for, :polymorphic_path, :polymorphic_url, :render, :form_for then args.first(1)
         when :form_with then [keywords(args)["model"]].compact
-        else []
+        else [] #: Array[untyped]
         end
         json = keywords(args)["json"] if node.name == :render
         targets += [json] if json
@@ -335,8 +408,9 @@ module JitCatch
       rows
     end
 
+    #: (Value value) -> Array[Row]
     def to_s_rows(value)
-      rows = []
+      rows = [] #: Array[Row]
       @sources.each do |src|
         each_node(src.tree) do |node, _|
           arg = case node
@@ -359,6 +433,7 @@ module JitCatch
       rows
     end
 
+    #: (Value value) -> Array[Row]
     def json_rows(value)
       rows = polymorphic_rows(value).select { |found| found.mechanism == :json_render }
       each_call do |src, node, _|
@@ -372,10 +447,11 @@ module JitCatch
 
     # A name a dispatch can reach: a literal, or an interpolation whose fixed
     # parts match it.
+    #: (Value value) -> Array[Row]
     def dispatch_rows(value)
       name = value.name
-      rows = []
-      dynamic = []
+      rows = [] #: Array[Row]
+      dynamic = [] #: Array[[Source, Prism::CallNode]]
       each_call do |src, node, stack|
         args = arguments(node)
         first = args.first
@@ -397,8 +473,9 @@ module JitCatch
       rows + computed_dispatch_rows(value, dynamic)
     end
 
+    #: (Value value) -> Array[Row]
     def template_rows(value)
-      rows = []
+      rows = [] #: Array[Row]
       @sources.select(&:template).each do |src|
         each_node(src.tree) do |node, _|
           next unless node.is_a?(Prism::CallNode) && node.name.to_s == value.name && node.receiver
@@ -412,14 +489,15 @@ module JitCatch
       rows
     end
 
+    #: (Value value) -> Array[Row]
     def attribute_rows(value)
       attr = value.name
-      owner = value.owner
+      owner = value.owner #: String
       model_src = @sources.find { |src| src.path == "app/models/#{underscore_path(owner)}.rb" }
       return [] unless model_src
 
-      rows = []
-      defs = {}
+      rows = [] #: Array[Row]
+      defs = {} #: Hash[String, Prism::DefNode]
       each_node(model_src.tree) { |node, _| defs[node.name.to_s] = node if node.is_a?(Prism::DefNode) }
       reads = ->(node) { node && node.slice.match?(/\b#{Regexp.escape(attr)}\b/) }
       each_node(model_src.tree) do |node, stack|
@@ -450,12 +528,13 @@ module JitCatch
       rows + default_taker_rows(value, owner, attr)
     end
 
+    #: (Value value) -> Array[Row]
     def constant_rows(value)
-      rows = []
+      rows = [] #: Array[Row]
       name = value.name
       full = [value.owner, name].compact.join("::")
-      @references ||= @sources.flat_map do |src|
-        found = []
+      references = @references ||= @sources.flat_map do |src|
+        found = [] #: Array[[Source, untyped, Array[untyped]]]
         each_node(src.tree) do |node, stack|
           if node.is_a?(Prism::ConstantPathNode) || (node.is_a?(Prism::ConstantReadNode) && !stack.last.is_a?(Prism::ConstantPathNode))
             found << [src, node, stack.dup]
@@ -463,7 +542,7 @@ module JitCatch
         end
         found
       end
-      @references.each do |src, node, stack|
+      references.each do |src, node, stack|
         next unless (node.is_a?(Prism::ConstantReadNode) ? node.name.to_s : path_name(node)) == name
         next if src.path == value.file && stack.any?(Prism::ConstantWriteNode)
 
@@ -476,9 +555,10 @@ module JitCatch
       rows
     end
 
+    #: (Value value) -> Array[Row]
     def config_rows(value)
       path = value.name
-      rows = []
+      rows = [] #: Array[Row]
       each_call do |src, node, _|
         text = node.slice
         next if src.path == value.file || node.receiver.nil?
@@ -489,8 +569,9 @@ module JitCatch
       rows
     end
 
+    #: (Value value) -> Array[Row]
     def scope_rows(value)
-      rows = []
+      rows = [] #: Array[Row]
       each_call do |src, node, _|
         next unless node.name.to_s == value.name && node.receiver
 
@@ -499,8 +580,9 @@ module JitCatch
       rows + dispatch_rows(value)
     end
 
+    #: (Value value) -> Array[Row]
     def default_scope_rows(value)
-      rows = []
+      rows = [] #: Array[Row]
       owner = value.owner
       # The receiver a chain starts from: `Loan` in `Loan.overdue.order(:x)`.
       root = lambda do |node|
@@ -540,8 +622,9 @@ module JitCatch
       rows
     end
 
+    #: (Value value) -> Array[Row]
     def save_rows(value)
-      rows = []
+      rows = [] #: Array[Row]
       each_call do |src, node, _|
         next unless %i[create create! save save! update update!].include?(node.name)
 
@@ -555,6 +638,7 @@ module JitCatch
 
     private
 
+    #: (Value value, Source src, untyped node, Symbol mechanism, String why, ?group: String?, **untyped fields) -> Row
     def row(value, src, node, mechanism, why, group: nil, **fields)
       kind = MECHANISMS.fetch(mechanism)
       where = "#{src.path}:#{node.location.start_line}"
@@ -565,6 +649,7 @@ module JitCatch
     end
 
     # A dispatch on another known model cannot reach this owner.
+    #: (Value value, Prism::CallNode node, Array[untyped] stack) -> boolish
     def dispatch_on_other_model?(value, node, stack)
       receiver = node.receiver
       if receiver.nil?
@@ -580,9 +665,10 @@ module JitCatch
     # dispatches by a name it computes. Only a name kept in a list
     # (`%w[late lost]`, a constant's array or hash) counts as one a computed
     # dispatch iterates; a lone "late" passed as a column value is data.
+    #: (Value value, Array[[Source, Prism::CallNode]] dynamic) -> Array[Row]
     def computed_dispatch_rows(value, dynamic)
       name = value.name
-      sources = []
+      sources = [] #: Array[[Source, untyped]]
       unless dynamic.empty?
         @sources.each do |src|
           next if src.path == SCHEMA || src.path.start_with?("config/")
@@ -598,7 +684,7 @@ module JitCatch
       on_owner = dynamic.select do |_, node|
         node.receiver && (node.receiver.slice == value.owner || model_of(node.receiver)&.first == value.owner)
       end
-      rows = []
+      rows = [] #: Array[Row]
       unless sources.empty?
         listed = sources.map { |src, node| "#{src.path}:#{node.location.start_line}" }.join(", ")
         on_owner.each do |src, node|
@@ -620,9 +706,10 @@ module JitCatch
 
     # Where a record is made without naming the attribute, the default is
     # the value it gets.
+    #: (Value value, String owner, String attr) -> Array[Row]
     def default_taker_rows(value, owner, attr)
       many = plural(snake(owner))
-      rows = []
+      rows = [] #: Array[Row]
       each_call do |src, node, _|
         next unless %i[create create! new find_or_initialize_by find_or_create_by find_or_create_by! build].include?(node.name)
 
@@ -636,6 +723,7 @@ module JitCatch
       rows
     end
 
+    #: (Value value, Source src, untyped node, Array[untyped] stack) -> Row
     def constant_row(value, src, node, stack)
       name = value.name
       sql = stack.reverse.find { |up| up.is_a?(Prism::CallNode) && SQL_CALLS.include?(up.name) && query?(up) }
@@ -657,6 +745,7 @@ module JitCatch
 
     # `Order.where`, `orders.where`, a bare `where` in a scope: a query.
     # `f.select` on a form builder is not.
+    #: (untyped call) -> boolish
     def query?(call)
       root = call
       root = root.receiver while root.is_a?(Prism::CallNode) && root.receiver
@@ -669,6 +758,7 @@ module JitCatch
     # come through a gem or a concern the index cannot see. A read beside the
     # edit, in a file the change touches, was in front of its author; a query
     # there still changes which rows come back, so it keeps its score.
+    #: (Row row, untyped node, String? target) -> Row
     def ranked_constant(row, node, target)
       in_diff = @lines.key?(row.file)
       if target.nil?
@@ -684,6 +774,7 @@ module JitCatch
 
     # What a `to_param` body returns, when it is one attribute: `code`,
     # `"#{id}-#{name}"`, or `id`.
+    #: (Value value) -> String
     def param_source(value)
       body = value.node.is_a?(Prism::DefNode) && value.node.body
       return "the default id" if value.state == :removed || !body
@@ -691,12 +782,14 @@ module JitCatch
       (body.is_a?(Prism::StatementsNode) ? body.body.last : body).slice
     end
 
+    #: (String text) -> bool
     def id_param?(text) = text.match?(/\A(id|id\.to_s|super|the default id)\z/)
 
     # How an action reads one param: `find(params[:id])`, `find_by(id: ...)`,
     # `where(branch_id: ...)` compare it to an id; `find_by(code: ...)` does not.
+    #: (Array[untyped] action_nodes, String key) -> Array[[Integer, String, String]]
     def param_lookups(action_nodes, key)
-      found = []
+      found = [] #: Array[[Integer, String, String]]
       action_nodes.each do |action_node|
         each_node(action_node) do |node, stack|
           next unless params_read?(node) && literal_name(arguments(node).first) == key
@@ -714,6 +807,7 @@ module JitCatch
       found
     end
 
+    #: (untyped node) -> boolish
     def params_read?(node)
       node.is_a?(Prism::CallNode) && node.name == :[] && node.receiver&.slice&.end_with?("params")
     end
@@ -721,12 +815,13 @@ module JitCatch
     # The controller file of a route's action, and the nodes that run for
     # it: the action's def and its before_action filters. A filter's
     # `only:`/`except:` is not read, so every filter counts.
+    #: (String action) -> [Source, Array[untyped]]?
     def action_def(action)
-      controller, name = action.split("#")
+      controller, name = action.split("#") #: [String, String]
       src = @sources.find { |source| source.path == "app/controllers/#{underscore_path(controller)}.rb" } or return
 
-      defs = {}
-      filters = []
+      defs = {} #: Hash[String, untyped]
+      filters = [] #: Array[String]
       each_node(src.tree) do |node, stack|
         defs[node.name.to_s] ||= node if node.is_a?(Prism::DefNode)
         next unless node.is_a?(Prism::CallNode) && node.name == :before_action && node.receiver.nil? && stack.none?(Prism::DefNode)
@@ -740,8 +835,9 @@ module JitCatch
 
     # Variable and method names that hold a model, by name: `branch`,
     # `@branch`, `home_branch` (from `class_name: "Branch"`), and plurals.
+    #: () -> Hash[String, [String, Symbol]]
     def model_names
-      names = {}
+      names = {} #: Hash[String, [String, Symbol]]
       @models.each do |model|
         one = snake(model)
         names[one] = [model, :one]
@@ -763,6 +859,7 @@ module JitCatch
 
     # The model an expression holds, and whether one or many, judged by its
     # last name only.
+    #: (untyped node) -> [String, Symbol]?
     def model_of(node)
       name = case node
       when Prism::InstanceVariableReadNode then node.name.to_s.delete_prefix("@")
@@ -776,17 +873,21 @@ module JitCatch
       suffix && @names[suffix]
     end
 
+    #: (String word) -> String
     def plural(word) = @inflections.pluralize(word)
 
     # The model a table holds, or the table when no model in app/models does.
+    #: (String table) -> String
     def model_of_table(table)
-      @tables ||= @models.to_h { |model| [plural(snake(model)), model] }
-      @tables.fetch(table, table)
+      tables = @tables ||= @models.to_h { |model| [plural(snake(model)), model] }
+      tables.fetch(table, table)
     end
 
     # `Admin::OrderItem` is an `order_item`, the name its variables take.
+    #: (String constant) -> String
     def snake(constant) = @inflections.underscore(constant.split("::").last)
 
+    #: (String constant) -> String
     def underscore_path(constant)
       constant.split("::").map { |part| @inflections.underscore(part) }.join("/")
     end
@@ -794,6 +895,7 @@ module JitCatch
     # Every class, module, and constant a file defines, by full name, and
     # each class's superclass and `include`s as nodes, with the scopes they
     # are written in.
+    #: () -> void
     def constant_table
       @defined = {}
       @parents = Hash.new { |hash, key| hash[key] = [] }
@@ -825,6 +927,7 @@ module JitCatch
     # ancestors, then the top level. `also` counts as defined (a value the
     # change removed). nil when nothing visible defines it. `seen` stops a
     # class whose `include` names itself through its ancestors from looping.
+    #: (untyped node, Array[String] crefs, ?String? also, ?Hash[String?, bool] seen) -> String?
     def resolve(node, crefs, also = nil, seen = {})
       known = ->(full) { @defined[full] || full == also }
       case node
@@ -841,6 +944,7 @@ module JitCatch
       end
     end
 
+    #: (String? full, ?Hash[String?, bool] seen) -> Array[String]
     def ancestors(full, seen = {})
       return [] if seen[full]
 
@@ -853,15 +957,17 @@ module JitCatch
 
     # Every call at head with the nodes around it. Each rule walks them for
     # each value, so they are collected once.
+    #: () { (Source, Prism::CallNode, Array[untyped]) -> void } -> void
     def each_call(&block)
-      @calls ||= @sources.flat_map do |src|
-        found = []
+      calls = @calls ||= @sources.flat_map do |src|
+        found = [] #: Array[[Source, Prism::CallNode, Array[untyped]]]
         each_node(src.tree) { |node, stack| found << [src, node, stack.dup] if node.is_a?(Prism::CallNode) }
         found
       end
-      @calls.each { |src, node, stack| block.call(src, node, stack) }
+      calls.each { |src, node, stack| block.call(src, node, stack) }
     end
 
+    #: (untyped node, ?Array[untyped] stack) { (untyped, Array[untyped]) -> void } -> void
     def each_node(node, stack = [], &block)
       return unless node
 
@@ -871,19 +977,23 @@ module JitCatch
       stack.pop
     end
 
+    #: (untyped node) -> Array[untyped]
     def arguments(node)
       node.arguments&.arguments || []
     end
 
+    #: (untyped node) -> String?
     def literal_name(node)
       node.unescaped if node.is_a?(Prism::SymbolNode) || node.is_a?(Prism::StringNode)
     end
 
+    #: (Array[untyped] args) -> Hash[String, untyped]
     def keywords(args)
       hash = args.find { |arg| arg.is_a?(Prism::KeywordHashNode) || arg.is_a?(Prism::HashNode) }
       return {} unless hash
 
-      hash.elements.each_with_object({}) do |assoc, acc|
+      found = {} #: Hash[String, untyped]
+      hash.elements.each_with_object(found) do |assoc, acc|
         next unless assoc.is_a?(Prism::AssocNode)
 
         key = literal_name(assoc.key)
@@ -892,16 +1002,19 @@ module JitCatch
     end
 
     # Prism 0.19, which Ruby 3.3 ships, names a path's last part through `child`.
+    #: (untyped node) -> String
     def path_name(node)
       (node.respond_to?(:name) ? node.name : node.child.name).to_s
     end
 
+    #: (Array[untyped] stack) -> String?
     def enclosing_class(stack)
       stack.select { |node| node.is_a?(Prism::ClassNode) || node.is_a?(Prism::ModuleNode) }.map { |klass| klass.constant_path.slice }.last
     end
 
     # The lexical scopes around a node, outermost first, as full names:
     # `module Admin; class OrdersController` gives Admin, Admin::OrdersController.
+    #: (Array[untyped] stack) -> Array[String]
     def nesting(stack)
       stack.select { |node| node.is_a?(Prism::ClassNode) || node.is_a?(Prism::ModuleNode) }.each_with_object([]) do |klass, crefs|
         path = klass.constant_path.slice
@@ -909,6 +1022,7 @@ module JitCatch
       end
     end
 
+    #: (Array[untyped] stack) -> Symbol?
     def enclosing_def(stack)
       stack.grep(Prism::DefNode).last&.name
     end

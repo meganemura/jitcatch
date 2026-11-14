@@ -1,0 +1,438 @@
+# Generated from lib/jitcatch/changes.rb with RBS::Inline
+
+module JitCatch
+  # Builds the deterministic change document shared by `context` and `run`.
+  #
+  # An entry of the change (`item`) and an index of one side (`idx`) are
+  # hashes, typed as `doc`. A node is a SourceIndex::Method or a
+  # SourceIndex::Constant, and the helpers that take either take it untyped.
+  class Changes
+    type node = SourceIndex::Method | SourceIndex::Constant
+
+    type edge = Hash[String, untyped]
+
+    type lookups = [ Hash[[ String, String ], Array[SourceIndex::Method]], Hash[String, Array[SourceIndex::Method]], Hash[String, Array[SourceIndex::Method]], Hash[String, String] ]
+
+    MAX_BLOB: Integer
+
+    CALLSITE_CAP: Integer
+
+    REACHABLE_CAP: Integer
+
+    TEST_CAP: Integer
+
+    ENTRY_CAP: Integer
+
+    UPSTREAM_DEPTH: Integer
+
+    RECORD_BUILDERS: Array[String]
+
+    # A value the source does not type, whether or not its name names a model.
+    UNTYPED_RECEIVERS: Array[String]
+
+    # The classes and modules head defines, after `build`.
+    attr_reader head_constants: Array[String]
+
+    @callers_index: Hash[Array[edge], Hash[String, Array[String]]]?
+
+    @test_names: Hash[String, Array[String]]
+
+    @parsed: Hash[[ String, String ], SourceIndex]
+
+    @texts: Hash[String, String]
+
+    @coverage: Array[doc]?
+
+    @head_ref: String
+
+    @base_ref: String
+
+    @databases: Array[String]
+
+    @setup: String?
+
+    @readers: bool
+
+    @git: GitRepo
+
+    # `readers: true` adds the code that reads each changed value without
+    # calling it by name, which only `context` prints.
+    # : (GitRepo | String repo, String base_ref, String head_ref, ?coverage: String?, ?setup: String?, ?databases: Array[String], ?readers: bool) -> doc
+    def self.between: (GitRepo | String repo, String base_ref, String head_ref, ?coverage: String?, ?setup: String?, ?databases: Array[String], ?readers: bool) -> doc
+
+    # `setup` is the command `run --setup` runs in each checkout, and
+    # `databases` the numbered test databases, base and head in turn.
+    # : (GitRepo | String repo, String base_ref, String head_ref, ?coverage: String?, ?setup: String?, ?databases: Array[String], ?readers: bool) -> void
+    def initialize: (GitRepo | String repo, String base_ref, String head_ref, ?coverage: String?, ?setup: String?, ?databases: Array[String], ?readers: bool) -> void
+
+    # : () -> doc
+    def build: () -> doc
+
+    private
+
+    # : (String base, String head) -> Array[String]
+    def warnings: (String base, String head) -> Array[String]
+
+    # A Grape path built from code the source does not settle has no
+    # verb and path a request could be matched to.
+    # : (Array[doc] methods) -> Array[String]
+    def computed_path_warnings: (Array[doc] methods) -> Array[String]
+
+    # Rails keeps a schema in db/schema.rb or db/structure.sql, and a
+    # second database's in db/<name>_schema.rb, beside db/<name>_migrate/.
+    SCHEMA_FILE: Regexp
+
+    TEST_HELPERS: Array[String]
+
+    # A test database made once from one schema holds neither side's after
+    # a change to it, so a row can fail on a missing column and read as a
+    # regression. A helper that calls maintain_test_schema! loads the
+    # schema of the checkout it boots in; without one, only --setup can.
+    # The app is the directory jitcatch runs in, so its schema and helpers
+    # sit under the repository path of that directory.
+    # : (String head, Array[doc] files) -> Array[String]
+    def schema_warnings: (String head, Array[doc] files) -> Array[String]
+
+    # Each spec line in a lockfile is four spaces, a name, and the version
+    # in parentheses. A gem locked for several platforms has several lines.
+    # The lockfile is the one beside the Gemfile of the directory jitcatch
+    # runs in.
+    # : (String base, String head) -> Array[doc]
+    def dependencies: (String base, String head) -> Array[doc]
+
+    # : (String sha) -> Hash[String, String]
+    def locked_versions: (String sha) -> Hash[String, String]
+
+    # The head lines each Ruby file's hunks wrote, as inclusive ranges, so a
+    # call on an edited line counts as changed code even outside any method.
+    # : (Hash[String, doc] hunks) -> Hash[String, Array[[Integer, Integer]]]
+    def changed_lines: (Hash[String, doc] hunks) -> Hash[String, Array[[ Integer, Integer ]]]
+
+    # : (Array[doc] files) -> Hash[String, doc]
+    def index_hunks: (Array[doc] files) -> Hash[String, doc]
+
+    # : (String sha, String label) -> doc
+    def index_ref: (String sha, String label) -> doc
+
+    # : (doc base_idx, doc head_idx, Hash[String, doc] hunks) -> Array[doc]
+    def changed_methods: (doc base_idx, doc head_idx, Hash[String, doc] hunks) -> Array[doc]
+
+    # A method that leaves one file while head defines the same name in
+    # another is moved, not removed: it still answers a call. The other side
+    # is read from every file, test files too, since a test double can move
+    # into test/, where no change of its own is listed. A file the diff
+    # touched is the likelier destination than an older copy elsewhere.
+    # The block names the change a move is, from the old and the new node.
+    # : (Array[doc] found, Array[untyped] head_nodes, Hash[String, doc] hunks) { (untyped, untyped) -> String } -> Array[doc]
+    def mark_moves: (Array[doc] found, Array[untyped] head_nodes, Hash[String, doc] hunks) { (untyped, untyped) -> String } -> Array[doc]
+
+    # : (doc base_idx, doc head_idx, Hash[String, doc] hunks, Array[doc] _methods) -> Array[doc]
+    def changed_constants: (doc base_idx, doc head_idx, Hash[String, doc] hunks, Array[doc] _methods) -> Array[doc]
+
+    # : (SourceIndex::Constant const) -> String
+    def value_of: (SourceIndex::Constant const) -> String
+
+    # A class or module counts only when the other side defines it nowhere,
+    # so a file that reopens an existing namespace adds nothing. Its body
+    # changes show up as the methods and constants inside it.
+    # : (doc base_idx, doc head_idx, Hash[String, doc] hunks) -> Array[doc]
+    def changed_namespaces: (doc base_idx, doc head_idx, Hash[String, doc] hunks) -> Array[doc]
+
+    # : (Array[doc] methods, Array[doc] constants, doc base_idx, doc head_idx) -> void
+    def attach_affected: (Array[doc] methods, Array[doc] constants, doc base_idx, doc head_idx) -> void
+
+    # : (Array[doc] methods, Array[doc] constants) -> void
+    def link_constants: (Array[doc] methods, Array[doc] constants) -> void
+
+    # : (Array[doc] methods, Array[edge] head_edges, Array[edge] base_edges) -> void
+    def decorate_calls: (Array[doc] methods, Array[edge] head_edges, Array[edge] base_edges) -> void
+
+    # An edit whose every added line calls a method the diff added, and that
+    # removes no more lines than it adds, only routes a value from that
+    # method, as `net - volume` becoming `net - volume - coupon` does. The
+    # new value then comes from the added method, not from this one.
+    # : (Array[doc] methods, Array[edge] head_edges, Hash[String, doc] hunks) -> void
+    def mark_forwarders: (Array[doc] methods, Array[edge] head_edges, Hash[String, doc] hunks) -> void
+
+    # An edit that changes only the arguments of a `raise` changes what the
+    # method raises, not whether it does. A test whose expected error head
+    # stopped raising then points at the code that stopped calling it, so
+    # the assessor ranks such a method after the others.
+    # : (Array[doc] methods) -> void
+    def mark_raise_edits: (Array[doc] methods) -> void
+
+    # The source with each receiverless `raise` or `fail` call written as
+    # the bare word, so two sources that differ only there compare equal.
+    # : (String source) -> String
+    def without_raises: (String source) -> String
+
+    # : (SourceIndex::Method node, Array[String] added, Array[edge] head_edges, Hash[String, doc] hunks) -> bool
+    def forwards?: (SourceIndex::Method node, Array[String] added, Array[edge] head_edges, Hash[String, doc] hunks) -> bool
+
+    # A method that sends the name of a changed method, or of one that
+    # reaches it, to a receiver the source does not name, as in
+    # `EMITTERS.fetch(format).render`, may reach it, but no edge says so.
+    # The router calls a controller action, and no code in the app sends
+    # its name, so `cipher.update` does not reach `ThingsController#update`.
+    # : (Array[doc] methods, doc head_idx, doc base_idx) -> void
+    def decorate_dynamic_callers: (Array[doc] methods, doc head_idx, doc base_idx) -> void
+
+    # : (String name) -> bool
+    def controller_action?: (String name) -> bool
+
+    # : (Array[doc] methods, doc base_idx, doc head_idx, Hash[String, Array[String]] builders) -> void
+    def decorate_tests: (Array[doc] methods, doc base_idx, doc head_idx, Hash[String, Array[String]] builders) -> void
+
+    # A file counts when it names the entry point's class as a value (not as a
+    # namespace, so `Minitest::Test` does not match a `Minitest` class) and
+    # calls a method of the entry point's name. A bare-name grep alone matched
+    # unrelated tests for common names such as build, run, and parse.
+    # : (Hash[String, String] test_sources, Array[String] entry_points) -> Array[doc]
+    def entry_point_hits: (Hash[String, String] test_sources, Array[String] entry_points) -> Array[doc]
+
+    # : (doc method) -> Array[doc]
+    def coverage_hits: (doc method) -> Array[doc]
+
+    # A test file that sends the endpoint's verb to a path ending in its
+    # segments, as a request spec does.
+    # : (Hash[String, String] test_sources, String bare) -> Array[doc]
+    def request_hits: (Hash[String, String] test_sources, String bare) -> Array[doc]
+
+    # `post "/v1/things/#{thing.id}/refresh"` for `POST /things/:id/refresh`:
+    # any segments before the endpoint's, a `:param` matching any one. A
+    # path that starts with an interpolation, as `"#{api_root}/things/..."`,
+    # computes its mount point, so it may name only the endpoint's last
+    # segments, at least two of them.
+    # : (String bare) -> Regexp
+    def request_pattern: (String bare) -> Regexp
+
+    # : (doc idx) -> Routes
+    def app_routes: (doc idx) -> Routes
+
+    # : (doc idx) -> Inflections
+    def app_inflections: (doc idx) -> Inflections
+
+    # Each value the change edits, with the code at head that reads it some
+    # way other than a call by name. A row at one of a method's call sites,
+    # or a plain read inside a method a constant already lists as reading
+    # it, says nothing those lists do not, so it is left out.
+    # : (doc base_idx, doc head_idx, Array[doc] diff, Array[doc] methods, Array[doc] constants, String base, String head) -> doc
+    def implicit_readers: (doc base_idx, doc head_idx, Array[doc] diff, Array[doc] methods, Array[doc] constants, String base, String head) -> doc
+
+    # Models, routes, and templates live in app/ and config/routes.rb, so a
+    # history with neither, as a gem's, hides none of what Rails would.
+    # : (doc idx) -> bool
+    def rails_shaped?: (doc idx) -> bool
+
+    # The method or constant entry a value is, by its name and where it is
+    # declared. A setting, a callback, or a default has none.
+    # : (Readers::Value value, Array[doc] methods, Array[doc] constants) -> doc?
+    def listed_item: (Readers::Value value, Array[doc] methods, Array[doc] constants) -> doc?
+
+    # : (Readers::Row row, doc? item, Array[doc] methods) -> bool
+    def shown_elsewhere?: (Readers::Row row, doc? item, Array[doc] methods) -> bool
+
+    # The files whose requests the routes send to the action, as `run`
+    # reads them, and the controller tests that name the controller and
+    # call the action by its symbol (`post :create`). A bare-name grep
+    # matched `create(:book)` and missed `post books_path`.
+    # : (Hash[String, String] test_sources, String action, Hash[String, Hash[String, Array[String]]] requests) -> Array[doc]
+    def route_hits: (Hash[String, String] test_sources, String action, Hash[String, Hash[String, Array[String]]] requests) -> Array[doc]
+
+    # Each test file's requests, with the controller actions they reach.
+    # : (Hash[String, String] test_sources, Routes routes, doc base_idx, doc head_idx) -> Hash[String, Hash[String, Array[String]]]
+    def test_requests: (Hash[String, String] test_sources, Routes routes, doc base_idx, doc head_idx) -> Hash[String, Hash[String, Array[String]]]
+
+    # `owner`, when given, is a pattern the file must match too.
+    # : (Hash[String, String] test_sources, String? bare, ?Regexp? owner) -> Array[doc]
+    def grep_hits: (Hash[String, String] test_sources, String? bare, ?Regexp? owner) -> Array[doc]
+
+    # A reader or a member (`attr_reader :file`, `Data.define(:code, :line)`)
+    # is most often a common word, which a grep finds in files that never
+    # touch the class. Such a hit counts only in a file that also names the
+    # class or the namespace around it, as `Hit` or `Targets` for
+    # `Targets::Hit#code`.
+    MEMBER_MACRO: Regexp
+
+    # : (SourceIndex::Method node) -> Regexp?
+    def owner_pattern: (SourceIndex::Method node) -> Regexp?
+
+    # A factory that builds a class no file defines may need an inflection
+    # the app configures (`ApiKey` against `APIKey`), so it is not followed.
+    # One that builds a Ruby value, as `class: Hash` does for the shape of an
+    # API response, builds no class of the app, so nothing is skipped. The
+    # list is fixed so that every Ruby prints the same document.
+    RUBY_VALUE_CLASSES: Array[String]
+
+    # : (doc idx) -> Array[Factories::Factory]
+    def factories_of: (doc idx) -> Array[Factories::Factory]
+
+    # The calls other than `new` that run a changed class's `initialize`:
+    # `create`, `create!`, and `build` on an ActiveRecord model, and each
+    # factory that builds the class.
+    # : (Array[doc] methods, doc idx, Array[Factories::Factory] factories) -> Hash[String, Array[String]]
+    def builders_for: (Array[doc] methods, doc idx, Array[Factories::Factory] factories) -> Hash[String, Array[String]]
+
+    # A factory whose association builds the class runs its constructor and
+    # its save callbacks too: `create(:loan)` saves the Borrower that
+    # `borrower` builds, and `build(:loan)` builds it unsaved. A trait's
+    # associations build only when the test names the trait.
+    # : (String qualifier, Array[Factories::Factory] factories) -> Array[String]
+    def factory_mentions: (String qualifier, Array[Factories::Factory] factories) -> Array[String]
+
+    # The calls that run a changed method because a model's class body
+    # names it, or names a method that reaches it, in a callback or a
+    # validation (`after_save :count_save`). A factory of the model counts
+    # where `.create` does: `create(:loan)` saves a new record. `build(:loan)`
+    # counts there too, but a test hit needs the test to save or validate
+    # the record as well (`call_hits`).
+    # : (Array[doc] methods, doc base_idx, doc head_idx, Array[Factories::Factory] factories, Array[edge] head_edges, Array[edge] base_edges) -> void
+    def decorate_callbacks: (Array[doc] methods, doc base_idx, doc head_idx, Array[Factories::Factory] factories, Array[edge] head_edges, Array[edge] base_edges) -> void
+
+    # Each call outside the tests as the repository's code writes it, with
+    # the method that makes it: `Loan.create!` in `LoanDesk.open`, or
+    # `Loan#update!` for `update!` inside a method of `Loan`. A written
+    # `Loan` names `Shop::Loan` as it does in a test. A local the source
+    # does not type, such as a parameter, is read as the model Rails names
+    # it after: `loan.save!` as `Loan#save!`. Only a save reads it, since a
+    # record call has no meaning on another class.
+    # : (doc idx) -> Array[[String, String]]
+    def app_calls: (doc idx) -> Array[[ String, String ]]
+
+    # : (SourceIndex::Call call) -> String?
+    def written_call: (SourceIndex::Call call) -> String?
+
+    # A callback line counts in a class whose superclass chain reaches
+    # ActiveRecord::Base. One in a Concern runs on each class that includes
+    # it, which the source does not list, so it is not followed.
+    # : (doc idx) -> Hash[String, Array[SourceIndex::Callback]]
+    def record_callbacks: (doc idx) -> Hash[String, Array[SourceIndex::Callback]]
+
+    # : (SourceIndex::Callback callback, Array[Factories::Factory] factories) -> Array[String]
+    def callback_calls: (SourceIndex::Callback callback, Array[Factories::Factory] factories) -> Array[String]
+
+    # : (untyped node) -> bool
+    def constructor?: (untyped node) -> bool
+
+    # A test file that makes one of the calls, as its parsed source writes
+    # it. `Loan.new` also names `Shop::Loan` from inside `Shop`.
+    # : (Array[String] paths, Array[String] calls, String via, doc base_idx, doc head_idx) -> Array[doc]
+    def call_hits: (Array[String] paths, Array[String] calls, String via, doc base_idx, doc head_idx) -> Array[doc]
+
+    # : (Array[doc] builds, Array[doc] greps) -> Array[doc]
+    def merge_hits: (Array[doc] builds, Array[doc] greps) -> Array[doc]
+
+    # A method name can end in `!` or `?`, where `\b` cannot follow, and
+    # `save` is not a call of `save!`.
+    # : (String bare) -> String
+    def called: (String bare) -> String
+
+    # : (doc base_idx, doc head_idx) -> Hash[String, String]
+    def test_sources_for: (doc base_idx, doc head_idx) -> Hash[String, String]
+
+    # A project kept as a fixture under test/ or spec/ (a small Rails app in
+    # `test/fixture/depot`) holds code of its own in app/, lib/, config/,
+    # and db/. That code tests nothing, so it is no test a `tests:` line
+    # can name; the fixture's own test and spec files still are.
+    FIXTURE_DIR: Regexp
+
+    FIXTURE_CODE: Array[String]
+
+    # : (String path) -> bool
+    def fixture_code?: (String path) -> bool
+
+    # : (String path) -> bool
+    def test_file?: (String path) -> bool
+
+    # : (Array[doc] methods, doc head_idx, doc base_idx) -> Array[doc]
+    def entrypoints_for: (Array[doc] methods, doc head_idx, doc base_idx) -> Array[doc]
+
+    # : (doc idx, String qualifier) -> Array[SourceIndex::Method]
+    def public_methods_of: (doc idx, String qualifier) -> Array[SourceIndex::Method]
+
+    # : (doc idx) -> Array[edge]
+    def edges_for: (doc idx) -> Array[edge]
+
+    # A template calls a bare name on its view, which holds the app's helper
+    # modules, so only a helper method answers it.
+    # : (SourceIndex::Call call, Hash[String, Array[SourceIndex::Method]] by_bare) -> SourceIndex::Method?
+    def helper_target: (SourceIndex::Call call, Hash[String, Array[SourceIndex::Method]] by_bare) -> SourceIndex::Method?
+
+    # : (doc idx) -> lookups
+    def lookups: (doc idx) -> lookups
+
+    # A call on a receiver the source does not name gets no edge: a bare
+    # name alone would send `line.strip` to any indexed `strip`. An implicit
+    # `self` call still falls back to a unique bare name, for methods a class
+    # gets from a module or a superclass; from an instance method, only to
+    # an instance method, since no mixin turns a class method into one.
+    # `named_owners` keeps the class each name resolves to from each
+    # namespace, since a repository sends to the same few names many times.
+    # : (SourceIndex::Call call, Hash[[String, String], Array[SourceIndex::Method]] by_class, Hash[String, Array[SourceIndex::Method]] by_bare, Hash[String, Array[SourceIndex::Method]] qualifiers, Hash[String, String] parents, ?Hash[[String, untyped], String?] named_owners) -> (SourceIndex::Method | Array[SourceIndex::Method] | nil)
+    def call_target: (SourceIndex::Call call, Hash[[ String, String ], Array[SourceIndex::Method]] by_class, Hash[String, Array[SourceIndex::Method]] by_bare, Hash[String, Array[SourceIndex::Method]] qualifiers, Hash[String, String] parents, ?Hash[[ String, untyped ], String?] named_owners) -> (SourceIndex::Method | Array[SourceIndex::Method] | nil)
+
+    # `new` runs the nearest `initialize` up the superclass chain. On an
+    # ActiveRecord model, `create`, `create!`, and `build` call `new`; on
+    # another class they are methods the index cannot see, so they count
+    # only there. A class method of the same name up the chain answers the
+    # call instead.
+    # : (String? owner, String bare, Hash[[String, String], Array[SourceIndex::Method]] by_class, Hash[String, String] parents) -> SourceIndex::Method?
+    def constructor_of: (String? owner, String bare, Hash[[ String, String ], Array[SourceIndex::Method]] by_class, Hash[String, String] parents) -> SourceIndex::Method?
+
+    # : (String? owner, Hash[String, String] parents) -> Array[String?]
+    def ancestry: (String? owner, Hash[String, String] parents) -> Array[String?]
+
+    # Ruby looks a constant up from the innermost enclosing namespace out.
+    # A class header reads its superclass before it defines the class, so
+    # the superclass is never the class it heads.
+    # : (String const, String qualifier, Hash[String, untyped] qualifiers, ?defining: String?) -> String?
+    def resolve_constant: (String const, String qualifier, Hash[String, untyped] qualifiers, ?defining: String?) -> String?
+
+    # The cap keeps the nearest callers; the kept names print sorted. A
+    # caller of `new` reaches `initialize` in the call it writes, so that
+    # hop adds no depth, and its callers go first in the queue.
+    # : (String qualified, Array[edge] edges) -> Array[String]
+    def upstream: (String qualified, Array[edge] edges) -> Array[String]
+
+    # : (String qualified, Array[edge] edges, Integer? limit) -> Hash[String, Integer]
+    def callers_by_depth: (String qualified, Array[edge] edges, Integer? limit) -> Hash[String, Integer]
+
+    # : (Array[edge] edges) -> Hash[String, Array[String]]
+    def callers_index: (Array[edge] edges) -> Hash[String, Array[String]]
+
+    # : (String base, String head) -> Array[String]
+    def intent_lines: (String base, String head) -> Array[String]
+
+    # : (doc item) -> doc
+    def method_hash: (doc item) -> doc
+
+    # : (doc item) -> doc
+    def constant_hash: (doc item) -> doc
+
+    # : (String change, SourceIndex::Method? old_node, SourceIndex::Method? new_node) -> String
+    def signature_of: (String change, SourceIndex::Method? old_node, SourceIndex::Method? new_node) -> String
+
+    # : (Array[doc] items, String prefix) -> void
+    def assign_ids: (Array[doc] items, String prefix) -> void
+
+    # : (doc item) -> [String, String, String]
+    def identity_sort: (doc item) -> [ String, String, String ]
+
+    # : (untyped node) -> [String, String]
+    def identity: (untyped node) -> [ String, String ]
+
+    # : (Array[untyped] nodes) -> Hash[[String, String], untyped]
+    def index_by: (Array[untyped] nodes) -> Hash[[ String, String ], untyped]
+
+    # : (String? text) -> String
+    def norm: (String? text) -> String
+
+    # : (String? text) -> String?
+    def cap: (String? text) -> String?
+  end
+
+  module CoverageFile
+    # : (String path) -> Array[doc]
+    def self?.load: (String path) -> Array[doc]
+  end
+end

@@ -1,0 +1,239 @@
+# Generated from lib/jitcatch/render.rb with RBS::Inline
+
+module JitCatch
+  module Render
+    LONG_LINE: Integer
+
+    WINDOW: Integer
+
+    DIFF_KEYS: Integer
+
+    # The element diff keeps a table of this many cells.
+    MAX_ELEMENT_PAIRS: Integer
+
+    # The readers a context shows unless `--all-readers` asks for every one.
+    READERS_SHOWN: Integer
+
+    # : (doc doc, ?readers_limit: Integer?) -> String
+    def self?.context_text: (doc doc, ?readers_limit: Integer?) -> String
+
+    # : (doc doc, ?readers_limit: Integer?) -> doc
+    def self?.context_json: (doc doc, ?readers_limit: Integer?) -> doc
+
+    # How many readers each changed value has, by its id.
+    # : (doc? readers) -> Hash[untyped, Integer]
+    def self?.reader_counts: (doc? readers) -> Hash[untyped, Integer]
+
+    # The highest-scored rows, and how many the limit left out.
+    # : (doc readers, Integer? limit) -> doc
+    def self?.shown_readers: (doc readers, Integer? limit) -> doc
+
+    # Rows go under the value they read, values in the order the change
+    # lists them; a value keeps its line when the limit shows none of its rows.
+    # : (doc readers) -> Array[String]
+    def self?.reader_lines: (doc readers) -> Array[String]
+
+    # : (doc doc) -> String
+    def self?.run_text: (doc doc) -> String
+
+    # : (doc doc) -> doc
+    def self?.run_json: (doc doc) -> doc
+
+    # : (doc doc) -> String
+    def self?.setup_failed_text: (doc doc) -> String
+
+    # : (doc doc) -> String
+    def self?.assess_text: (doc doc) -> String
+
+    # A run from a directory inside the repository says which, since its
+    # rerun lines and its tests directory are named from there, while each
+    # file of the change is named from the repository root.
+    # : (doc doc) -> Array[String]
+    def self?.directory_lines: (doc doc) -> Array[String]
+
+    # : (doc doc) -> doc
+    def self?.assess_json: (doc doc) -> doc
+
+    # : (untyped obj) -> String
+    def self?.dump: (untyped obj) -> String
+
+    # : (doc doc) -> Array[String]
+    def self?.warning_lines: (doc doc) -> Array[String]
+
+    # : (Array[doc] dependencies) -> Array[String]
+    def self?.dependency_lines: (Array[doc] dependencies) -> Array[String]
+
+    # : (Array[doc] constants) -> Array[String]
+    def self?.constant_lines: (Array[doc] constants) -> Array[String]
+
+    # : (Array[doc] methods, ?Hash[untyped, Integer] readers) -> Array[String]
+    def self?.method_lines: (Array[doc] methods, ?Hash[untyped, Integer] readers) -> Array[String]
+
+    # : (Array[doc] entrypoints) -> Array[String]
+    def self?.entrypoint_lines: (Array[doc] entrypoints) -> Array[String]
+
+    # A method nothing calls by name can still be read: say so where an
+    # empty list would read as nothing reaching it.
+    # : (doc method, ?Integer readers) -> String
+    def self?.format_callsites: (doc method, ?Integer readers) -> String
+
+    # : (Array[doc] tests) -> String
+    def self?.format_tests: (Array[doc] tests) -> String
+
+    # : (doc method) -> Array[String]
+    def self?.source_lines: (doc method) -> Array[String]
+
+    # : (doc test) -> String
+    def self?.test_line: (doc test) -> String
+
+    # A flaky row says which run moved and how: the outcome, or only the
+    # message, as a random id in a printed record does. Base reruns only
+    # when head failed the same way each time.
+    # : (doc test) -> Array[String]
+    def self?.rerun_lines: (doc test) -> Array[String]
+
+    # The ways RSpec's `eq` on a status, rspec-rails' have_http_status, and
+    # Minitest's assert_response say a response was a 500.
+    SERVER_ERROR: Regexp
+
+    # A Rails app rescues the error behind a 500 and logs it, so the
+    # failure message alone never names the cause.
+    # : (doc test, doc doc) -> Array[String]
+    def self?.server_error_lines: (doc test, doc doc) -> Array[String]
+
+    # A row that failed on base is no candidate, so nothing else in the
+    # text says what went wrong there.
+    # : (doc test, doc doc) -> Array[String]
+    def self?.base_failure_lines: (doc test, doc doc) -> Array[String]
+
+    # A test written to pin what a change fixes fails on base by design, and
+    # head's result is what it checks: `pass`, head's own failure, or that
+    # head failed as base did.
+    # : (doc test) -> Array[String]
+    def self?.head_outcome_lines: (doc test) -> Array[String]
+
+    # Only the numbered databases have names the reader can load a schema
+    # into; the URL itself can hold a password, so it is never printed.
+    # : (doc doc) -> Array[String]
+    def self?.untested_lines: (doc doc) -> Array[String]
+
+    # A run that compared some rows says nothing on its first line, so the
+    # rows the database hid would read as rows that checked something.
+    # : (doc doc) -> Array[String]
+    def self?.no_table_warning_lines: (doc doc) -> Array[String]
+
+    # Each side needs its own schema, which only a command run in each
+    # checkout loads: `db:prepare` also loads seeds into a database it
+    # makes, and `db:schema:load` alone fails on one nobody made.
+    # : (doc doc) -> String
+    def self?.schema_advice: (doc doc) -> String
+
+    # Base takes the odd TEST_ENV_NUMBER of each pair of checkouts.
+    # : (doc doc) -> Array[String]
+    def self?.base_databases: (doc doc) -> Array[String]
+
+    # A child that waits on the network or on a command an environment
+    # variable names often lacks a name the parent has, which a longer
+    # timeout does not fix, so the row names those first: a name --env
+    # passed that the shell did not set, then a name jitcatch did not pass.
+    # Only a Rails app loads db/schema.rb in each new checkout.
+    # : (doc test, doc doc) -> Array[String]
+    def self?.timeout_lines: (doc test, doc doc) -> Array[String]
+
+    # : (Array[String] names) -> String
+    def self?.env_flags: (Array[String] names) -> String
+
+    # : (Array[String] names) -> String
+    def self?.them: (Array[String] names) -> String
+
+    # The rerun line runs in the reader's shell, so it names the variables
+    # the run took from jitcatch's, and no value: a DATABASE_URL can hold a
+    # password, and a report is pasted where others read it.
+    # : (doc doc) -> String?
+    def self?.rerun_env_line: (doc doc) -> String?
+
+    # : (doc counts) -> String
+    def self?.counts_line: (doc counts) -> String
+
+    # : (doc doc) -> Array[String]
+    def self?.assess_body: (doc doc) -> Array[String]
+
+    # An id alone sends the reader to the context brief to find what it
+    # names. With no pick, no frame of head's failure is in a changed
+    # method, so the value can come from a file the brief lists no method
+    # for, such as a view.
+    # : (doc row, Hash[untyped, untyped] names, doc doc) -> String
+    def self?.guess_line: (doc row, Hash[untyped, untyped] names, doc doc) -> String
+
+    OUT_OF_DATE: Hash[String, String]
+
+    # : (doc stale) -> String
+    def self?.out_of_date_line: (doc stale) -> String
+
+    # : (doc doc) -> Array[doc]
+    def self?.candidate_rows: (doc doc) -> Array[doc]
+
+    # : (doc? cause) -> String?
+    def self?.cause_line: (doc? cause) -> String?
+
+    # A row keeps each line to this many characters; one Array printed
+    # whole can fill tens of kilobytes.
+    MESSAGE_LINE: Integer
+
+    # : (doc? head) -> Array[String]
+    def self?.message_lines: (doc? head) -> Array[String]
+
+    # The end of a line often holds what differs, after a path or a value
+    # both sides share, so a cut leaves out the middle.
+    # : (String line) -> String
+    def self?.cut_line: (String line) -> String
+
+    # : (doc head) -> Array[String]
+    def self?.failure_lines: (doc head) -> Array[String]
+
+    # The removed and added lines of the Diff RSpec prints under a matcher's
+    # message, such as have_attributes, whose one line shows both Hashes.
+    # : (String message) -> Array[String]?
+    def self?.rspec_diff_changes: (String message) -> Array[String]?
+
+    # A long line, such as a whole Hash on one line, is hard to compare by
+    # eye. Show the Hash entries that differ, or else a window around the
+    # first column that differs. `message` in `--json` keeps the full text.
+    # : (String expected, String actual) -> Array[String]
+    def self?.changed_pair: (String expected, String actual) -> Array[String]
+
+    # : (String line) -> String
+    def self?.shortened: (String line) -> String
+
+    # The elements one Array literal has and the other lacks, by index, from
+    # a longest common subsequence, so one inserted element is one line and
+    # not a shift of every element after it.
+    # : (String expected, String actual) -> Array[String]?
+    def self?.array_element_lines: (String expected, String actual) -> Array[String]?
+
+    # The source of each element of an Array literal, or nil when the text
+    # is not one Array literal.
+    # : (String text) -> Array[String]?
+    def self?.array_elements: (String text) -> Array[String]?
+
+    # Each change as [index, old element, new element]: a removed element
+    # has no new one and an added one no old one. Within one run of changes,
+    # the removed and added elements pair up in order, as replacements.
+    # : (Array[String] old_items, Array[String] new_items) -> Array[[Integer, String?, String?]]
+    def self?.element_changes: (Array[String] old_items, Array[String] new_items) -> Array[[ Integer, String?, String? ]]
+
+    # : (String expected, String actual) -> Array[String]?
+    def self?.hash_entry_lines: (String expected, String actual) -> Array[String]?
+
+    # The entries of a Hash literal as written by `inspect`, keyed by the
+    # key's text, or nil when the text is not one Hash literal.
+    # : (String text) -> Hash[String, String]?
+    def self?.hash_entries: (String text) -> Hash[String, String]?
+
+    # : (String expected, String actual) -> Array[String]
+    def self?.column_lines: (String expected, String actual) -> Array[String]
+
+    # : (Array[String] lines) -> String
+    def self?.finish: (Array[String] lines) -> String
+  end
+end

@@ -1,36 +1,47 @@
 # frozen_string_literal: true
+# rbs_inline: enabled
 
 module JitCatch
   # Rule-based filter. It does not decide intended-versus-regression.
   # That judgment needs the change intent and belongs to the agent.
   class Assessor
-    ARITY = /wrong number of arguments|missing keywords?: |unknown keywords?: |struct size differs/
+    ARITY = /wrong number of arguments|missing keywords?: |unknown keywords?: |struct size differs/ #: Regexp
     # Active Record's errors for a database it cannot reach. Each checkout
     # uses its own numbered test database, so one that was never created
     # fails on that side alone, which says nothing about the change.
-    NO_DATABASE = %w[ActiveRecord::NoDatabaseError ActiveRecord::ConnectionNotEstablished ActiveRecord::DatabaseConnectionError].freeze
+    NO_DATABASE = %w[ActiveRecord::NoDatabaseError ActiveRecord::ConnectionNotEstablished ActiveRecord::DatabaseConnectionError].freeze #: Array[String]
     # A database that `db:create` made has no tables until something loads
     # the schema, which a test helper without `maintain_test_schema!` never
     # does. Each adapter words the missing table its own way, and the
     # SQLite adapter's own column lookup says "Could not find table".
-    NO_TABLE = /\APG::UndefinedTable: |\ASQLite3::SQLException: no such table: |\ACould not find table '|Table '[^']*' doesn't exist/
+    NO_TABLE = /\APG::UndefinedTable: |\ASQLite3::SQLException: no such table: |\ACould not find table '|Table '[^']*' doesn't exist/ #: Regexp
 
+    # @rbs @doc: doc
+    # @rbs @methods: Array[doc]
+    # @rbs @constants: Array[doc]
+    # @rbs @callers: Array[String]
+    # @rbs @tests_dir: String?
+
+    #: (doc result) -> bool
     def self.no_table?(result)
       result["error_class"] == "ActiveRecord::StatementInvalid" && NO_TABLE.match?(result["message"].to_s)
     end
 
+    #: (doc doc) -> doc
     def self.apply(doc)
       new(doc).apply
     end
 
     # The name a test writes to reach a method: its bare name, or
     # `Owner.new` for a constructor.
+    #: (String qualified) -> String
     def self.mention_of(qualified)
       qualifier, sep, bare = SourceIndex.split_qualified(qualified)
       constructor = (sep == "#" && bare == "initialize") || (sep == "." && bare == "new")
       constructor ? "#{qualifier.split("::").last}.new" : bare
     end
 
+    #: (doc doc) -> void
     def initialize(doc)
       @doc = doc
       @methods = Array(doc["methods"])
@@ -39,15 +50,17 @@ module JitCatch
       @tests_dir = doc["tests_dir"]
     end
 
+    #: () -> doc
     def apply
-      tests = Array(@doc["tests"]).map { |test| strip(test) }
+      rows = Array(@doc["tests"]) #: Array[doc]
+      tests = rows.map { |test| strip(test) }
       tests.each do |test|
         if test["classification"] == "candidate"
           method, pool, tied = related_method(test)
           broken = broken_call(test, method)
           call = broken&.frame
           reason = discard_reason(test, call)
-          test["out_of_date"] = reason == "signature_change" ? out_of_date(broken) : nil
+          test["out_of_date"] = reason == "signature_change" && broken ? out_of_date(broken) : nil
           test["method_id"] = tied ? nil : method&.dig("id")
           test["method_ids"] = pool.map { |item| item["id"] }.sort
           test["disposition"] = reason ? "discarded" : "reported"
@@ -74,6 +87,7 @@ module JitCatch
 
     # A row whose side timed out, or found no database or no table, says
     # nothing about the change, whatever its classification.
+    #: (doc test, untyped timeout_s) -> bool
     def self.untested?(test, timeout_s)
       !untested_causes(test, timeout_s).empty?
     end
@@ -82,8 +96,9 @@ module JitCatch
       "timed out" => ->(result) { result["status"] == "timeout" },
       "found no database" => ->(result) { NO_DATABASE.include?(result["error_class"]) },
       "found no table" => ->(result) { no_table?(result) }
-    }.freeze
+    }.freeze #: Hash[String, ^(doc) -> bool]
 
+    #: (doc test, untyped timeout_s) -> Array[String]
     def self.untested_causes(test, timeout_s)
       results = %w[base head].map { |side| test[side] || {} }
       causes = UNTESTED_CAUSES.select { |_cause, seen| results.any?(&seen) }.keys
@@ -93,9 +108,11 @@ module JitCatch
     # Base passed in at most half the time head ran out of, so a slow boot
     # does not explain head's timeout: head may loop or wait forever, as a
     # wait that checks a clock the test froze does.
+    #: (doc test, untyped timeout_s) -> bool
     def self.head_only_timeout?(test, timeout_s)
       base = test["base"] || {}
-      seconds = base["seconds"]
+      # A run document from JSON can hold anything here; is_a? below checks it.
+      seconds = base["seconds"] #: Integer | Float | nil
       test.dig("head", "status") == "timeout" && base["status"] == "pass" &&
         seconds.is_a?(Numeric) && timeout_s.is_a?(Numeric) && seconds * 2 <= timeout_s
     end
@@ -105,22 +122,26 @@ module JitCatch
     # like a change with no finding. Its fix is outside the candidates. A
     # run whose rows all failed on base with nothing hidden is the
     # candidates' to fix, and each row's `base:` line says why.
+    #: (doc doc) -> bool
     def self.untested_run?(doc)
-      tests = Array(doc["tests"])
+      tests = Array(doc["tests"]) #: Array[doc]
       doc["untested"].to_i.positive? && tests.none? { |test| compared?(test, doc["timeout_s"]) }
     end
 
     # Base passed and neither side hit an untested cause.
+    #: (doc test, untyped timeout_s) -> bool
     def self.compared?(test, timeout_s)
       test.dig("base", "status") == "pass" && !untested?(test, timeout_s)
     end
 
     private
 
+    #: (doc test) -> doc
     def strip(test)
       test.reject { |key, _| %w[method_id method_ids dynamic_call tags disposition candidate_id out_of_date].include?(key) }
     end
 
+    #: (Array[doc] tests) -> void
     def assign_candidate_ids(tests)
       rows = tests.select { |test| test["classification"] == "candidate" }.sort_by { |test| test["id"] }
       width = [2, rows.size.to_s.length].max
@@ -128,6 +149,7 @@ module JitCatch
       tests.each { |test| test["candidate_id"] ||= nil }
     end
 
+    #: (Array[doc] tests) -> Hash[String, Integer]
     def counts(tests)
       {
         "generated" => tests.size,
@@ -140,6 +162,7 @@ module JitCatch
       }
     end
 
+    #: (doc test, doc? call) -> String?
     def discard_reason(test, call)
       head = test["head"] || {}
       timed_out = head["status"] == "timeout" || head["error_class"] == "Timeout" || test.dig("base", "status") == "timeout"
@@ -157,10 +180,15 @@ module JitCatch
     # A call the change broke: the frame that made it (an empty hash when the
     # error kept none), the changed method or constant it called, and what
     # changed about it.
-    Broken = Data.define(:frame, :subject, :change)
+    Broken = Data.define(
+      :frame, #: doc
+      :subject, #: doc
+      :change #: String
+    )
 
     # A call to a removed name, or one whose arguments no longer fit. Nil
     # when no call broke.
+    #: (doc test, doc? method) -> Broken?
     def broken_call(test, method)
       error = raised(test)
       symbol = missing_symbol(error)
@@ -182,6 +210,7 @@ module JitCatch
     # Ruby defines `new` of a Data or Struct class in C, so a member the
     # change added or dropped fails the test's own call with no frame of the
     # class: the first frame is the test's, and the test names the class.
+    #: (doc test, Raised error) -> Broken?
     def changed_class_call(test, error)
       frame = error.frames.first
       return nil unless frame && test_frame?(frame)
@@ -191,18 +220,24 @@ module JitCatch
       constant && Broken.new(frame, constant, "definition")
     end
 
+    #: (Broken broken) -> doc
     def out_of_date(broken)
       frame = broken.frame
       { "id" => broken.subject["id"], "name" => broken.subject["name"], "change" => broken.change,
         "call" => frame["file"] && [frame["file"], frame["line"]].compact.join(":") }
     end
 
-    Raised = Data.define(:error_class, :message, :frames)
+    Raised = Data.define(
+      :error_class, #: String?
+      :message, #: String
+      :frames #: Array[doc]
+    )
 
     # The error a call raised. assert_raises and RSpec's raise_error turn
     # an error of another class into an assertion failure, so it is read
     # back out of the failure message. Both parsers put the assertion's own
     # line before the frames of the error it caught.
+    #: (doc test) -> Raised
     def raised(test)
       head = test["head"] || {}
       message = head["message"].to_s
@@ -219,20 +254,24 @@ module JitCatch
       Raised.new(head["error_class"], message, frames(test))
     end
 
+    #: (String quoted) -> String
     def undump(quoted)
       quoted.undump
     rescue RuntimeError
       quoted
     end
 
+    #: (Raised error) -> bool
     def arity_error?(error)
       error.error_class == "ArgumentError" && error.message.match?(/\A(?:#{ARITY})/)
     end
 
+    #: (doc frame) -> bool
     def test_frame?(frame)
       !@tests_dir.nil? && frame["file"].to_s.start_with?("#{@tests_dir}/")
     end
 
+    #: (doc? call) -> String?
     def caller_tag(call)
       return nil if call.nil? || call.empty? || test_frame?(call)
 
@@ -244,9 +283,10 @@ module JitCatch
       "caller:#{changed || edited ? "changed" : "unchanged"}:#{call["file"]}:#{call["line"]}"
     end
 
+    #: (doc test, Array[doc] judged, String? reason, doc? call) -> Array[String]
     def tags_for(test, judged, reason, call)
       head = test["head"] || {}
-      tags = []
+      tags = [] #: Array[String?]
       tags << (reason ? "discard:#{reason}" : "report")
       tags << caller_tag(call)
       tags << "assertion" if head["status"] == "fail"
@@ -261,16 +301,18 @@ module JitCatch
 
     # A row with no pick judges every method of its pool, so its tags do not
     # depend on which tied method has the lower id.
+    #: (doc test, Array[doc] judged) -> Array[String]
     def touch_tags(test, judged)
-      mentions = Array(test["mentions"])
-      tags = []
+      mentions = Array(test["mentions"]) #: Array[String]
+      tags = [] #: Array[String]
       changed_mentions = @methods.map { |item| mention(item) }
       gem = origin_gem(test)
       direct = gem.nil? && judged.any? { |method|
         (mentioned?(method, mentions) && sent_to_named_receivers([method], mentions).any?) || frame_hits?(test, method)
       }
       tags << "touches:changed_method" if direct
-      tags << "touches:changed_dependency" if gem && Array(@doc["dependencies"]).any? { |dep| dep["gem"] == gem }
+      dependencies = Array(@doc["dependencies"]) #: Array[doc]
+      tags << "touches:changed_dependency" if gem && dependencies.any? { |dep| dep["gem"] == gem }
       tags << "touches:changed_constant" if (mentions & @constants.map { |const| const["bare_name"] }).any?
       # A bare name that a changed method shares counts as that method; one
       # the test sends to a named class counts as that class's.
@@ -284,6 +326,7 @@ module JitCatch
     # The gem an error came from, when its first frame outside the candidate
     # file is inside an installed gem. Such an error says the gem broke, not
     # that a changed method returned a new value.
+    #: (doc test) -> String?
     def origin_gem(test)
       return nil unless test.dig("head", "status") == "error"
 
@@ -295,6 +338,7 @@ module JitCatch
     # more in the pool means the evidence cannot tell them apart, so the
     # pick is a guess: a test that names only unchanged callers reaches
     # every changed method below them.
+    #: (doc test) -> ([doc?, Array[doc], bool] | [doc?, Array[doc]])
     def related_method(test)
       symbol = missing_symbol(raised(test))
       if symbol
@@ -305,11 +349,11 @@ module JitCatch
       # The innermost changed frame is where the error came from; the frames
       # outside it only called it.
       if framed.any?
-        innermost = method_from_backtrace(test)
+        innermost = method_from_backtrace(test) #: doc
         return [innermost, [innermost]]
       end
 
-      mentions = Array(test["mentions"])
+      mentions = Array(test["mentions"]) #: Array[String]
       mentioned = sent_to_named_receivers(@methods.select { |item| mentioned?(item, mentions) }, mentions)
       # Almost every test builds its object with `.new`, so a changed
       # constructor is the related method only when nothing else points.
@@ -335,6 +379,7 @@ module JitCatch
     # picks it, but head no longer reaches it. A method whose edit only
     # changes the arguments of a raise did not decide that, so it leaves
     # the pool while another method is in it.
+    #: (Array[doc] items, ?Hash[untyped, Integer] depths, ?bool stopped) -> [doc?, Array[doc], bool]
     def guess(items, depths = {}, stopped = false)
       deciders = items.reject { |item| item["edits_only_raise"] }
       items = deciders if stopped && deciders.any?
@@ -345,6 +390,7 @@ module JitCatch
 
     # Minitest's assert_raises and RSpec's raise_error both end their
     # message this way when the block returned.
+    #: (doc test) -> bool
     def stopped_raising?(test)
       test.dig("base", "status") == "pass" && test.dig("head", "status") == "fail" &&
         test.dig("head", "message").to_s.match?(/but nothing was raised\.?\z/)
@@ -356,6 +402,7 @@ module JitCatch
     # the test names, the call may reach one through a superclass or a
     # module, so all of them stay, unless the named class's method is a
     # known caller of a changed method: the call stops there.
+    #: (Array[doc] items, Array[String] mentions) -> Array[doc]
     def sent_to_named_receivers(items, mentions)
       items.group_by { |item| bare(item["name"]) }.flat_map do |_name, group|
         receivers = receivers_of(group.first["name"].to_s, mentions)
@@ -366,16 +413,19 @@ module JitCatch
 
     # Whether the test calls the method: on a class it names when it names
     # one for that method name, or by the bare name when it names none.
+    #: (String qualified, Array[String] mentions) -> bool
     def sent_to?(qualified, mentions)
       receivers = receivers_of(qualified, mentions)
       receivers.empty? ? mentions.include?(bare(qualified)) : on_receiver?(qualified, receivers)
     end
 
+    #: (String qualified, Array[[String, String, String]] receivers) -> bool
     def on_receiver?(qualified, receivers)
       qualifier, sep, name = SourceIndex.split_qualified(qualified)
       receivers.any? { |owner, owner_sep, owner_name| owner_name == name && sep == owner_sep && (qualifier == owner || qualifier.end_with?("::#{owner}")) }
     end
 
+    #: (String qualified, Array[String] mentions) -> Array[[String, String, String]]
     def receivers_of(qualified, mentions)
       name = bare(qualified)
       mentions.map { |mention| SourceIndex.split_qualified(mention) }
@@ -384,13 +434,15 @@ module JitCatch
 
     # With no related method, the call the test makes may still reach one
     # through a receiver the source does not name. That is said, not guessed.
+    #: (doc test) -> doc?
     def dynamic_call(test)
-      mentions = Array(test["mentions"])
+      mentions = Array(test["mentions"]) #: Array[String]
       @methods.flat_map { |item| Array(item["dynamic_callers"]) }
         .sort_by { |caller| [caller["from"], caller["name"]] }
         .find { |caller| sent_to?(caller["from"], mentions) }
     end
 
+    #: (doc test) -> doc?
     def method_from_backtrace(test)
       frames(test).each do |frame|
         hit = @methods.find { |item| frame_hits_method?(frame, item) }
@@ -399,24 +451,28 @@ module JitCatch
       nil
     end
 
+    #: (doc test, doc method) -> bool
     def frame_hits?(test, method)
       frames(test).any? { |frame| frame_hits_method?(frame, method) }
     end
 
     # The frames are the head run's, so only head's lines of a method count.
     # A removed method has no lines on head.
+    #: (doc frame, doc method) -> bool
     def frame_hits_method?(frame, method)
       return false unless frame["file"] == method["file"] && method["change"] != "removed"
 
       (method["start_line"]..method["end_line"]).cover?(frame["line"])
     end
 
+    #: (doc test) -> Array[doc]
     def frames(test)
       Array(test.dig("head", "backtrace"))
     end
 
     # The name a NameError says is missing. Another error, or an assertion,
     # can quote the same words without any lookup having failed.
+    #: (Raised error) -> String?
     def missing_symbol(error)
       return nil unless %w[NameError NoMethodError].include?(error.error_class)
 
@@ -430,6 +486,7 @@ module JitCatch
       end
     end
 
+    #: (String symbol) -> doc?
     def removed_subject(symbol)
       removed_methods = @methods.select { |item| item["change"] == "removed" || item["signature"] == "removed" }
       method = lowest(removed_methods.select { |item| item["bare_name"] == symbol })
@@ -460,6 +517,7 @@ module JitCatch
     # each method it calls runs only for the command that picks it. So it
     # ranks before the downstream rule: a test of `exe/tool bogus` whose
     # usage text changed reached none of the methods below it.
+    #: (doc item, Array[doc] items, Hash[untyped, Integer] depths) -> Array[Integer | String]
     def guess_rank(item, items, depths)
       others = items.reject { |other| other["id"] == item["id"] }
       covered = others.count { |other| reached_by(item).include?(other["name"]) }
@@ -470,6 +528,7 @@ module JitCatch
 
     # The fewest calls between each item and an entry point the test
     # names. A run file from before `caller_depths` existed has none.
+    #: (Array[doc] items, Array[String] mentions) -> Hash[untyped, Integer]
     def depth_below_entry(items, mentions)
       items.to_h do |item|
         depths = Hash(item["caller_depths"]).filter_map { |name, depth| depth if mentions.include?(bare(name)) }
@@ -477,6 +536,7 @@ module JitCatch
       end
     end
 
+    #: (doc item) -> Integer
     def preference(item)
       return 2 if item["forwards_to_added"]
 
@@ -487,6 +547,7 @@ module JitCatch
       end
     end
 
+    #: (doc item) -> String
     def mention(item)
       self.class.mention_of(item["name"].to_s)
     end
@@ -497,9 +558,10 @@ module JitCatch
     # (`Box.create!`) or a factory the change document lists for the
     # constructor runs it too, and a save (`Box.create!`, `Box#save`) runs
     # a callback the model declares.
+    #: (doc item, Array[String] mentions) -> bool
     def mentioned?(item, mentions)
       name = mention(item)
-      calls = Array(item["builders"]) + Array(item["run_by"])
+      calls = Array(item["builders"]) + Array(item["run_by"]) #: Array[String]
       if name.end_with?(".new")
         calls << "#{SourceIndex.split_qualified(item["name"].to_s).first}.new"
       elsif mentions.include?(name)
@@ -510,14 +572,17 @@ module JitCatch
 
     # Every method that reaches the item. A run file from before
     # `reached_by` existed holds only the capped `reachable_from`.
+    #: (doc item) -> Array[String]
     def reached_by(item)
       Array(item["reached_by"] || item["reachable_from"])
     end
 
+    #: (Array[doc] items) -> doc?
     def lowest(items)
       items.min_by { |item| item["id"].to_s }
     end
 
+    #: (String qualified) -> String
     def bare(qualified)
       SourceIndex.split_qualified(qualified).last
     end

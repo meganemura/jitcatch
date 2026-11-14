@@ -1,29 +1,53 @@
 # frozen_string_literal: true
+# rbs_inline: enabled
 
 module JitCatch
   # Builds the deterministic change document shared by `context` and `run`.
+  #
+  # An entry of the change (`item`) and an index of one side (`idx`) are
+  # hashes, typed as `doc`. A node is a SourceIndex::Method or a
+  # SourceIndex::Constant, and the helpers that take either take it untyped.
   class Changes
-    MAX_BLOB = 200_000
-    CALLSITE_CAP = 8
-    REACHABLE_CAP = 8
-    TEST_CAP = 5
-    ENTRY_CAP = 12
-    UPSTREAM_DEPTH = 4
-    RECORD_BUILDERS = %w[create create! build].freeze
+    # @rbs!
+    #   type node = SourceIndex::Method | SourceIndex::Constant
+    #   type edge = Hash[String, untyped]
+    #   type lookups = [Hash[[String, String], Array[SourceIndex::Method]], Hash[String, Array[SourceIndex::Method]], Hash[String, Array[SourceIndex::Method]], Hash[String, String]]
+
+    MAX_BLOB = 200_000 #: Integer
+    CALLSITE_CAP = 8 #: Integer
+    REACHABLE_CAP = 8 #: Integer
+    TEST_CAP = 5 #: Integer
+    ENTRY_CAP = 12 #: Integer
+    UPSTREAM_DEPTH = 4 #: Integer
+    RECORD_BUILDERS = %w[create create! build].freeze #: Array[String]
     # A value the source does not type, whether or not its name names a model.
-    UNTYPED_RECEIVERS = %w[unknown named].freeze
+    UNTYPED_RECEIVERS = %w[unknown named].freeze #: Array[String]
 
     # The classes and modules head defines, after `build`.
-    attr_reader :head_constants
+    attr_reader :head_constants #: Array[String]
+
+    # @rbs @git: GitRepo
+    # @rbs @readers: bool
+    # @rbs @setup: String?
+    # @rbs @databases: Array[String]
+    # @rbs @base_ref: String
+    # @rbs @head_ref: String
+    # @rbs @coverage: Array[doc]?
+    # @rbs @texts: Hash[String, String]
+    # @rbs @parsed: Hash[[String, String], SourceIndex]
+    # @rbs @test_names: Hash[String, Array[String]]
+    # @rbs @callers_index: Hash[Array[edge], Hash[String, Array[String]]]?
 
     # `readers: true` adds the code that reads each changed value without
     # calling it by name, which only `context` prints.
+    #: (GitRepo | String repo, String base_ref, String head_ref, ?coverage: String?, ?setup: String?, ?databases: Array[String], ?readers: bool) -> doc
     def self.between(repo, base_ref, head_ref, coverage: nil, setup: nil, databases: [], readers: false)
       new(repo, base_ref, head_ref, coverage: coverage, setup: setup, databases: databases, readers: readers).build
     end
 
     # `setup` is the command `run --setup` runs in each checkout, and
     # `databases` the numbered test databases, base and head in turn.
+    #: (GitRepo | String repo, String base_ref, String head_ref, ?coverage: String?, ?setup: String?, ?databases: Array[String], ?readers: bool) -> void
     def initialize(repo, base_ref, head_ref, coverage: nil, setup: nil, databases: [], readers: false)
       @git = repo.is_a?(GitRepo) ? repo : GitRepo.new(repo)
       @readers = readers
@@ -37,6 +61,7 @@ module JitCatch
       @test_names = {}
     end
 
+    #: () -> doc
     def build
       base = @git.base_rev(@base_ref)
       head = @git.rev(@head_ref)
@@ -85,6 +110,7 @@ module JitCatch
 
     private
 
+    #: (String base, String head) -> Array[String]
     def warnings(base, head)
       return ["base and head are the same commit, so the diff is empty. Pass the parent of the change as BASE."] if base == head
 
@@ -103,6 +129,7 @@ module JitCatch
 
     # A Grape path built from code the source does not settle has no
     # verb and path a request could be matched to.
+    #: (Array[doc] methods) -> Array[String]
     def computed_path_warnings(methods)
       methods.filter_map do |method|
         node = method["new"] || method["old"]
@@ -114,8 +141,8 @@ module JitCatch
 
     # Rails keeps a schema in db/schema.rb or db/structure.sql, and a
     # second database's in db/<name>_schema.rb, beside db/<name>_migrate/.
-    SCHEMA_FILE = %r{\Adb/(?:\w+_)?(?:schema\.rb|structure\.sql)\z|\Adb/(?:\w+_)?migrate/}
-    TEST_HELPERS = %w[spec/rails_helper.rb spec/spec_helper.rb test/test_helper.rb].freeze
+    SCHEMA_FILE = %r{\Adb/(?:\w+_)?(?:schema\.rb|structure\.sql)\z|\Adb/(?:\w+_)?migrate/} #: Regexp
+    TEST_HELPERS = %w[spec/rails_helper.rb spec/spec_helper.rb test/test_helper.rb].freeze #: Array[String]
 
     # A test database made once from one schema holds neither side's after
     # a change to it, so a row can fail on a missing column and read as a
@@ -123,6 +150,7 @@ module JitCatch
     # schema of the checkout it boots in; without one, only --setup can.
     # The app is the directory jitcatch runs in, so its schema and helpers
     # sit under the repository path of that directory.
+    #: (String head, Array[doc] files) -> Array[String]
     def schema_warnings(head, files)
       prefix = @git.prefix
       changed = files.map { |file| file["file"] }.select { |path| path.start_with?(prefix) && path.delete_prefix(prefix).match?(SCHEMA_FILE) }.sort
@@ -133,7 +161,7 @@ module JitCatch
       return ["#{warning} `--setup` ran `#{@setup}` in each checkout before the candidates."] if @setup
 
       helpers = TEST_HELPERS.map { |path| "#{prefix}#{path}" }.select { |path| @git.show(head, path) }
-      return [warning] if helpers.empty? || helpers.any? { |path| @git.show(head, path).include?("maintain_test_schema!") }
+      return [warning] if helpers.empty? || helpers.any? { |path| @git.show(head, path).to_s.include?("maintain_test_schema!") }
 
       databases = @databases.each_slice(2).map { |base, head_db| "base #{base}, head #{head_db}" }
       into = databases.empty? ? "its own test database" : "its own test database (#{databases.join("; ")})"
@@ -145,6 +173,7 @@ module JitCatch
     # in parentheses. A gem locked for several platforms has several lines.
     # The lockfile is the one beside the Gemfile of the directory jitcatch
     # runs in.
+    #: (String base, String head) -> Array[doc]
     def dependencies(base, head)
       old = locked_versions(base)
       new = locked_versions(head)
@@ -155,14 +184,16 @@ module JitCatch
       end
     end
 
+    #: (String sha) -> Hash[String, String]
     def locked_versions(sha)
-      @git.show(sha, "#{@git.prefix}Gemfile.lock").to_s.scan(/^    (\S+) \(([^)]+)\)$/)
-        .group_by(&:first)
+      specs = @git.show(sha, "#{@git.prefix}Gemfile.lock").to_s.scan(/^    (\S+) \(([^)]+)\)$/) #: Array[[String, String]]
+      specs.group_by(&:first)
         .transform_values { |pairs| pairs.map(&:last).uniq.sort.join(" ") }
     end
 
     # The head lines each Ruby file's hunks wrote, as inclusive ranges, so a
     # call on an edited line counts as changed code even outside any method.
+    #: (Hash[String, doc] hunks) -> Hash[String, Array[[Integer, Integer]]]
     def changed_lines(hunks)
       hunks.filter_map { |path, file|
         ranges = file["hunks"].reject { |hunk| hunk["new_count"].zero? }.map { |hunk| [hunk["new_start"], hunk["new_start"] + hunk["new_count"] - 1] }
@@ -170,8 +201,9 @@ module JitCatch
       }.sort.to_h
     end
 
+    #: (Array[doc] files) -> Hash[String, doc]
     def index_hunks(files)
-      map = {}
+      map = {} #: Hash[String, doc]
       files.each do |file|
         path = file["new_path"] || file["old_path"]
         next unless path&.end_with?(".rb") || SourceIndex.script_path?(path.to_s)
@@ -181,19 +213,20 @@ module JitCatch
       map
     end
 
+    #: (String sha, String label) -> doc
     def index_ref(sha, label)
-      methods = []
-      constants = []
-      namespaces = []
-      superclasses = []
-      calls = []
-      private_constants = []
-      hidden_new = []
-      errors = []
-      sources = {}
-      indexes = {}
-      templates = {}
-      template_calls = []
+      methods = [] #: Array[SourceIndex::Method]
+      constants = [] #: Array[SourceIndex::Constant]
+      namespaces = [] #: Array[SourceIndex::Constant]
+      superclasses = [] #: Array[SourceIndex::Superclass]
+      calls = [] #: Array[SourceIndex::Call]
+      private_constants = [] #: Array[String]
+      hidden_new = [] #: Array[String]
+      errors = [] #: Array[doc]
+      sources = {} #: Hash[String, String]
+      indexes = {} #: Hash[String, SourceIndex]
+      templates = {} #: Hash[String, String]
+      template_calls = [] #: Array[SourceIndex::Call]
       listed = @git.source_blobs(sha).select { |blob| blob.size <= MAX_BLOB }
       @texts.merge!(@git.read_blobs(listed.map(&:oid).uniq - @texts.keys))
       scripts, listed = listed.partition { |blob| SourceIndex.script_path?(blob.path) }
@@ -230,10 +263,11 @@ module JitCatch
         "templates" => templates, "template_calls" => template_calls }
     end
 
+    #: (doc base_idx, doc head_idx, Hash[String, doc] hunks) -> Array[doc]
     def changed_methods(base_idx, head_idx, hunks)
       old_map = index_by(base_idx["methods"])
       new_map = index_by(head_idx["methods"])
-      found = []
+      found = [] #: Array[doc]
       (old_map.keys | new_map.keys).each do |key|
         old_m = old_map[key]
         new_m = new_map[key]
@@ -275,6 +309,7 @@ module JitCatch
     # into test/, where no change of its own is listed. A file the diff
     # touched is the likelier destination than an older copy elsewhere.
     # The block names the change a move is, from the old and the new node.
+    #: (Array[doc] found, Array[untyped] head_nodes, Hash[String, doc] hunks) { (untyped, untyped) -> String } -> Array[doc]
     def mark_moves(found, head_nodes, hunks)
       by_name = head_nodes.group_by(&:qualified)
       found.select { |item| item["change"] == "removed" && !item["namespace"] }.each do |item|
@@ -289,10 +324,11 @@ module JitCatch
       found
     end
 
+    #: (doc base_idx, doc head_idx, Hash[String, doc] hunks, Array[doc] _methods) -> Array[doc]
     def changed_constants(base_idx, head_idx, hunks, _methods)
       old_map = index_by(base_idx["constants"])
       new_map = index_by(head_idx["constants"])
-      found = []
+      found = [] #: Array[doc]
       (old_map.keys | new_map.keys).each do |key|
         old_c = old_map[key]
         new_c = new_map[key]
@@ -314,7 +350,10 @@ module JitCatch
         end
         next unless change
 
-        found << { "change" => change, "old" => old_c, "new" => new_c, "read_by" => [] }
+        found << {
+          "change" => change, "old" => old_c, "new" => new_c,
+          "read_by" => [] #: Array[String]
+        }
       end
       # A constant that keeps its value in its new file is moved, and its
       # readers see nothing new; one whose value changed on the way is modified.
@@ -322,6 +361,7 @@ module JitCatch
       found + changed_namespaces(base_idx, head_idx, hunks)
     end
 
+    #: (SourceIndex::Constant const) -> String
     def value_of(const)
       const.source.sub(/A[^=]*=/, "").strip
     end
@@ -329,19 +369,29 @@ module JitCatch
     # A class or module counts only when the other side defines it nowhere,
     # so a file that reopens an existing namespace adds nothing. Its body
     # changes show up as the methods and constants inside it.
+    #: (doc base_idx, doc head_idx, Hash[String, doc] hunks) -> Array[doc]
     def changed_namespaces(base_idx, head_idx, hunks)
       old_names = base_idx["namespaces"].map(&:qualified)
       new_names = head_idx["namespaces"].map(&:qualified)
       removed = base_idx["namespaces"].reject { |node| new_names.include?(node.qualified) }
       added = head_idx["namespaces"].reject { |node| old_names.include?(node.qualified) }
       found = removed.uniq(&:qualified).filter_map { |node|
-        { "change" => "removed", "old" => node, "new" => nil, "read_by" => [], "namespace" => true } if hunks[node.file] && !test_file?(node.file)
+        next unless hunks[node.file] && !test_file?(node.file)
+
+        { "change" => "removed", "old" => node, "new" => nil,
+          "read_by" => [], #: Array[String]
+          "namespace" => true }
       }
       found + added.uniq(&:qualified).filter_map { |node|
-        { "change" => "added", "old" => nil, "new" => node, "read_by" => [], "namespace" => true } if hunks[node.file] && !test_file?(node.file)
+        next unless hunks[node.file] && !test_file?(node.file)
+
+        { "change" => "added", "old" => nil, "new" => node,
+          "read_by" => [], #: Array[String]
+          "namespace" => true }
       }
     end
 
+    #: (Array[doc] methods, Array[doc] constants, doc base_idx, doc head_idx) -> void
     def attach_affected(methods, constants, base_idx, head_idx)
       return if constants.empty?
 
@@ -368,6 +418,7 @@ module JitCatch
       end
     end
 
+    #: (Array[doc] methods, Array[doc] constants) -> void
     def link_constants(methods, constants)
       constants.each do |const|
         bare = (const["new"] || const["old"]).bare_name
@@ -385,6 +436,7 @@ module JitCatch
       end
     end
 
+    #: (Array[doc] methods, Array[edge] head_edges, Array[edge] base_edges) -> void
     def decorate_calls(methods, head_edges, base_edges)
       methods.each do |method|
         node = method["new"] || method["old"]
@@ -407,6 +459,7 @@ module JitCatch
     # removes no more lines than it adds, only routes a value from that
     # method, as `net - volume` becoming `net - volume - coupon` does. The
     # new value then comes from the added method, not from this one.
+    #: (Array[doc] methods, Array[edge] head_edges, Hash[String, doc] hunks) -> void
     def mark_forwarders(methods, head_edges, hunks)
       added = methods.select { |method| method["change"] == "added" }.map { |method| method["new"].qualified }
       methods.each do |method|
@@ -418,6 +471,7 @@ module JitCatch
     # method raises, not whether it does. A test whose expected error head
     # stopped raising then points at the code that stopped calling it, so
     # the assessor ranks such a method after the others.
+    #: (Array[doc] methods) -> void
     def mark_raise_edits(methods)
       methods.each do |method|
         method["edits_only_raise"] = method["change"] == "modified" &&
@@ -428,26 +482,29 @@ module JitCatch
 
     # The source with each receiverless `raise` or `fail` call written as
     # the bare word, so two sources that differ only there compare equal.
+    #: (String source) -> String
     def without_raises(source)
       text = source.b
-      pending = [Prism.parse(source).value]
-      spans = []
+      pending = [Prism.parse(source).value] #: Array[Prism::Node]
+      spans = [] #: Array[[Integer, Integer]]
       until pending.empty?
-        node = pending.pop
+        node = pending.pop #: Prism::Node
         if node.is_a?(Prism::CallNode) && node.receiver.nil? && %i[raise fail].include?(node.name)
           spans << [node.location.start_offset, node.location.end_offset]
         else
           pending.concat(node.compact_child_nodes)
         end
       end
-      spans.sort.reverse_each { |first, last| text = text.byteslice(0, first) + "raise".b + text.byteslice(last..) }
+      spans.sort.reverse_each { |first, last| text = text.byteslice(0, first).to_s + "raise".b + text.byteslice(last..).to_s }
       text
     end
 
+    #: (SourceIndex::Method node, Array[String] added, Array[edge] head_edges, Hash[String, doc] hunks) -> bool
     def forwards?(node, added, head_edges, hunks)
-      lines = []
+      lines = [] #: Array[Integer]
       removed = 0
-      hunks.fetch(node.file, { "hunks" => [] })["hunks"].each do |hunk|
+      file_hunks = hunks.dig(node.file, "hunks") || [] #: Array[doc]
+      file_hunks.each do |hunk|
         inside = (hunk["new_start"]...(hunk["new_start"] + hunk["new_count"])).select { |line| line.between?(node.start_line, node.end_line) }
         # A pure deletion has no new lines; git puts it after new_start.
         deletion = hunk["new_count"].zero? && hunk["new_start"] >= node.start_line && hunk["new_start"] < node.end_line
@@ -465,6 +522,7 @@ module JitCatch
     # `EMITTERS.fetch(format).render`, may reach it, but no edge says so.
     # The router calls a controller action, and no code in the app sends
     # its name, so `cipher.update` does not reach `ThingsController#update`.
+    #: (Array[doc] methods, doc head_idx, doc base_idx) -> void
     def decorate_dynamic_callers(methods, head_idx, base_idx)
       methods.each do |method|
         node = method["new"] || method["old"]
@@ -481,15 +539,18 @@ module JitCatch
       end
     end
 
+    #: (String name) -> bool
     def controller_action?(name)
       owner, sep, = SourceIndex.split_qualified(name)
       sep == "#" && owner.split("::").last.to_s.end_with?("Controller")
     end
 
+    #: (Array[doc] methods, doc base_idx, doc head_idx, Hash[String, Array[String]] builders) -> void
     def decorate_tests(methods, base_idx, head_idx, builders)
       test_sources = test_sources_for(base_idx, head_idx)
       public_names = (base_idx["methods"] + head_idx["methods"]).filter_map { |node| [node.qualified, true] if node.visibility == "public" }.to_h
-      routes = requests = nil
+      routes = nil #: Routes?
+      requests = nil #: Hash[String, Hash[String, Array[String]]]?
       methods.each do |method|
         node = method["new"] || method["old"]
         method["builders"] = constructor?(node) ? builders.fetch(node.qualifier) : []
@@ -506,8 +567,8 @@ module JitCatch
             # A test starts an executable by its path, as `exe/tool` or
             # `../exe/tool`, not by a method name.
             grep_hits(test_sources, node.file)
-          elsif controller_action?(node.qualified) && (routes ||= app_routes(head_idx)).drawn?(node.qualified)
-            route_hits(test_sources, node.qualified, requests ||= test_requests(test_sources, routes, base_idx, head_idx))
+          elsif controller_action?(node.qualified) && (drawn = (routes ||= app_routes(head_idx))).drawn?(node.qualified)
+            route_hits(test_sources, node.qualified, requests ||= test_requests(test_sources, drawn, base_idx, head_idx))
           else
             merge_hits(call_hits(test_sources.keys, method["run_by"], "callback", base_idx, head_idx), grep_hits(test_sources, node.bare_name, owner_pattern(node)))
           end
@@ -524,6 +585,7 @@ module JitCatch
     # namespace, so `Minitest::Test` does not match a `Minitest` class) and
     # calls a method of the entry point's name. A bare-name grep alone matched
     # unrelated tests for common names such as build, run, and parse.
+    #: (Hash[String, String] test_sources, Array[String] entry_points) -> Array[doc]
     def entry_point_hits(test_sources, entry_points)
       found = Hash.new { |hash, file| hash[file] = [] }
       entry_points.each do |name|
@@ -540,11 +602,14 @@ module JitCatch
       found.keys.sort.first(TEST_CAP).map { |file| { "file" => file, "entry_points" => found[file].sort } }
     end
 
+    #: (doc method) -> Array[doc]
     def coverage_hits(method)
       node = method["new"] || method["old"]
       start_line = node.start_line
       end_line = node.end_line
-      @coverage.filter_map { |test|
+      # Only a run with a coverage file asks for coverage hits.
+      coverage = @coverage #: Array[doc]
+      coverage.filter_map { |test|
         lines = test.dig("lines", node.file)
         next unless lines.is_a?(Array)
         next unless lines.any? { |line| line.is_a?(Integer) && line >= start_line && line <= end_line }
@@ -555,6 +620,7 @@ module JitCatch
 
     # A test file that sends the endpoint's verb to a path ending in its
     # segments, as a request spec does.
+    #: (Hash[String, String] test_sources, String bare) -> Array[doc]
     def request_hits(test_sources, bare)
       pattern = request_pattern(bare)
       test_sources.filter_map { |file, source| { "file" => file, "via" => "grep" } if source.match?(pattern) }
@@ -566,8 +632,9 @@ module JitCatch
     # path that starts with an interpolation, as `"#{api_root}/things/..."`,
     # computes its mount point, so it may name only the endpoint's last
     # segments, at least two of them.
+    #: (String bare) -> Regexp
     def request_pattern(bare)
-      verb, path = bare.split(" ", 2)
+      verb, path = bare.split(" ", 2) #: [String, String]
       segment = %q{[^"'?/\s]+}
       parts = path.split("/").reject(&:empty?).map { |part| part.start_with?(":") ? segment : Regexp.escape(part) }
       suffixes = parts.size.downto([parts.size, 2].min).map { |count| parts.last(count).join("/") }
@@ -577,10 +644,12 @@ module JitCatch
       Regexp.new(%Q{\\b#{verb.downcase}[\\s(]+["'](?:#{full}|#{computed_mount})/?["'?]})
     end
 
+    #: (doc idx) -> Routes
     def app_routes(idx)
       Routes.parse(idx["sources"]["config/routes.rb"], app_inflections(idx))
     end
 
+    #: (doc idx) -> Inflections
     def app_inflections(idx)
       Inflections.read(idx["sources"]["config/initializers/inflections.rb"])
     end
@@ -589,6 +658,7 @@ module JitCatch
     # way other than a call by name. A row at one of a method's call sites,
     # or a plain read inside a method a constant already lists as reading
     # it, says nothing those lists do not, so it is left out.
+    #: (doc base_idx, doc head_idx, Array[doc] diff, Array[doc] methods, Array[doc] constants, String base, String head) -> doc
     def implicit_readers(base_idx, head_idx, diff, methods, constants, base, head)
       values, rows = Readers.between(
         base_sources: base_idx["sources"], head_sources: head_idx["sources"].merge(head_idx["templates"]),
@@ -613,6 +683,7 @@ module JitCatch
 
     # Models, routes, and templates live in app/ and config/routes.rb, so a
     # history with neither, as a gem's, hides none of what Rails would.
+    #: (doc idx) -> bool
     def rails_shaped?(idx)
       paths = idx["sources"].keys + idx["templates"].keys
       paths.any? { |path| path.start_with?("app/") || %w[config/application.rb config/routes.rb].include?(path) }
@@ -620,6 +691,7 @@ module JitCatch
 
     # The method or constant entry a value is, by its name and where it is
     # declared. A setting, a callback, or a default has none.
+    #: (Readers::Value value, Array[doc] methods, Array[doc] constants) -> doc?
     def listed_item(value, methods, constants)
       items = { constant: constants, method: methods, scope: methods }.fetch(value.kind, [])
       items.find do |item|
@@ -628,6 +700,7 @@ module JitCatch
       end
     end
 
+    #: (Readers::Row row, doc? item, Array[doc] methods) -> bool
     def shown_elsewhere?(row, item, methods)
       return false unless item
 
@@ -645,18 +718,24 @@ module JitCatch
     # reads them, and the controller tests that name the controller and
     # call the action by its symbol (`post :create`). A bare-name grep
     # matched `create(:book)` and missed `post books_path`.
+    #: (Hash[String, String] test_sources, String action, Hash[String, Hash[String, Array[String]]] requests) -> Array[doc]
     def route_hits(test_sources, action, requests)
       owner, _sep, bare = SourceIndex.split_qualified(action)
       controller_call = /\b(?:#{SourceIndex::ENDPOINT_VERBS.join("|")})[\s(]+:#{called(bare)}/
       named = /\b#{Regexp.escape(owner.split("::").last)}\b/
       test_sources.filter_map { |file, source|
         calls = requests[file].filter_map { |request, actions| request if actions.include?(action) }
-        calls += source.scan(controller_call).map { |call| call.sub(/[\s(]+/, " ") }.uniq if source.match?(named)
+        if source.match?(named)
+          # The pattern has no group, so each match is a String.
+          written = source.scan(controller_call) #: Array[String]
+          calls += written.map { |call| call.sub(/[\s(]+/, " ") }.uniq
+        end
         { "file" => file, "via" => "route", "calls" => calls.sort } unless calls.empty?
       }.first(TEST_CAP)
     end
 
     # Each test file's requests, with the controller actions they reach.
+    #: (Hash[String, String] test_sources, Routes routes, doc base_idx, doc head_idx) -> Hash[String, Hash[String, Array[String]]]
     def test_requests(test_sources, routes, base_idx, head_idx)
       test_sources.keys.to_h { |file|
         index = head_idx["indexes"][file] || base_idx["indexes"][file]
@@ -665,6 +744,7 @@ module JitCatch
     end
 
     # `owner`, when given, is a pattern the file must match too.
+    #: (Hash[String, String] test_sources, String? bare, ?Regexp? owner) -> Array[doc]
     def grep_hits(test_sources, bare, owner = nil)
       return [] if bare.nil? || bare.length < 3
 
@@ -681,8 +761,9 @@ module JitCatch
     # touch the class. Such a hit counts only in a file that also names the
     # class or the namespace around it, as `Hit` or `Targets` for
     # `Targets::Hit#code`.
-    MEMBER_MACRO = /\A(?:attr_reader|attr_writer|Struct\.new|Data\.define)\z/
+    MEMBER_MACRO = /\A(?:attr_reader|attr_writer|Struct\.new|Data\.define)\z/ #: Regexp
 
+    #: (SourceIndex::Method node) -> Regexp?
     def owner_pattern(node)
       return nil unless MEMBER_MACRO.match?(node.macro.to_s)
 
@@ -695,8 +776,9 @@ module JitCatch
     # One that builds a Ruby value, as `class: Hash` does for the shape of an
     # API response, builds no class of the app, so nothing is skipped. The
     # list is fixed so that every Ruby prints the same document.
-    RUBY_VALUE_CLASSES = %w[Array Data Hash Object OpenStruct Set String Struct].freeze
+    RUBY_VALUE_CLASSES = %w[Array Data Hash Object OpenStruct Set String Struct].freeze #: Array[String]
 
+    #: (doc idx) -> Array[Factories::Factory]
     def factories_of(idx)
       defined = lookups(idx)[2]
       Factories.read(idx["sources"].select { |path, _source| Factories.file?(path) }).filter_map do |factory|
@@ -710,6 +792,7 @@ module JitCatch
     # The calls other than `new` that run a changed class's `initialize`:
     # `create`, `create!`, and `build` on an ActiveRecord model, and each
     # factory that builds the class.
+    #: (Array[doc] methods, doc idx, Array[Factories::Factory] factories) -> Hash[String, Array[String]]
     def builders_for(methods, idx, factories)
       by_class, _by_bare, _qualifiers, parents = lookups(idx)
       methods.map { |method| (method["new"] || method["old"]).qualifier }.uniq.to_h do |qualifier|
@@ -722,9 +805,10 @@ module JitCatch
     # its save callbacks too: `create(:loan)` saves the Borrower that
     # `borrower` builds, and `build(:loan)` builds it unsaved. A trait's
     # associations build only when the test names the trait.
+    #: (String qualifier, Array[Factories::Factory] factories) -> Array[String]
     def factory_mentions(qualifier, factories)
       factories.reject(&:reason).flat_map do |factory|
-        traits = factory.trait_builds.select { |_trait, classes| classes.include?(qualifier) }.keys
+        traits = factory.trait_builds.select { |_trait, classes| classes.include?(qualifier) }.keys #: Array[String?]
         traits.unshift(nil) if factory.class_name == qualifier || factory.builds.include?(qualifier)
         traits.product(%w[build create]).map { |trait, call| SourceIndex.factory_mention(factory.name, call, trait) }
       end
@@ -736,6 +820,7 @@ module JitCatch
     # where `.create` does: `create(:loan)` saves a new record. `build(:loan)`
     # counts there too, but a test hit needs the test to save or validate
     # the record as well (`call_hits`).
+    #: (Array[doc] methods, doc base_idx, doc head_idx, Array[Factories::Factory] factories, Array[edge] head_edges, Array[edge] base_edges) -> void
     def decorate_callbacks(methods, base_idx, head_idx, factories, head_edges, base_edges)
       base_callbacks = record_callbacks(base_idx)
       head_callbacks = record_callbacks(head_idx)
@@ -766,6 +851,7 @@ module JitCatch
     # does not type, such as a parameter, is read as the model Rails names
     # it after: `loan.save!` as `Loan#save!`. Only a save reads it, since a
     # record call has no meaning on another class.
+    #: (doc idx) -> Array[[String, String]]
     def app_calls(idx)
       idx["calls"].filter_map { |call|
         next if call.enclosing.nil? || test_file?(call.file)
@@ -775,8 +861,11 @@ module JitCatch
       }
     end
 
+    #: (SourceIndex::Call call) -> String?
     def written_call(call)
-      qualifier, sep, _bare = SourceIndex.split_qualified(call.enclosing)
+      # The caller skips a call made outside any method.
+      enclosing = call.enclosing #: String
+      qualifier, sep, _bare = SourceIndex.split_qualified(enclosing)
       receiver = call.receiver
       case receiver.kind
       when "self" then "#{qualifier}#{sep}#{call.bare_name}"
@@ -789,6 +878,7 @@ module JitCatch
     # A callback line counts in a class whose superclass chain reaches
     # ActiveRecord::Base. One in a Concern runs on each class that includes
     # it, which the source does not list, so it is not followed.
+    #: (doc idx) -> Hash[String, Array[SourceIndex::Callback]]
     def record_callbacks(idx)
       parents = lookups(idx)[3]
       idx["indexes"].reject { |path, _index| test_file?(path) }.values.flat_map(&:callbacks)
@@ -796,17 +886,20 @@ module JitCatch
         .group_by { |callback| SourceIndex.qualify(callback.qualifier, callback.method, false) }
     end
 
+    #: (SourceIndex::Callback callback, Array[Factories::Factory] factories) -> Array[String]
     def callback_calls(callback, factories)
       calls = callback.calls.map { |call| "#{callback.qualifier}#{call}" }
       calls.include?("#{callback.qualifier}.create") ? calls + factory_mentions(callback.qualifier, factories) : calls
     end
 
+    #: (untyped node) -> bool
     def constructor?(node)
       node.bare_name == "initialize" && node.kind == "instance" && !node.qualifier.empty?
     end
 
     # A test file that makes one of the calls, as its parsed source writes
     # it. `Loan.new` also names `Shop::Loan` from inside `Shop`.
+    #: (Array[String] paths, Array[String] calls, String via, doc base_idx, doc head_idx) -> Array[doc]
     def call_hits(paths, calls, via, base_idx, head_idx)
       return [] if calls.empty?
 
@@ -820,6 +913,7 @@ module JitCatch
       }
     end
 
+    #: (Array[doc] builds, Array[doc] greps) -> Array[doc]
     def merge_hits(builds, greps)
       built = builds.map { |hit| hit["file"] }
       (builds + greps.reject { |hit| built.include?(hit["file"]) }).sort_by { |hit| hit["file"] }.first(TEST_CAP)
@@ -827,10 +921,12 @@ module JitCatch
 
     # A method name can end in `!` or `?`, where `\b` cannot follow, and
     # `save` is not a call of `save!`.
+    #: (String bare) -> String
     def called(bare)
       "#{Regexp.escape(bare)}(?![\\w?!])"
     end
 
+    #: (doc base_idx, doc head_idx) -> Hash[String, String]
     def test_sources_for(base_idx, head_idx)
       paths = (base_idx["sources"].keys | head_idx["sources"].keys).select { |path| test_file?(path) && !fixture_code?(path) }.sort
       paths.to_h { |path| [path, head_idx["sources"][path] || base_idx["sources"][path]] }
@@ -840,19 +936,21 @@ module JitCatch
     # `test/fixture/depot`) holds code of its own in app/, lib/, config/,
     # and db/. That code tests nothing, so it is no test a `tests:` line
     # can name; the fixture's own test and spec files still are.
-    FIXTURE_DIR = /\Afixtures?\z/
-    FIXTURE_CODE = %w[app lib config db].freeze
+    FIXTURE_DIR = /\Afixtures?\z/ #: Regexp
+    FIXTURE_CODE = %w[app lib config db].freeze #: Array[String]
 
+    #: (String path) -> bool
     def fixture_code?(path)
       parts = path.split("/")
       at = parts.index { |part| FIXTURE_DIR.match?(part) }
       return false unless at && parts.first(at).any? { |part| %w[test spec].include?(part) }
 
       base = parts.last
-      inner = parts[(at + 1)...-1]
+      inner = parts[(at + 1)...-1] #: Array[String]
       !(base.start_with?("test_") || base.end_with?("_test.rb", "_spec.rb")) && inner.any? { |part| FIXTURE_CODE.include?(part) }
     end
 
+    #: (String path) -> bool
     def test_file?(path)
       base = File.basename(path)
       return false unless base.end_with?(".rb")
@@ -862,6 +960,7 @@ module JitCatch
       parts.include?("test") || parts.include?("spec")
     end
 
+    #: (Array[doc] methods, doc head_idx, doc base_idx) -> Array[doc]
     def entrypoints_for(methods, head_idx, base_idx)
       classes = methods.map { |method| (method["new"] || method["old"]).qualifier }.uniq.sort
       classes.filter_map do |qualifier|
@@ -887,14 +986,16 @@ module JitCatch
       end
     end
 
+    #: (doc idx, String qualifier) -> Array[SourceIndex::Method]
     def public_methods_of(idx, qualifier)
       idx["methods"].select { |method| method.qualifier == qualifier && method.visibility == "public" && !test_file?(method.file) }
     end
 
+    #: (doc idx) -> Array[edge]
     def edges_for(idx)
       by_class, by_bare, qualifiers, parents = lookups(idx)
-      edges = []
-      named_owners = {}
+      edges = [] #: Array[edge]
+      named_owners = {} #: Hash[[String, untyped], String?]
       (idx["calls"] + idx["template_calls"]).each do |call|
         next if call.enclosing.nil? || test_file?(call.file)
 
@@ -903,7 +1004,8 @@ module JitCatch
         else
           call_target(call, by_class, by_bare, qualifiers, parents, named_owners)
         end
-        Array(targets).each do |target|
+        found = Array(targets) #: Array[SourceIndex::Method]
+        found.each do |target|
           next if target.qualified == call.enclosing
 
           edges << { "from" => call.enclosing, "to" => target.qualified, "file" => call.file, "line" => call.line }
@@ -915,17 +1017,22 @@ module JitCatch
 
     # A template calls a bare name on its view, which holds the app's helper
     # modules, so only a helper method answers it.
+    #: (SourceIndex::Call call, Hash[String, Array[SourceIndex::Method]] by_bare) -> SourceIndex::Method?
     def helper_target(call, by_bare)
       found = (by_bare[call.bare_name] || []).select { |method| method.kind == "instance" && method.file.start_with?("app/helpers/") }
       found.first if found.size == 1
     end
 
+    #: (doc idx) -> lookups
     def lookups(idx)
       methods = idx["methods"]
       by_class = methods.group_by { |method| [method.qualifier, method.bare_name] }
       by_bare = methods.group_by(&:bare_name)
       # A class with no method of its own still names a class to look up.
-      qualifiers = idx["namespaces"].to_h { |node| [node.qualified, []] }.merge(methods.group_by(&:qualifier))
+      named = idx["namespaces"].to_h do |node|
+        [node.qualified, []] #: [String, Array[SourceIndex::Method]]
+      end
+      qualifiers = named.merge(methods.group_by(&:qualifier))
       parents = idx["superclasses"].to_h { |sup| [sup.qualified, resolve_constant(sup.written, sup.scope, qualifiers, defining: sup.qualified) || sup.written] }
       [by_class, by_bare, qualifiers, parents]
     end
@@ -937,8 +1044,11 @@ module JitCatch
     # an instance method, since no mixin turns a class method into one.
     # `named_owners` keeps the class each name resolves to from each
     # namespace, since a repository sends to the same few names many times.
+    #: (SourceIndex::Call call, Hash[[String, String], Array[SourceIndex::Method]] by_class, Hash[String, Array[SourceIndex::Method]] by_bare, Hash[String, Array[SourceIndex::Method]] qualifiers, Hash[String, String] parents, ?Hash[[String, untyped], String?] named_owners) -> (SourceIndex::Method | Array[SourceIndex::Method] | nil)
     def call_target(call, by_class, by_bare, qualifiers, parents, named_owners = {})
-      qualifier, sep, _bare = SourceIndex.split_qualified(call.enclosing)
+      # The caller skips a call made outside any method.
+      enclosing = call.enclosing #: String
+      qualifier, sep, _bare = SourceIndex.split_qualified(enclosing)
       receiver = call.receiver
       case receiver.kind
       when "self"
@@ -963,7 +1073,7 @@ module JitCatch
           constructor_of(owner, call.bare_name, by_class, parents)
         end
       when "named"
-        key = [qualifier, receiver.const]
+        key = [qualifier, receiver.const] #: [String, untyped]
         owner = named_owners.fetch(key) { named_owners[key] = resolve_constant(SourceIndex.model_name(receiver.const), qualifier, qualifiers) }
         return nil unless owner
 
@@ -982,6 +1092,7 @@ module JitCatch
     # another class they are methods the index cannot see, so they count
     # only there. A class method of the same name up the chain answers the
     # call instead.
+    #: (String? owner, String bare, Hash[[String, String], Array[SourceIndex::Method]] by_class, Hash[String, String] parents) -> SourceIndex::Method?
     def constructor_of(owner, bare, by_class, parents)
       chain = ancestry(owner, parents)
       return nil unless bare == "new" || (RECORD_BUILDERS.include?(bare) && chain.include?("ActiveRecord::Base"))
@@ -994,6 +1105,7 @@ module JitCatch
       nil
     end
 
+    #: (String? owner, Hash[String, String] parents) -> Array[String?]
     def ancestry(owner, parents)
       chain = [owner]
       chain << parents[chain.last] while parents.key?(chain.last) && !chain.include?(parents[chain.last])
@@ -1003,6 +1115,7 @@ module JitCatch
     # Ruby looks a constant up from the innermost enclosing namespace out.
     # A class header reads its superclass before it defines the class, so
     # the superclass is never the class it heads.
+    #: (String const, String qualifier, Hash[String, untyped] qualifiers, ?defining: String?) -> String?
     def resolve_constant(const, qualifier, qualifiers, defining: nil)
       parts = qualifier.split("::")
       parts.size.downto(0).map { |n| [*parts.first(n), const].join("::") }.find { |name| name != defining && qualifiers.key?(name) }
@@ -1011,13 +1124,15 @@ module JitCatch
     # The cap keeps the nearest callers; the kept names print sorted. A
     # caller of `new` reaches `initialize` in the call it writes, so that
     # hop adds no depth, and its callers go first in the queue.
+    #: (String qualified, Array[edge] edges) -> Array[String]
     def upstream(qualified, edges)
       callers_by_depth(qualified, edges, UPSTREAM_DEPTH).sort_by { |name, depth| [depth, name] }.first(REACHABLE_CAP).map(&:first).sort
     end
 
+    #: (String qualified, Array[edge] edges, Integer? limit) -> Hash[String, Integer]
     def callers_by_depth(qualified, edges, limit)
       reverse = callers_index(edges)
-      depths = {}
+      depths = {} #: Hash[String, Integer]
       queue = reverse.fetch(qualified, []).uniq.map { |name| [name, 1] }
       until queue.empty?
         name, depth = queue.shift
@@ -1035,10 +1150,13 @@ module JitCatch
       depths
     end
 
+    #: (Array[edge] edges) -> Hash[String, Array[String]]
     def callers_index(edges)
-      (@callers_index ||= {}.compare_by_identity)[edges] ||= edges.group_by { |edge| edge["to"] }.transform_values { |list| list.map { |edge| edge["from"] } }
+      cache = @callers_index ||= Hash.new.compare_by_identity
+      cache[edges] ||= edges.group_by { |edge| edge["to"] }.transform_values { |list| list.map { |edge| edge["from"] } }
     end
 
+    #: (String base, String head) -> Array[String]
     def intent_lines(base, head)
       messages = @git.commit_messages(base, head).filter_map do |message|
         lines = message.lines.map(&:strip).reject(&:empty?)
@@ -1048,6 +1166,7 @@ module JitCatch
       messages.flat_map.with_index { |lines, index| index.zero? ? lines : ["---", *lines] }
     end
 
+    #: (doc item) -> doc
     def method_hash(item)
       node = item["new"] || item["old"]
       old_node = item["old"]
@@ -1087,6 +1206,7 @@ module JitCatch
       }
     end
 
+    #: (doc item) -> doc
     def constant_hash(item)
       node = item["new"] || item["old"]
       {
@@ -1104,36 +1224,43 @@ module JitCatch
       }
     end
 
+    #: (String change, SourceIndex::Method? old_node, SourceIndex::Method? new_node) -> String
     def signature_of(change, old_node, new_node)
       return "added" if change == "added"
       return "removed" if change == "removed"
 
-      old_node.params == new_node.params ? "same" : "changed"
+      old_node&.params == new_node&.params ? "same" : "changed"
     end
 
+    #: (Array[doc] items, String prefix) -> void
     def assign_ids(items, prefix)
       items.sort_by! { |item| identity_sort(item) }
       width = [2, items.size.to_s.length].max
       items.each_with_index { |item, index| item["id"] = format("%s%0#{width}d", prefix, index + 1) }
     end
 
+    #: (doc item) -> [String, String, String]
     def identity_sort(item)
       node = item["new"] || item["old"]
       [node.file, node.qualified, item["change"]]
     end
 
+    #: (untyped node) -> [String, String]
     def identity(node)
       [node.file, node.qualified]
     end
 
+    #: (Array[untyped] nodes) -> Hash[[String, String], untyped]
     def index_by(nodes)
       nodes.to_h { |node| [identity(node), node] }
     end
 
+    #: (String? text) -> String
     def norm(text)
       text.to_s.rstrip
     end
 
+    #: (String? text) -> String?
     def cap(text)
       Text.cap_lines(text)
     end
@@ -1142,6 +1269,7 @@ module JitCatch
   module CoverageFile
     module_function
 
+    #: (String path) -> Array[doc]
     def load(path)
       expanded = File.expand_path(path)
       raise UsageError, "coverage file not found: #{path}" unless File.file?(expanded)
@@ -1157,7 +1285,7 @@ module JitCatch
         {
           "id" => test["id"].to_s,
           "file" => test["file"].to_s,
-          "lines" => test["lines"].is_a?(Hash) ? test["lines"] : {}
+          "lines" => test["lines"].is_a?(Hash) ? test["lines"] : {} #: Hash[String, untyped]
         }
       }.sort_by { |test| [test["file"], test["id"]] }
     rescue JSON::ParserError => err

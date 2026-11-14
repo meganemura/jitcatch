@@ -1,0 +1,17 @@
+# Generated from lib/jitcatch/template.rb with RBS::Inline
+
+module JitCatch
+  # Turns an ERB template into Ruby that Prism can parse, line for line, so
+  # a call in a template keeps the line it has there. Text outside the tags
+  # becomes blank lines, and the value of each `<%=` tag goes to a call
+  # named `__erb_out__`, so a reader can tell printed values from code.
+  module Template
+    OUTPUT: Symbol
+
+    # : (String text) -> String
+    def self?.as_ruby: (String text) -> String
+
+    # : (String path) -> bool
+    def self?.template?: (String path) -> bool
+  end
+end

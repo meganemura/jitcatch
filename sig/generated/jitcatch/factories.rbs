@@ -1,0 +1,128 @@
+# Generated from lib/jitcatch/factories.rb with RBS::Inline
+
+module JitCatch
+  # Reads FactoryBot definitions as source, without loading them, so a test
+  # that calls `create(:loan)` can be traced to the class the factory
+  # builds. It does not know the app's inflections or any class a run
+  # computes: a factory whose class the source does not settle comes back
+  # with a reason and no class.
+  module Factories
+    # `builds` holds the classes its associations build, through their own
+    # associations too. `trait_builds` holds, by trait name, what a trait
+    # builds when a test names it.
+    class Factory < Data
+      attr_reader name(): String?
+
+      attr_reader class_name(): String?
+
+      attr_reader file(): String
+
+      attr_reader line(): Integer
+
+      attr_reader reason(): String?
+
+      attr_reader builds(): Array[String]
+
+      attr_reader trait_builds(): Hash[String, Array[String]]
+
+      def self.new: (String? name, String? class_name, String file, Integer line, String? reason, Array[String] builds, Hash[String, Array[String]] trait_builds) -> instance
+                  | (name: String?, class_name: String?, file: String, line: Integer, reason: String?, builds: Array[String], trait_builds: Hash[String, Array[String]]) -> instance
+
+      def self.members: () -> [ :name, :class_name, :file, :line, :reason, :builds, :trait_builds ]
+
+      def members: () -> [ :name, :class_name, :file, :line, :reason, :builds, :trait_builds ]
+    end
+
+    # One `factory` call as written. `outer` is the factory it nests in.
+    # `associations` names the factories it may build with: a bare name
+    # counts only when a factory of that name exists. `traits` holds the
+    # names of each trait's associations.
+    class Written < Data
+      attr_reader names(): Array[String]
+
+      attr_reader file(): String
+
+      attr_reader line(): Integer
+
+      attr_reader own_class(): String?
+
+      attr_reader parent(): String?
+
+      attr_reader outer(): Written?
+
+      attr_reader reason(): String?
+
+      attr_reader associations(): Array[String]
+
+      attr_reader traits(): Hash[String, Array[String]]
+
+      def self.new: (Array[String] names, String file, Integer line, String? own_class, String? parent, Written? outer, String? reason, Array[String] associations, Hash[String, Array[String]] traits) -> instance
+                  | (names: Array[String], file: String, line: Integer, own_class: String?, parent: String?, outer: Written?, reason: String?, associations: Array[String], traits: Hash[String, Array[String]]) -> instance
+
+      def self.members: () -> [ :names, :file, :line, :own_class, :parent, :outer, :reason, :associations, :traits ]
+
+      def members: () -> [ :names, :file, :line, :own_class, :parent, :outer, :reason, :associations, :traits ]
+    end
+
+    # Calls in a factory block that define something other than an attribute.
+    DEFINITIONS: Array[Symbol]
+
+    # : (String path) -> bool
+    def self?.file?: (String path) -> bool
+
+    # A parent can be defined in another file, so every file is read before
+    # any class is settled.
+    # : (Hash[String, String] sources) -> Array[Factory]
+    def self?.read: (Hash[String, String] sources) -> Array[Factory]
+
+    # : (Array[Written] items, Hash[String, Written] by_name) -> Array[String]
+    def self?.classes_built: (Array[Written] items, Hash[String, Written] by_name) -> Array[String]
+
+    # A factory can use the traits of its parent and of the factory it
+    # nests in, and its own trait of the same name wins.
+    # : (Written item, Hash[String, Written] by_name, Array[Written] seen) -> Hash[String, Array[String]]
+    def self?.traits_of: (Written item, Hash[String, Written] by_name, Array[Written] seen) -> Hash[String, Array[String]]
+
+    # : (Prism::Node? node, String file, Written? outer) -> Array[Written]
+    def self?.collect: (Prism::Node? node, String file, Written? outer) -> Array[Written]
+
+    # : (Prism::CallNode node, String file, Written? outer) -> Written
+    def self?.written: (Prism::CallNode node, String file, Written? outer) -> Written
+
+    # : (Prism::Node? block) -> Hash[String, Array[String]]
+    def self?.traits_in: (Prism::Node? block) -> Hash[String, Array[String]]
+
+    # The statements of the factory's own block. A trait runs only when a
+    # test names it, and a nested factory is a factory of its own.
+    # : (Prism::Node? block) -> Array[String]
+    def self?.associations_in: (Prism::Node? block) -> Array[String]
+
+    # `association :author, factory: :user` builds from :user, and
+    # `factory: [:user, :admin]` from :user with a trait.
+    # : (Prism::CallNode call) -> String?
+    def self?.association_name: (Prism::CallNode call) -> String?
+
+    # The factories an item builds with, its parent's and the one it nests
+    # in included, since a child factory inherits their attributes.
+    # : (Written item, Hash[String, Written] by_name, Array[Written] seen) -> Array[Written]
+    def self?.built_with: (Written item, Hash[String, Written] by_name, Array[Written] seen) -> Array[Written]
+
+    # FactoryBot takes a factory's class from its own `class:`, then from
+    # its parent (named by `parent:`, or the factory it nests in), then
+    # from its name.
+    # The class's name, or nil and the reason the source does not settle it.
+    # : (Written item, Hash[String, Written] by_name, Array[Written] seen) -> [String?, String?]
+    def self?.settle: (Written item, Hash[String, Written] by_name, Array[Written] seen) -> [ String?, String? ]
+
+    # A string or a symbol that starts in upper case is a constant's name,
+    # and FactoryBot camelizes any other.
+    # : (Prism::Node? node) -> String?
+    def self?.class_named: (Prism::Node? node) -> String?
+
+    # : (Prism::Node? node) -> String?
+    def self?.literal: (Prism::Node? node) -> String?
+
+    # : (String name) -> String
+    def self?.camelize: (String name) -> String
+  end
+end

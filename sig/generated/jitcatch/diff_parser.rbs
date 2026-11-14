@@ -1,0 +1,18 @@
+# Generated from lib/jitcatch/diff_parser.rb with RBS::Inline
+
+module JitCatch
+  # Parses `git diff --unified=0` text. Line numbers are 1-based, matching Prism.
+  module DiffParser
+    # : (String? text) -> Array[doc]
+    def self?.parse: (String? text) -> Array[doc]
+
+    # : (String? text) -> Array[doc]
+    def self?.name_status: (String? text) -> Array[doc]
+
+    # : (String? raw) -> String?
+    def self?.clean_path: (String? raw) -> String?
+
+    # : (Integer start_line, Integer end_line, Array[doc] hunks, String side) -> bool
+    def self?.overlaps?: (Integer start_line, Integer end_line, Array[doc] hunks, String side) -> bool
+  end
+end

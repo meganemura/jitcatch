@@ -1,7 +1,13 @@
 # frozen_string_literal: true
+# rbs_inline: enabled
 
 module JitCatch
   class CLI
+    # @rbs @argv: Array[String]
+    # @rbs @finished_in_time: finished_in_time?
+
+    # The exit status.
+    #: (Array[String] argv, ?finished_in_time: finished_in_time?) -> Integer
     def self.start(argv, finished_in_time: nil)
       new(argv, finished_in_time: finished_in_time).run
     rescue UsageError => err
@@ -12,11 +18,13 @@ module JitCatch
       2
     end
 
+    #: (Array[String] argv, ?finished_in_time: finished_in_time?) -> void
     def initialize(argv, finished_in_time: nil)
       @argv = argv
       @finished_in_time = finished_in_time
     end
 
+    #: () -> Integer
     def run
       if @argv.empty? || %w[-h --help help].include?(@argv.first)
         $stdout.write(help_text)
@@ -41,14 +49,16 @@ module JitCatch
     # A copy run from its own git checkout, as a gem installed from git
     # is, names its commit, so a quoted output can say which code wrote it.
     # A copy inside another project's checkout names none.
+    #: () -> String
     def version_line
-      root = File.expand_path("../..", __dir__)
+      root = File.expand_path("../..", __dir__.to_s)
       sha = File.exist?(File.join(root, ".git")) ? IO.popen(["git", "-C", root, "rev-parse", "--short", "HEAD"], err: File::NULL, &:read).strip : ""
       sha.empty? ? "jitcatch #{VERSION}\n" : "jitcatch #{VERSION} (#{sha})\n"
     rescue SystemCallError
       "jitcatch #{VERSION}\n"
     end
 
+    #: (Array[String] argv) -> Integer
     def command_context(argv)
       opts, positional = parse_options(argv, %i[repo coverage all_readers])
       return write_help if opts[:help]
@@ -60,6 +70,7 @@ module JitCatch
       0
     end
 
+    #: (Array[String] argv) -> Integer
     def command_run(argv)
       opts, positional = parse_options(argv, %i[repo reruns timeout env workers serial number_database_url setup])
       return write_help if opts[:help]
@@ -84,10 +95,12 @@ module JitCatch
       Assessor.untested_run?(doc) ? 3 : 0
     rescue EnvironmentError => err
       # Every exit 3 is a report on stdout, so a caller reads one stream for it.
-      $stdout.write(opts[:json] ? Render.dump(err.doc) : Render.setup_failed_text(err.doc))
+      # parse_options raises no EnvironmentError, so opts is set here.
+      $stdout.write((opts || {})[:json] ? Render.dump(err.doc) : Render.setup_failed_text(err.doc))
       3
     end
 
+    #: (Array[String] argv) -> Integer
     def command_assess(argv)
       opts, positional = parse_options(argv, [])
       return write_help if opts[:help]
@@ -107,9 +120,12 @@ module JitCatch
       raise UsageError, "run json is not JSON: #{err.message}"
     end
 
+    # Each option's value is true for a flag, an Integer for a number,
+    # an Array of names for --env, and the String given otherwise.
+    #: (Array[String] argv, Array[Symbol] allowed) -> [Hash[Symbol, untyped], Array[String]]
     def parse_options(argv, allowed)
-      opts = {}
-      positional = []
+      opts = {} #: Hash[Symbol, untyped]
+      positional = [] #: Array[String]
       rest = argv.dup
       while (arg = rest.shift)
         if arg == "--help" || arg == "-h"
@@ -142,12 +158,14 @@ module JitCatch
       [opts, positional]
     end
 
+    #: (String flag, String value) -> Integer
     def integer_option(flag, value)
       raise UsageError, "#{flag} requires an integer" unless value.match?(/\A\d+\z/)
 
       value.to_i
     end
 
+    #: (String flag, String value) -> Integer
     def positive_option(flag, value)
       number = integer_option(flag, value)
       raise UsageError, "#{flag} must be >= 1" if number < 1
@@ -157,6 +175,7 @@ module JitCatch
 
     # A value on the command line would reach the run and no rerun line,
     # which reads each name from the reader's shell, so --env takes a name.
+    #: (String flag, String value) -> String
     def env_option(flag, value)
       name = value[/\A([A-Za-z_][A-Za-z0-9_]*)=/, 1]
       raise UsageError, "#{flag} takes a name and reads its value from your shell, as each rerun line does: run export #{name}=<value>, then pass #{flag} #{name}" if name
@@ -166,15 +185,18 @@ module JitCatch
       value
     end
 
+    #: (Hash[Symbol, untyped] opts) -> String
     def repo_at(opts)
       opts[:repo] || Dir.pwd
     end
 
+    #: () -> Integer
     def write_help
       $stdout.write(help_text)
       0
     end
 
+    #: () -> String
     def help_text
       <<~HELP
         jitcatch #{VERSION}

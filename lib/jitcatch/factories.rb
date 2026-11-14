@@ -1,4 +1,5 @@
 # frozen_string_literal: true
+# rbs_inline: enabled
 
 require "prism"
 
@@ -12,24 +13,44 @@ module JitCatch
     # `builds` holds the classes its associations build, through their own
     # associations too. `trait_builds` holds, by trait name, what a trait
     # builds when a test names it.
-    Factory = Data.define(:name, :class_name, :file, :line, :reason, :builds, :trait_builds)
+    Factory = Data.define(
+      :name, #: String?
+      :class_name, #: String?
+      :file, #: String
+      :line, #: Integer
+      :reason, #: String?
+      :builds, #: Array[String]
+      :trait_builds #: Hash[String, Array[String]]
+    )
     # One `factory` call as written. `outer` is the factory it nests in.
     # `associations` names the factories it may build with: a bare name
     # counts only when a factory of that name exists. `traits` holds the
     # names of each trait's associations.
-    Written = Data.define(:names, :file, :line, :own_class, :parent, :outer, :reason, :associations, :traits)
+    Written = Data.define(
+      :names, #: Array[String]
+      :file, #: String
+      :line, #: Integer
+      :own_class, #: String?
+      :parent, #: String?
+      :outer, #: Written?
+      :reason, #: String?
+      :associations, #: Array[String]
+      :traits #: Hash[String, Array[String]]
+    )
 
     # Calls in a factory block that define something other than an attribute.
-    DEFINITIONS = %i[factory trait transient sequence after before callback traits_for_enum initialize_with to_create skip_create].freeze
+    DEFINITIONS = %i[factory trait transient sequence after before callback traits_for_enum initialize_with to_create skip_create].freeze #: Array[Symbol]
 
     module_function
 
+    #: (String path) -> bool
     def file?(path)
       path.match?(%r{(?:\A|/)(?:spec|test)/factories(?:\.rb\z|/.*\.rb\z)})
     end
 
     # A parent can be defined in another file, so every file is read before
     # any class is settled.
+    #: (Hash[String, String] sources) -> Array[Factory]
     def read(sources)
       written = sources.sort.flat_map { |file, source| collect(Prism.parse(source).value, file, nil) }
       by_name = written.flat_map { |item| item.names.map { |name| [name, item] } }.to_h
@@ -44,17 +65,20 @@ module JitCatch
       end
     end
 
+    #: (Array[Written] items, Hash[String, Written] by_name) -> Array[String]
     def classes_built(items, by_name)
       items.filter_map { |other| settle(other, by_name, [])[0] }.uniq.sort
     end
 
     # A factory can use the traits of its parent and of the factory it
     # nests in, and its own trait of the same name wins.
+    #: (Written item, Hash[String, Written] by_name, Array[Written] seen) -> Hash[String, Array[String]]
     def traits_of(item, by_name, seen)
       inherited = [item.outer, item.parent && by_name[item.parent]].compact.reject { |other| seen.include?(other) }
       inherited.reverse.map { |other| traits_of(other, by_name, [*seen, other]) }.reduce({}, :merge).merge(item.traits).sort.to_h
     end
 
+    #: (Prism::Node? node, String file, Written? outer) -> Array[Written]
     def collect(node, file, outer)
       if node.is_a?(Prism::CallNode) && node.name == :factory && node.receiver.nil?
         item = written(node, file, outer)
@@ -65,9 +89,12 @@ module JitCatch
       node.compact_child_nodes.flat_map { |child| collect(child, file, outer) }
     end
 
+    #: (Prism::CallNode node, String file, Written? outer) -> Written
     def written(node, file, outer)
       first, *rest = Array(node.arguments&.arguments)
-      options = rest.grep(Prism::KeywordHashNode).flat_map(&:elements).grep(Prism::AssocNode)
+      # Array#grep does not narrow its elements to the class it is given.
+      hashes = rest.grep(Prism::KeywordHashNode) #: Array[untyped]
+      options = hashes.flat_map(&:elements).grep(Prism::AssocNode)
         .select { |pair| pair.key.is_a?(Prism::SymbolNode) }.to_h { |pair| [pair.key.unescaped, pair.value] }
       name = literal(first)
       reason = "its name is not a symbol or a string" unless name
@@ -75,14 +102,16 @@ module JitCatch
       reason ||= "class: is not a constant, a string, or a symbol" if options.key?("class") && own_class.nil?
       parent = options.key?("parent") ? literal(options["parent"]) : nil
       reason ||= "parent: is not a symbol or a string" if options.key?("parent") && parent.nil?
-      aliases = options["aliases"].is_a?(Prism::ArrayNode) ? options["aliases"].elements.filter_map { |element| literal(element) } : []
+      aliases = options["aliases"].is_a?(Prism::ArrayNode) ? options["aliases"].elements.filter_map { |element| literal(element) } : [] #: Array[String]
       Written.new(names: [name, *aliases].compact, file: file, line: node.location.start_line, own_class: own_class, parent: parent, outer: outer, reason: reason,
         associations: associations_in(node.block), traits: traits_in(node.block))
     end
 
+    #: (Prism::Node? block) -> Hash[String, Array[String]]
     def traits_in(block)
-      statements = block.is_a?(Prism::BlockNode) && block.body.is_a?(Prism::StatementsNode) ? block.body.body : []
-      statements.grep(Prism::CallNode).select { |call| call.receiver.nil? && call.name == :trait }.filter_map { |call|
+      statements = block.is_a?(Prism::BlockNode) && block.body.is_a?(Prism::StatementsNode) ? block.body.body : [] #: Array[Prism::Node]
+      calls = statements.grep(Prism::CallNode) #: Array[Prism::CallNode]
+      calls.select { |call| call.receiver.nil? && call.name == :trait }.filter_map { |call|
         name = literal(call.arguments&.arguments&.first)
         [name, associations_in(call.block)] if name
       }.to_h
@@ -90,23 +119,28 @@ module JitCatch
 
     # The statements of the factory's own block. A trait runs only when a
     # test names it, and a nested factory is a factory of its own.
+    #: (Prism::Node? block) -> Array[String]
     def associations_in(block)
-      statements = block.is_a?(Prism::BlockNode) && block.body.is_a?(Prism::StatementsNode) ? block.body.body : []
-      statements.grep(Prism::CallNode).flat_map do |call|
+      statements = block.is_a?(Prism::BlockNode) && block.body.is_a?(Prism::StatementsNode) ? block.body.body : [] #: Array[Prism::Node]
+      calls = statements.grep(Prism::CallNode) #: Array[Prism::CallNode]
+      calls.flat_map do |call|
         next [] unless call.receiver.nil? && !DEFINITIONS.include?(call.name)
         next [association_name(call)].compact if call.name == :association
         next [call.name.to_s] if call.arguments.nil? && call.block.nil?
         next [] unless call.block.is_a?(Prism::BlockNode) && call.block.body.is_a?(Prism::StatementsNode)
 
-        call.block.body.body.grep(Prism::CallNode).select { |inner| inner.receiver.nil? && inner.name == :association }.filter_map { |inner| association_name(inner) }
+        inner_calls = call.block.body.body.grep(Prism::CallNode) #: Array[Prism::CallNode]
+        inner_calls.select { |inner| inner.receiver.nil? && inner.name == :association }.filter_map { |inner| association_name(inner) }
       end
     end
 
     # `association :author, factory: :user` builds from :user, and
     # `factory: [:user, :admin]` from :user with a trait.
+    #: (Prism::CallNode call) -> String?
     def association_name(call)
       first, *rest = Array(call.arguments&.arguments)
-      factory = rest.grep(Prism::KeywordHashNode).flat_map(&:elements).grep(Prism::AssocNode)
+      hashes = rest.grep(Prism::KeywordHashNode) #: Array[untyped]
+      factory = hashes.flat_map(&:elements).grep(Prism::AssocNode)
         .find { |pair| pair.key.is_a?(Prism::SymbolNode) && pair.key.unescaped == "factory" }&.value
       factory = factory.elements.first if factory.is_a?(Prism::ArrayNode)
       literal(factory) || literal(first)
@@ -114,6 +148,7 @@ module JitCatch
 
     # The factories an item builds with, its parent's and the one it nests
     # in included, since a child factory inherits their attributes.
+    #: (Written item, Hash[String, Written] by_name, Array[Written] seen) -> Array[Written]
     def built_with(item, by_name, seen)
       inherited = [item.parent && by_name[item.parent], item.outer].compact
       direct = item.associations.filter_map { |name| by_name[name] }
@@ -126,6 +161,8 @@ module JitCatch
     # FactoryBot takes a factory's class from its own `class:`, then from
     # its parent (named by `parent:`, or the factory it nests in), then
     # from its name.
+    # The class's name, or nil and the reason the source does not settle it.
+    #: (Written item, Hash[String, Written] by_name, Array[Written] seen) -> [String?, String?]
     def settle(item, by_name, seen)
       return [nil, item.reason] if item.reason
       return [item.own_class, nil] if item.own_class
@@ -143,6 +180,7 @@ module JitCatch
 
     # A string or a symbol that starts in upper case is a constant's name,
     # and FactoryBot camelizes any other.
+    #: (Prism::Node? node) -> String?
     def class_named(node)
       case node
       when Prism::ConstantReadNode, Prism::ConstantPathNode
@@ -153,10 +191,12 @@ module JitCatch
       end
     end
 
+    #: (Prism::Node? node) -> String?
     def literal(node)
       node.unescaped if node.is_a?(Prism::SymbolNode) || node.is_a?(Prism::StringNode)
     end
 
+    #: (String name) -> String
     def camelize(name)
       name.split("/").map { |part| part.split("_").map { |word| word.sub(/\A./) { |letter| letter.upcase } }.join }.join("::")
     end

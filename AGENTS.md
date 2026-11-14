@@ -25,7 +25,16 @@ bundle exec ruby -Ilib test/property/run.rb
 
 They cover the assessor's counts and ids, the call edges a receiver names, the endpoints a request reaches, the diff and Minitest parsers, the blob reader, qualified names, the names a test refers to, and the text helpers. Keep `test/run.rb` free of gems.
 
-CI (`.github/workflows/ci.yml`) runs `test/run.rb` on Ruby 3.3 with no bundle, and both suites on Ruby 4.0.
+The code in `lib/` carries its types as rbs-inline comments (`# rbs_inline: enabled`, then `#:` and `# @rbs`). rbs-inline writes them to `sig/generated/`, which is committed and ships in the gem, and Steep checks `lib/` against them. Both gems are in the `Gemfile`'s `types` group and need Ruby 3.4 or newer:
+
+```sh
+bundle exec rbs-inline --output=sig/generated lib
+bundle exec steep check
+```
+
+A change to `lib/` keeps `steep check` at no errors and no warnings, and commits the `sig/generated/` that the first command writes. `sig-deps/` holds the few signatures `lib/` calls that the bundled RBS does not declare; Steep reads it, and the gem does not ship it.
+
+CI (`.github/workflows/ci.yml`) runs `test/run.rb` on Ruby 3.3 with no bundle, and both suites on Ruby 4.0. Its `types` job regenerates `sig/generated/`, fails when that changes a file or adds one, and runs `steep check`.
 
 `test/jitcatch/test_rspec_runner.rb` runs the real `rspec-core` on a Rails-shaped fixture (`.rspec`, `spec/spec_helper.rb`, `spec/rails_helper.rb`, no Rails gem). `rspec-core` and `rspec-expectations` are development gems in the `Gemfile`. `test/run.rb` loads no bundle, so there those tests skip on a Ruby that does not have `rspec-core` installed, which includes the Ruby 3.3 CI job. Run them with `bundle exec ruby -Ilib test/jitcatch/test_rspec_runner.rb`. CI does that on Ruby 4.0 with `JITCATCH_RSPEC=required`, which turns the skip into a failure. A rule that must hold for Minitest and RSpec alike gets a test in both runner files on one shared history: `inherited_history` in `test/test_helper.rb` is the unchanged subclass that still calls a removed method. A rerun line is checked by running it: split it with `Shellwords` and run it from the repository root, as printed.
 

@@ -1,20 +1,22 @@
 # frozen_string_literal: true
+# rbs_inline: enabled
 
 module JitCatch
   module Render
     module_function
 
-    LONG_LINE = 100
-    WINDOW = 30
-    DIFF_KEYS = 4
+    LONG_LINE = 100 #: Integer
+    WINDOW = 30 #: Integer
+    DIFF_KEYS = 4 #: Integer
     # The element diff keeps a table of this many cells.
-    MAX_ELEMENT_PAIRS = 250_000
+    MAX_ELEMENT_PAIRS = 250_000 #: Integer
 
     # The readers a context shows unless `--all-readers` asks for every one.
-    READERS_SHOWN = 10
+    READERS_SHOWN = 10 #: Integer
 
+    #: (doc doc, ?readers_limit: Integer?) -> String
     def context_text(doc, readers_limit: READERS_SHOWN)
-      lines = []
+      lines = [] #: Array[String]
       lines << "jitcatch context"
       lines << "version #{doc["version"]}"
       lines << "base #{doc["base"]}"
@@ -38,7 +40,7 @@ module JitCatch
       lines.concat(method_lines(doc["methods"], reader_counts(doc["readers"])))
       lines.concat(reader_lines(shown_readers(doc["readers"], readers_limit))) if doc["readers"]
       lines.concat(entrypoint_lines(doc["entrypoints"]))
-      skipped = Array(doc["factories_skipped"])
+      skipped = Array(doc["factories_skipped"]) #: Array[doc]
       unless skipped.empty?
         lines << "factories_skipped:"
         skipped.each { |factory| lines << "  #{factory["file"]}:#{factory["line"]} factory#{factory["name"] && " :#{factory["name"]}"}: #{factory["reason"]}" }
@@ -50,16 +52,21 @@ module JitCatch
       finish(lines)
     end
 
+    #: (doc doc, ?readers_limit: Integer?) -> doc
     def context_json(doc, readers_limit: READERS_SHOWN)
       doc = doc.merge("readers" => shown_readers(doc["readers"], readers_limit)) if doc["readers"]
       { "command" => "context" }.merge(doc)
     end
 
+    # How many readers each changed value has, by its id.
+    #: (doc? readers) -> Hash[untyped, Integer]
     def reader_counts(readers)
-      Array(readers && readers["values"]).select { |value| value["id"] }.to_h { |value| [value["id"], value["readers"]] }
+      values = Array(readers && readers["values"]) #: Array[doc]
+      values.select { |value| value["id"] }.to_h { |value| [value["id"], value["readers"]] }
     end
 
     # The highest-scored rows, and how many the limit left out.
+    #: (doc readers, Integer? limit) -> doc
     def shown_readers(readers, limit)
       rows = limit ? readers["rows"].first(limit) : readers["rows"]
       readers.merge("rows" => rows, "omitted" => readers["rows"].size - rows.size)
@@ -67,6 +74,7 @@ module JitCatch
 
     # Rows go under the value they read, values in the order the change
     # lists them; a value keeps its line when the limit shows none of its rows.
+    #: (doc readers) -> Array[String]
     def reader_lines(readers)
       read = readers["values"].select { |value| value["readers"].positive? }
       return ["readers: (none)", "  not seen: #{readers["not_seen"].join("; ")}"] if read.empty?
@@ -89,8 +97,9 @@ module JitCatch
       lines << "  not seen: #{readers["not_seen"].join("; ")}"
     end
 
+    #: (doc doc) -> String
     def run_text(doc)
-      lines = []
+      lines = [] #: Array[String]
       lines.concat(untested_lines(doc)) if Assessor.untested_run?(doc)
       lines << "jitcatch run"
       lines << "version #{doc["version"]}"
@@ -106,7 +115,8 @@ module JitCatch
       lines << "numbered_databases #{doc["numbered_databases"].join(" ")}" unless doc["numbered_databases"].to_a.empty?
       lines << "env #{doc["env"].join(" ")}" unless doc["env"].to_a.empty?
       lines << "env_unset #{doc["env_unset"].join(" ")} (a note, not an error: the shell does not set #{them(doc["env_unset"])}, so each side ran with the code's own default)" unless doc["env_unset"].to_a.empty?
-      doc.fetch("bundle", {}).each { |side, bundle| lines << "bundle #{side} #{bundle}" unless bundle == "none" }
+      bundles = doc["bundle"].to_h #: Hash[String, String]
+      bundles.each { |side, bundle| lines << "bundle #{side} #{bundle}" unless bundle == "none" }
       lines << "test_files_omitted #{doc["test_files_omitted"]}" unless doc["test_files_omitted"].to_i.zero?
       lines << "tests:"
       if doc["tests"].empty?
@@ -125,10 +135,12 @@ module JitCatch
       finish(lines)
     end
 
+    #: (doc doc) -> doc
     def run_json(doc)
       doc
     end
 
+    #: (doc doc) -> String
     def setup_failed_text(doc)
       load = doc["stage"] == "load"
       command = doc["stage"] == "setup_command"
@@ -148,7 +160,7 @@ module JitCatch
         failure["stderr"].each { |line| lines << "  #{line}" }
         names = failure["not_passed"]
         lines << "  not passed: #{names.join(" ")} (add #{env_flags(names)})" unless names.empty?
-        database = Array(failure["database_not_passed"])
+        database = Array(failure["database_not_passed"]) #: Array[String]
         lines << "  the database refused the connection, and jitcatch did not pass #{database.join(" ")} from your shell: add #{env_flags(database)}" unless database.empty?
       end
       lines << if command
@@ -162,8 +174,9 @@ module JitCatch
       finish(lines)
     end
 
+    #: (doc doc) -> String
     def assess_text(doc)
-      lines = []
+      lines = [] #: Array[String]
       lines << "jitcatch assess"
       lines << "version #{doc["version"]}"
       lines << "base #{doc["base"]}"
@@ -178,11 +191,13 @@ module JitCatch
     # A run from a directory inside the repository says which, since its
     # rerun lines and its tests directory are named from there, while each
     # file of the change is named from the repository root.
+    #: (doc doc) -> Array[String]
     def directory_lines(doc)
       dir = doc["directory"]
       dir ? ["directory #{dir} (candidates, the bundle check, and each rerun line run here; file paths are from the repository root)"] : []
     end
 
+    #: (doc doc) -> doc
     def assess_json(doc)
       {
         "command" => "assess",
@@ -195,20 +210,25 @@ module JitCatch
       }
     end
 
+    #: (untyped obj) -> String
     def dump(obj)
       JSON.pretty_generate(obj) + "\n"
     end
 
+    #: (doc doc) -> Array[String]
     def warning_lines(doc)
-      Array(doc["warnings"]).map { |warning| "warning: #{warning}" }
+      warnings = Array(doc["warnings"]) #: Array[String]
+      warnings.map { |warning| "warning: #{warning}" }
     end
 
+    #: (Array[doc] dependencies) -> Array[String]
     def dependency_lines(dependencies)
       return [] if dependencies.empty?
 
       ["dependencies:", *dependencies.map { |dep| "  #{dep["gem"]} #{dep["old"] || "(none)"} -> #{dep["new"] || "(none)"}" }]
     end
 
+    #: (Array[doc] constants) -> Array[String]
     def constant_lines(constants)
       if constants.empty?
         ["constants: (none)"]
@@ -226,6 +246,7 @@ module JitCatch
       end
     end
 
+    #: (Array[doc] methods, ?Hash[untyped, Integer] readers) -> Array[String]
     def method_lines(methods, readers = {})
       if methods.empty?
         ["methods: (none)"]
@@ -255,10 +276,11 @@ module JitCatch
       end
     end
 
+    #: (Array[doc] entrypoints) -> Array[String]
     def entrypoint_lines(entrypoints)
       return ["entrypoints: (none)"] if entrypoints.empty?
 
-      lines = []
+      lines = [] #: Array[String]
       entrypoints.each do |entry|
         lines << "entrypoints #{entry["class"]}:"
         entry["methods"].each { |method| lines << "  #{method["name"]} #{method["role"]}" }
@@ -269,6 +291,7 @@ module JitCatch
 
     # A method nothing calls by name can still be read: say so where an
     # empty list would read as nothing reaching it.
+    #: (doc method, ?Integer readers) -> String
     def format_callsites(method, readers = 0)
       return "(none)" if method["callsites"].empty? && readers.zero?
       return "(none by name; #{readers} under readers:)" if method["callsites"].empty?
@@ -282,6 +305,7 @@ module JitCatch
       omitted.positive? ? "#{text} (+#{omitted} more)" : text
     end
 
+    #: (Array[doc] tests) -> String
     def format_tests(tests)
       return "(none)" if tests.empty?
 
@@ -296,13 +320,14 @@ module JitCatch
       }.join("; ")
     end
 
+    #: (doc method) -> Array[String]
     def source_lines(method)
       old_src = method["old_source"]
       new_src = method["new_source"]
       if old_src == new_src
         ["    source:", *Text.indent(old_src, 6).split("\n")]
       else
-        lines = []
+        lines = [] #: Array[String]
         lines << "    old:"
         lines.concat(Text.indent(old_src, 6).split("\n"))
         lines << "    new:"
@@ -311,6 +336,7 @@ module JitCatch
       end
     end
 
+    #: (doc test) -> String
     def test_line(test)
       method = test["method_id"] ? " #{test["method_id"]}" : ""
       place = test["line"] ? "#{test["file"]}:#{test["line"]}" : test["file"]
@@ -320,17 +346,20 @@ module JitCatch
     # A flaky row says which run moved and how: the outcome, or only the
     # message, as a random id in a printed record does. Base reruns only
     # when head failed the same way each time.
+    #: (doc test) -> Array[String]
     def rerun_lines(test)
       head = test["head"] || {}
       head_lines = Text.message_lines(head["message"])
-      reruns = Array(test["reruns"]).each_with_index.map do |rerun, index|
+      head_reruns = Array(test["reruns"]) #: Array[doc]
+      base_reruns = Array(test["base_reruns"]) #: Array[doc]
+      reruns = head_reruns.each_with_index.map do |rerun, index|
         # The first line that moved says why the row is flaky.
         moved = Text.message_lines(rerun["message"]).find { |line| !head_lines.include?(line) }
         same = rerun.values_at("status", "error_class") == head.values_at("status", "error_class") && moved
         outcome = [rerun["status"], rerun["error_class"], ("(same outcome, message differs)" if same), moved || rerun["message_first_line"]]
         cut_line("    rerun #{index + 1}: #{outcome.reject { |part| part.to_s.empty? }.join(" ")}")
       end
-      base = Array(test["base_reruns"]).each_with_index.map do |rerun, index|
+      base = base_reruns.each_with_index.map do |rerun, index|
         outcome = [rerun["status"], rerun["error_class"], rerun["message_first_line"]].reject { |part| part.to_s.empty? }
         cut_line("    base rerun #{index + 1}: #{outcome.join(" ")}")
       end
@@ -339,10 +368,11 @@ module JitCatch
 
     # The ways RSpec's `eq` on a status, rspec-rails' have_http_status, and
     # Minitest's assert_response say a response was a 500.
-    SERVER_ERROR = /\A\s*got: \[?500\b|\binternal_server_error \(500\)|<500: Internal Server Error>/
+    SERVER_ERROR = /\A\s*got: \[?500\b|\binternal_server_error \(500\)|<500: Internal Server Error>/ #: Regexp
 
     # A Rails app rescues the error behind a 500 and logs it, so the
     # failure message alone never names the cause.
+    #: (doc test, doc doc) -> Array[String]
     def server_error_lines(test, doc)
       return [] unless doc["rails_app"] && test["disposition"] == "reported"
       return [] unless test.dig("head", "message").to_s.lines.any? { |line| SERVER_ERROR.match?(line) }
@@ -352,6 +382,7 @@ module JitCatch
 
     # A row that failed on base is no candidate, so nothing else in the
     # text says what went wrong there.
+    #: (doc test, doc doc) -> Array[String]
     def base_failure_lines(test, doc)
       base = test["base"]
       return [] unless test["disposition"] == "fail_on_base" && base && base["status"] != "timeout"
@@ -369,6 +400,7 @@ module JitCatch
     # A test written to pin what a change fixes fails on base by design, and
     # head's result is what it checks: `pass`, head's own failure, or that
     # head failed as base did.
+    #: (doc test) -> Array[String]
     def head_outcome_lines(test)
       head = test["head"]
       return [] unless head
@@ -382,6 +414,7 @@ module JitCatch
 
     # Only the numbered databases have names the reader can load a schema
     # into; the URL itself can hold a password, so it is never printed.
+    #: (doc doc) -> Array[String]
     def untested_lines(doc)
       causes = Assessor::UNTESTED_CAUSES.keys & doc["tests"].flat_map { |test| Assessor.untested_causes(test, doc["timeout_s"]) }
       size = doc["tests"].size
@@ -397,10 +430,12 @@ module JitCatch
 
     # A run that compared some rows says nothing on its first line, so the
     # rows the database hid would read as rows that checked something.
+    #: (doc doc) -> Array[String]
     def no_table_warning_lines(doc)
       return [] if Assessor.untested_run?(doc)
 
-      count = Array(doc["tests"]).count { |test| Assessor.untested_causes(test, doc["timeout_s"]).include?("found no table") }
+      tests = Array(doc["tests"]) #: Array[doc]
+      count = tests.count { |test| Assessor.untested_causes(test, doc["timeout_s"]).include?("found no table") }
       return [] if count.zero?
 
       rows = count == 1 ? "1 of #{doc["tests"].size} rows found no table on a side, so it checked" : "#{count} of #{doc["tests"].size} rows found no table on a side, so they checked"
@@ -410,6 +445,7 @@ module JitCatch
     # Each side needs its own schema, which only a command run in each
     # checkout loads: `db:prepare` also loads seeds into a database it
     # makes, and `db:schema:load` alone fails on one nobody made.
+    #: (doc doc) -> String
     def schema_advice(doc)
       numbered = doc["numbered_databases"].to_a
       into = numbered.empty? ? "each side's test database" : numbered.join(" and ")
@@ -423,6 +459,7 @@ module JitCatch
     end
 
     # Base takes the odd TEST_ENV_NUMBER of each pair of checkouts.
+    #: (doc doc) -> Array[String]
     def base_databases(doc)
       doc["numbered_databases"].to_a.each_slice(2).map(&:first)
     end
@@ -432,6 +469,7 @@ module JitCatch
     # timeout does not fix, so the row names those first: a name --env
     # passed that the shell did not set, then a name jitcatch did not pass.
     # Only a Rails app loads db/schema.rb in each new checkout.
+    #: (doc test, doc doc) -> Array[String]
     def timeout_lines(test, doc)
       sides = %w[base head].select { |side| test.dig(side, "status") == "timeout" }
       return [] if sides.empty?
@@ -441,8 +479,8 @@ module JitCatch
         return ["    hint: base passed in #{base_seconds}s; head did not finish in #{doc["timeout_s"]}s, so head may loop or wait forever"]
       end
 
-      unset = Array(doc["env_unset"])
-      not_passed = Array(doc["env_not_passed"])
+      unset = Array(doc["env_unset"]) #: Array[String]
+      not_passed = Array(doc["env_not_passed"]) #: Array[String]
       missing = [
         ("#{env_flags(unset)} passed nothing, because #{unset.join(" ")} #{unset.one? ? "is" : "are"} not set, so set #{them(unset)} if the file needs #{them(unset)}" unless unset.empty?),
         ("jitcatch did not pass #{not_passed.join(" ")}, so add #{env_flags(not_passed)} if the file needs #{them(not_passed)}" unless not_passed.empty?)
@@ -453,10 +491,12 @@ module JitCatch
       ["    hint: #{sides.join(" and ")} timed out after #{doc["timeout_s"]}s#{took}; #{wait}#{rails}"]
     end
 
+    #: (Array[String] names) -> String
     def env_flags(names)
       names.map { |name| "--env #{name}" }.join(" ")
     end
 
+    #: (Array[String] names) -> String
     def them(names)
       names.one? ? "it" : "them"
     end
@@ -464,18 +504,21 @@ module JitCatch
     # The rerun line runs in the reader's shell, so it names the variables
     # the run took from jitcatch's, and no value: a DATABASE_URL can hold a
     # password, and a report is pasted where others read it.
+    #: (doc doc) -> String?
     def rerun_env_line(doc)
-      names = Array(doc["env"])
+      names = Array(doc["env"]) #: Array[String]
       return nil if names.empty?
 
-      unset = Array(doc["env_unset"])
+      unset = Array(doc["env_unset"]) #: Array[String]
       "    rerun env: reads #{names.join(" ")} from your shell, as jitcatch run did#{"; #{unset.join(" ")} #{unset.one? ? "was" : "were"} unset, so the run used the code's own default" unless unset.empty?}"
     end
 
+    #: (doc counts) -> String
     def counts_line(counts)
       "counts generated=#{counts["generated"]} no_signal=#{counts["no_signal"]} fail_on_base=#{counts["fail_on_base"]} candidates=#{counts["candidates"]} flaky=#{counts["flaky"]} discarded=#{counts["discarded"]} reported=#{counts["reported"]}"
     end
 
+    #: (doc doc) -> Array[String]
     def assess_body(doc)
       rows = candidate_rows(doc)
       lines = ["assess:"]
@@ -484,7 +527,8 @@ module JitCatch
         lines << "  (none)"
         return lines
       end
-      names = Array(doc["methods"]).to_h { |item| [item["id"], item["name"]] }
+      methods = Array(doc["methods"]) #: Array[doc]
+      names = methods.to_h { |item| [item["id"], item["name"]] }
       rows.each do |row|
         method = row["method_id"] || "-"
         lines << "  #{row["candidate_id"]} #{row["name"]} base=#{row["base_status"]} head=#{row["head_status"]} #{method} #{row["tags"].join(",")}"
@@ -505,6 +549,7 @@ module JitCatch
     # names. With no pick, no frame of head's failure is in a changed
     # method, so the value can come from a file the brief lists no method
     # for, such as a view.
+    #: (doc row, Hash[untyped, untyped] names, doc doc) -> String
     def guess_line(row, names, doc)
       pool = row["method_ids"].map { |id| "#{names[id] || id} (#{id})" }
       if row["method_id"]
@@ -516,13 +561,15 @@ module JitCatch
         "Next: find what makes head's value in them, or in a changed file that holds no method, such as a view: git diff --stat #{shas}"
     end
 
-    OUT_OF_DATE = { "removed" => "was removed", "parameters" => "changed its parameters", "definition" => "changed its definition" }.freeze
+    OUT_OF_DATE = { "removed" => "was removed", "parameters" => "changed its parameters", "definition" => "changed its definition" }.freeze #: Hash[String, String]
 
+    #: (doc stale) -> String
     def out_of_date_line(stale)
       at = stale["call"] ? "the call at #{stale["call"]}" : "the call"
       "candidate is out of date with head: #{stale["name"]} (#{stale["id"]}) #{OUT_OF_DATE.fetch(stale["change"])}; update #{at} to head's code, or drop the test"
     end
 
+    #: (doc doc) -> Array[doc]
     def candidate_rows(doc)
       doc["tests"].select { |test| test["classification"] == "candidate" }.sort_by { |test| test["id"] }.map { |test|
         {
@@ -548,14 +595,16 @@ module JitCatch
       }
     end
 
+    #: (doc? cause) -> String?
     def cause_line(cause)
       cause && [cause["error_class"], Failure.first_line(cause["message"])].reject(&:empty?).join(": ")
     end
 
     # A row keeps each line to this many characters; one Array printed
     # whole can fill tens of kilobytes.
-    MESSAGE_LINE = 300
+    MESSAGE_LINE = 300 #: Integer
 
+    #: (doc? head) -> Array[String]
     def message_lines(head)
       return [] if head.nil?
 
@@ -564,6 +613,7 @@ module JitCatch
 
     # The end of a line often holds what differs, after a path or a value
     # both sides share, so a cut leaves out the middle.
+    #: (String line) -> String
     def cut_line(line)
       return line if line.length <= MESSAGE_LINE
 
@@ -572,6 +622,7 @@ module JitCatch
       "#{line[0, half]}... (+#{left} #{left == 1 ? "character" : "characters"}; the whole message is in --json) ...#{line[-half..]}"
     end
 
+    #: (doc head) -> Array[String]
     def failure_lines(head)
 
       lines = head["message"].to_s.lines.map(&:strip).reject(&:empty?)
@@ -613,6 +664,7 @@ module JitCatch
 
     # The removed and added lines of the Diff RSpec prints under a matcher's
     # message, such as have_attributes, whose one line shows both Hashes.
+    #: (String message) -> Array[String]?
     def rspec_diff_changes(message)
       diff = message.lines.map(&:rstrip).drop_while { |line| line != "Diff:" }.drop(1)
       changed = diff.select { |line| line.match?(/\A[-+](?![-+]{2} )/) }
@@ -622,12 +674,14 @@ module JitCatch
     # A long line, such as a whole Hash on one line, is hard to compare by
     # eye. Show the Hash entries that differ, or else a window around the
     # first column that differs. `message` in `--json` keeps the full text.
+    #: (String expected, String actual) -> Array[String]
     def changed_pair(expected, actual)
       return ["-#{expected}", "+#{actual}"] if [expected, actual].all? { |text| text.length <= LONG_LINE }
 
       hash_entry_lines(expected, actual) || array_element_lines(expected, actual) || column_lines(expected, actual)
     end
 
+    #: (String line) -> String
     def shortened(line)
       line.length > LONG_LINE ? "#{line[0, (2 * WINDOW) + 1]}..." : line
     end
@@ -635,6 +689,7 @@ module JitCatch
     # The elements one Array literal has and the other lacks, by index, from
     # a longest common subsequence, so one inserted element is one line and
     # not a shift of every element after it.
+    #: (String expected, String actual) -> Array[String]?
     def array_element_lines(expected, actual)
       old_items = array_elements(expected)
       new_items = array_elements(actual)
@@ -654,17 +709,22 @@ module JitCatch
       lines
     end
 
+    # The source of each element of an Array literal, or nil when the text
+    # is not one Array literal.
+    #: (String text) -> Array[String]?
     def array_elements(text)
       result = Prism.parse(text)
-      body = result.success? ? result.value.statements.body : []
-      return nil unless body.size == 1 && body.first.is_a?(Prism::ArrayNode)
+      body = result.success? ? result.value.statements.body : [] #: Array[Prism::Node]
+      node = body.first
+      return nil unless body.size == 1 && node.is_a?(Prism::ArrayNode)
 
-      body.first.elements.map(&:slice)
+      node.elements.map(&:slice)
     end
 
     # Each change as [index, old element, new element]: a removed element
     # has no new one and an added one no old one. Within one run of changes,
     # the removed and added elements pair up in order, as replacements.
+    #: (Array[String] old_items, Array[String] new_items) -> Array[[Integer, String?, String?]]
     def element_changes(old_items, new_items)
       lengths = Array.new(old_items.size + 1) { Array.new(new_items.size + 1, 0) }
       old_items.each_index.reverse_each do |i|
@@ -672,7 +732,7 @@ module JitCatch
           lengths[i][j] = old_items[i] == new_items[j] ? lengths[i + 1][j + 1] + 1 : [lengths[i + 1][j], lengths[i][j + 1]].max
         end
       end
-      runs = [[[], []]]
+      runs = [[[], []]] #: Array[[Array[[Integer, String]], Array[[Integer, String]]]]
       i = j = 0
       while i < old_items.size || j < new_items.size
         if i < old_items.size && j < new_items.size && old_items[i] == new_items[j]
@@ -694,6 +754,7 @@ module JitCatch
       end
     end
 
+    #: (String expected, String actual) -> Array[String]?
     def hash_entry_lines(expected, actual)
       old_entries = hash_entries(expected)
       new_entries = hash_entries(actual)
@@ -713,15 +774,19 @@ module JitCatch
 
     # The entries of a Hash literal as written by `inspect`, keyed by the
     # key's text, or nil when the text is not one Hash literal.
+    #: (String text) -> Hash[String, String]?
     def hash_entries(text)
       result = Prism.parse(text)
-      body = result.success? ? result.value.statements.body : []
-      return nil unless body.size == 1 && body.first.is_a?(Prism::HashNode)
-      return nil unless body.first.elements.all?(Prism::AssocNode)
+      body = result.success? ? result.value.statements.body : [] #: Array[Prism::Node]
+      node = body.first
+      return nil unless body.size == 1 && node.is_a?(Prism::HashNode)
+      return nil unless node.elements.all?(Prism::AssocNode)
 
-      body.first.elements.to_h { |assoc| [assoc.key.slice.delete_suffix(":"), assoc.value.slice] }
+      assocs = node.elements #: Array[Prism::AssocNode]
+      assocs.to_h { |assoc| [assoc.key.slice.delete_suffix(":"), assoc.value.slice] }
     end
 
+    #: (String expected, String actual) -> Array[String]
     def column_lines(expected, actual)
       column = (0...[expected.length, actual.length].min).find { |index| expected[index] != actual[index] } || [expected.length, actual.length].min
       start = [column - WINDOW, 0].max
@@ -730,6 +795,7 @@ module JitCatch
       ["-#{window.call(expected)}", "+#{window.call(actual)}", "#{" " * (1 + lead.length + column - start)}^ column #{column + 1}"]
     end
 
+    #: (Array[String] lines) -> String
     def finish(lines)
       "#{lines.join("\n")}\n"
     end

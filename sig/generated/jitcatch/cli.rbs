@@ -1,0 +1,61 @@
+# Generated from lib/jitcatch/cli.rb with RBS::Inline
+
+module JitCatch
+  class CLI
+    @finished_in_time: finished_in_time?
+
+    @argv: Array[String]
+
+    # The exit status.
+    # : (Array[String] argv, ?finished_in_time: finished_in_time?) -> Integer
+    def self.start: (Array[String] argv, ?finished_in_time: finished_in_time?) -> Integer
+
+    # : (Array[String] argv, ?finished_in_time: finished_in_time?) -> void
+    def initialize: (Array[String] argv, ?finished_in_time: finished_in_time?) -> void
+
+    # : () -> Integer
+    def run: () -> Integer
+
+    private
+
+    # A copy run from its own git checkout, as a gem installed from git
+    # is, names its commit, so a quoted output can say which code wrote it.
+    # A copy inside another project's checkout names none.
+    # : () -> String
+    def version_line: () -> String
+
+    # : (Array[String] argv) -> Integer
+    def command_context: (Array[String] argv) -> Integer
+
+    # : (Array[String] argv) -> Integer
+    def command_run: (Array[String] argv) -> Integer
+
+    # : (Array[String] argv) -> Integer
+    def command_assess: (Array[String] argv) -> Integer
+
+    # Each option's value is true for a flag, an Integer for a number,
+    # an Array of names for --env, and the String given otherwise.
+    # : (Array[String] argv, Array[Symbol] allowed) -> [Hash[Symbol, untyped], Array[String]]
+    def parse_options: (Array[String] argv, Array[Symbol] allowed) -> [ Hash[Symbol, untyped], Array[String] ]
+
+    # : (String flag, String value) -> Integer
+    def integer_option: (String flag, String value) -> Integer
+
+    # : (String flag, String value) -> Integer
+    def positive_option: (String flag, String value) -> Integer
+
+    # A value on the command line would reach the run and no rerun line,
+    # which reads each name from the reader's shell, so --env takes a name.
+    # : (String flag, String value) -> String
+    def env_option: (String flag, String value) -> String
+
+    # : (Hash[Symbol, untyped] opts) -> String
+    def repo_at: (Hash[Symbol, untyped] opts) -> String
+
+    # : () -> Integer
+    def write_help: () -> Integer
+
+    # : () -> String
+    def help_text: () -> String
+  end
+end

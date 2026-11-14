@@ -1,20 +1,28 @@
 # frozen_string_literal: true
+# rbs_inline: enabled
 
 module JitCatch
   # Reads the report minitest_report.rb writes in a Minitest candidate's
   # process, and Minitest's output for an error that stopped the file.
   class MinitestParser
-    HEADER = /^(\S.*?)(?:\s+\[(.+):(\d+)\])?:\s*$/.freeze
-    STATUSES = { "F" => "fail", "E" => "error" }.freeze
+    HEADER = /^(\S.*?)(?:\s+\[(.+):(\d+)\])?:\s*$/.freeze #: Regexp
+    STATUSES = { "F" => "fail", "E" => "error" }.freeze #: Hash[String, String]
     # minitest_report.rb prints the error an error was raised from under
     # this line, between the message and the frames.
-    CAUSED_BY = "--- Caused by: ---"
-    FINISHED = "finished"
+    CAUSED_BY = "--- Caused by: ---" #: String
+    FINISHED = "finished" #: String
 
+    #: (String? report, String? stdout, String? stderr, ?normalizer: normalizer) -> doc
     def self.parse(report, stdout, stderr, normalizer: ->(text) { text })
       new(report.to_s, normalizer.call(stdout.to_s), normalizer.call(stderr.to_s), normalizer).parse
     end
 
+    # @rbs @report: String
+    # @rbs @stdout: String
+    # @rbs @stderr: String
+    # @rbs @normalizer: normalizer
+
+    #: (String report, String stdout, String stderr, normalizer normalizer) -> void
     def initialize(report, stdout, stderr, normalizer)
       @report = report
       @stdout = stdout.gsub("\r\n", "\n")
@@ -22,8 +30,9 @@ module JitCatch
       @normalizer = normalizer
     end
 
+    #: () -> doc
     def parse
-      tests = {}
+      tests = {} #: Hash[String?, doc]
       summary = false
       @report.each_line do |raw|
         # A process killed while it wrote leaves its last line cut.
@@ -47,6 +56,7 @@ module JitCatch
 
     # A message can hold bytes that are not UTF-8; they read as "?", as in the
     # streams the runner reads.
+    #: (String text) -> String
     def readable(text)
       text = text.dup.force_encoding(Encoding::UTF_8)
       text.valid_encoding? ? text : text.scrub("?")
@@ -54,6 +64,7 @@ module JitCatch
 
     # The text is what Minitest prints for a result in its summary: the
     # failure's label line, the test's location, then the message.
+    #: (String? code, String text) -> doc
     def result(code, text)
       status = STATUSES[code]
       return Failure.passed(code == "S" ? "skip" : "pass") unless status
@@ -61,12 +72,13 @@ module JitCatch
       parse_issue(status, text.gsub("\r\n", "\n").lines(chomp: true).drop(1))
     end
 
+    #: (String status, Array[String] block) -> doc
     def parse_issue(status, block)
       match = block.shift.to_s.match(HEADER)
-      frames = []
+      frames = [] #: Array[doc]
       frames << Failure.frame(match[2], match[3]) if match&.[](2)
       body, backtrace = status == "error" ? split_backtrace(block) : [block, []]
-      message_lines = []
+      message_lines = [] #: Array[String]
       quoting = false
       body.each do |line|
         # assert_raises prints the frames of the error it got between these
@@ -99,6 +111,7 @@ module JitCatch
     # An error prints "Class: message", then each frame on a line of its own
     # indented four spaces. A message line can look like a frame, so only the
     # indented frames at the end of the block are the backtrace.
+    #: (Array[String] block) -> [Array[String], Array[String]]
     def split_backtrace(block)
       lines = block.dup
       lines.pop while lines.last&.strip&.empty?

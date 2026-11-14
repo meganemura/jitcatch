@@ -1,0 +1,294 @@
+# Generated from lib/jitcatch/assessor.rb with RBS::Inline
+
+module JitCatch
+  # Rule-based filter. It does not decide intended-versus-regression.
+  # That judgment needs the change intent and belongs to the agent.
+  class Assessor
+    ARITY: Regexp
+
+    # Active Record's errors for a database it cannot reach. Each checkout
+    # uses its own numbered test database, so one that was never created
+    # fails on that side alone, which says nothing about the change.
+    NO_DATABASE: Array[String]
+
+    # A database that `db:create` made has no tables until something loads
+    # the schema, which a test helper without `maintain_test_schema!` never
+    # does. Each adapter words the missing table its own way, and the
+    # SQLite adapter's own column lookup says "Could not find table".
+    NO_TABLE: Regexp
+
+    @tests_dir: String?
+
+    @callers: Array[String]
+
+    @constants: Array[doc]
+
+    @methods: Array[doc]
+
+    @doc: doc
+
+    # : (doc result) -> bool
+    def self.no_table?: (doc result) -> bool
+
+    # : (doc doc) -> doc
+    def self.apply: (doc doc) -> doc
+
+    # The name a test writes to reach a method: its bare name, or
+    # `Owner.new` for a constructor.
+    # : (String qualified) -> String
+    def self.mention_of: (String qualified) -> String
+
+    # : (doc doc) -> void
+    def initialize: (doc doc) -> void
+
+    # : () -> doc
+    def apply: () -> doc
+
+    # A row whose side timed out, or found no database or no table, says
+    # nothing about the change, whatever its classification.
+    # : (doc test, untyped timeout_s) -> bool
+    def self.untested?: (doc test, untyped timeout_s) -> bool
+
+    UNTESTED_CAUSES: Hash[String, ^(doc) -> bool]
+
+    # : (doc test, untyped timeout_s) -> Array[String]
+    def self.untested_causes: (doc test, untyped timeout_s) -> Array[String]
+
+    # Base passed in at most half the time head ran out of, so a slow boot
+    # does not explain head's timeout: head may loop or wait forever, as a
+    # wait that checks a clock the test froze does.
+    # : (doc test, untyped timeout_s) -> bool
+    def self.head_only_timeout?: (doc test, untyped timeout_s) -> bool
+
+    # A run where no row compared base with head, and the environment hid
+    # at least one row that might have, tested nothing, which must not read
+    # like a change with no finding. Its fix is outside the candidates. A
+    # run whose rows all failed on base with nothing hidden is the
+    # candidates' to fix, and each row's `base:` line says why.
+    # : (doc doc) -> bool
+    def self.untested_run?: (doc doc) -> bool
+
+    # Base passed and neither side hit an untested cause.
+    # : (doc test, untyped timeout_s) -> bool
+    def self.compared?: (doc test, untyped timeout_s) -> bool
+
+    private
+
+    # : (doc test) -> doc
+    def strip: (doc test) -> doc
+
+    # : (Array[doc] tests) -> void
+    def assign_candidate_ids: (Array[doc] tests) -> void
+
+    # : (Array[doc] tests) -> Hash[String, Integer]
+    def counts: (Array[doc] tests) -> Hash[String, Integer]
+
+    # : (doc test, doc? call) -> String?
+    def discard_reason: (doc test, doc? call) -> String?
+
+    # A call the change broke: the frame that made it (an empty hash when the
+    # error kept none), the changed method or constant it called, and what
+    # changed about it.
+    class Broken < Data
+      attr_reader frame(): doc
+
+      attr_reader subject(): doc
+
+      attr_reader change(): String
+
+      def self.new: (doc frame, doc subject, String change) -> instance
+                  | (frame: doc, subject: doc, change: String) -> instance
+
+      def self.members: () -> [ :frame, :subject, :change ]
+
+      def members: () -> [ :frame, :subject, :change ]
+    end
+
+    # A call to a removed name, or one whose arguments no longer fit. Nil
+    # when no call broke.
+    # : (doc test, doc? method) -> Broken?
+    def broken_call: (doc test, doc? method) -> Broken?
+
+    # Ruby defines `new` of a Data or Struct class in C, so a member the
+    # change added or dropped fails the test's own call with no frame of the
+    # class: the first frame is the test's, and the test names the class.
+    # : (doc test, Raised error) -> Broken?
+    def changed_class_call: (doc test, Raised error) -> Broken?
+
+    # : (Broken broken) -> doc
+    def out_of_date: (Broken broken) -> doc
+
+    class Raised < Data
+      attr_reader error_class(): String?
+
+      attr_reader message(): String
+
+      attr_reader frames(): Array[doc]
+
+      def self.new: (String? error_class, String message, Array[doc] frames) -> instance
+                  | (error_class: String?, message: String, frames: Array[doc]) -> instance
+
+      def self.members: () -> [ :error_class, :message, :frames ]
+
+      def members: () -> [ :error_class, :message, :frames ]
+    end
+
+    # The error a call raised. assert_raises and RSpec's raise_error turn
+    # an error of another class into an assertion failure, so it is read
+    # back out of the failure message. Both parsers put the assertion's own
+    # line before the frames of the error it caught.
+    # : (doc test) -> Raised
+    def raised: (doc test) -> Raised
+
+    # : (String quoted) -> String
+    def undump: (String quoted) -> String
+
+    # : (Raised error) -> bool
+    def arity_error?: (Raised error) -> bool
+
+    # : (doc frame) -> bool
+    def test_frame?: (doc frame) -> bool
+
+    # : (doc? call) -> String?
+    def caller_tag: (doc? call) -> String?
+
+    # : (doc test, Array[doc] judged, String? reason, doc? call) -> Array[String]
+    def tags_for: (doc test, Array[doc] judged, String? reason, doc? call) -> Array[String]
+
+    # A row with no pick judges every method of its pool, so its tags do not
+    # depend on which tied method has the lower id.
+    # : (doc test, Array[doc] judged) -> Array[String]
+    def touch_tags: (doc test, Array[doc] judged) -> Array[String]
+
+    # The gem an error came from, when its first frame outside the candidate
+    # file is inside an installed gem. Such an error says the gem broke, not
+    # that a changed method returned a new value.
+    # : (doc test) -> String?
+    def origin_gem: (doc test) -> String?
+
+    # The pick and every changed method the same evidence points at. Two or
+    # more in the pool means the evidence cannot tell them apart, so the
+    # pick is a guess: a test that names only unchanged callers reaches
+    # every changed method below them.
+    # : (doc test) -> ([doc?, Array[doc], bool] | [doc?, Array[doc]])
+    def related_method: (doc test) -> ([ doc?, Array[doc], bool ] | [ doc?, Array[doc] ])
+
+    # The pick, the pool, and whether only the id ordered the best two.
+    # A tied pick still sets the tags, as it did when the id was shown.
+    #
+    # On a row where head stopped raising the error the test expects, the
+    # method that raises it sits below every caller, so the downstream rule
+    # picks it, but head no longer reaches it. A method whose edit only
+    # changes the arguments of a raise did not decide that, so it leaves
+    # the pool while another method is in it.
+    # : (Array[doc] items, ?Hash[untyped, Integer] depths, ?bool stopped) -> [doc?, Array[doc], bool]
+    def guess: (Array[doc] items, ?Hash[untyped, Integer] depths, ?bool stopped) -> [ doc?, Array[doc], bool ]
+
+    # Minitest's assert_raises and RSpec's raise_error both end their
+    # message this way when the block returned.
+    # : (doc test) -> bool
+    def stopped_raising?: (doc test) -> bool
+
+    # A test that names the class it sends a method to (`Index.parse`,
+    # `described_class.parse`) calls that class's method of the name, not
+    # another class's. When no changed method of the name is on a class
+    # the test names, the call may reach one through a superclass or a
+    # module, so all of them stay, unless the named class's method is a
+    # known caller of a changed method: the call stops there.
+    # : (Array[doc] items, Array[String] mentions) -> Array[doc]
+    def sent_to_named_receivers: (Array[doc] items, Array[String] mentions) -> Array[doc]
+
+    # Whether the test calls the method: on a class it names when it names
+    # one for that method name, or by the bare name when it names none.
+    # : (String qualified, Array[String] mentions) -> bool
+    def sent_to?: (String qualified, Array[String] mentions) -> bool
+
+    # : (String qualified, Array[[String, String, String]] receivers) -> bool
+    def on_receiver?: (String qualified, Array[[ String, String, String ]] receivers) -> bool
+
+    # : (String qualified, Array[String] mentions) -> Array[[String, String, String]]
+    def receivers_of: (String qualified, Array[String] mentions) -> Array[[ String, String, String ]]
+
+    # With no related method, the call the test makes may still reach one
+    # through a receiver the source does not name. That is said, not guessed.
+    # : (doc test) -> doc?
+    def dynamic_call: (doc test) -> doc?
+
+    # : (doc test) -> doc?
+    def method_from_backtrace: (doc test) -> doc?
+
+    # : (doc test, doc method) -> bool
+    def frame_hits?: (doc test, doc method) -> bool
+
+    # The frames are the head run's, so only head's lines of a method count.
+    # A removed method has no lines on head.
+    # : (doc frame, doc method) -> bool
+    def frame_hits_method?: (doc frame, doc method) -> bool
+
+    # : (doc test) -> Array[doc]
+    def frames: (doc test) -> Array[doc]
+
+    # The name a NameError says is missing. Another error, or an assertion,
+    # can quote the same words without any lookup having failed.
+    # : (Raised error) -> String?
+    def missing_symbol: (Raised error) -> String?
+
+    # : (String symbol) -> doc?
+    def removed_subject: (String symbol) -> doc?
+
+    # A catching test passed on the old code, so a method that already existed
+    # outranks one the diff only added. Among those, the method furthest
+    # downstream (the one other changed methods call into) is the usual source
+    # of the new value. An edit that only adds a call to an added method
+    # ranks with the added ones, since the value it routes is made below
+    # it. Between two that no changed method links, the one
+    # above more changed code is the likelier: a test that names a setup call
+    # and the call it checks reaches the change through the second.
+    #
+    # A test that enters high, as a request spec or a CLI test does,
+    # reaches the plumbing next to its entry point as well as the code its
+    # assertion checks further down. On a CLI test of this repository and
+    # a request spec of a Rails app, the method farthest from the entry
+    # point the test calls was the one the failure came from in both, and
+    # the lowest id in one, so depth ranks before the count below.
+    #
+    # A script's top-level code (`exe/tool <main>`) is in the pool only
+    # when the test starts that script, and it runs on every start, while
+    # each method it calls runs only for the command that picks it. So it
+    # ranks before the downstream rule: a test of `exe/tool bogus` whose
+    # usage text changed reached none of the methods below it.
+    # : (doc item, Array[doc] items, Hash[untyped, Integer] depths) -> Array[Integer | String]
+    def guess_rank: (doc item, Array[doc] items, Hash[untyped, Integer] depths) -> Array[Integer | String]
+
+    # The fewest calls between each item and an entry point the test
+    # names. A run file from before `caller_depths` existed has none.
+    # : (Array[doc] items, Array[String] mentions) -> Hash[untyped, Integer]
+    def depth_below_entry: (Array[doc] items, Array[String] mentions) -> Hash[untyped, Integer]
+
+    # : (doc item) -> Integer
+    def preference: (doc item) -> Integer
+
+    # : (doc item) -> String
+    def mention: (doc item) -> String
+
+    # A test writes a constructor as `Box.new` or `A::Box.new`. The written
+    # path names this class when its segments end the class's name, so
+    # `A::Box.new` is not a mention of `B::Box#initialize`. A record builder
+    # (`Box.create!`) or a factory the change document lists for the
+    # constructor runs it too, and a save (`Box.create!`, `Box#save`) runs
+    # a callback the model declares.
+    # : (doc item, Array[String] mentions) -> bool
+    def mentioned?: (doc item, Array[String] mentions) -> bool
+
+    # Every method that reaches the item. A run file from before
+    # `reached_by` existed holds only the capped `reachable_from`.
+    # : (doc item) -> Array[String]
+    def reached_by: (doc item) -> Array[String]
+
+    # : (Array[doc] items) -> doc?
+    def lowest: (Array[doc] items) -> doc?
+
+    # : (String qualified) -> String
+    def bare: (String qualified) -> String
+  end
+end

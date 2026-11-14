@@ -1,0 +1,73 @@
+# Generated from lib/jitcatch/rspec_parser.rb with RBS::Inline
+
+module JitCatch
+  # Parses the report RSpec's json formatter writes (`--format json --out`).
+  # One example is one test, named by its full description.
+  class RSpecParser
+    STATUSES: Hash[String, String]
+
+    # RSpec raises these when an expectation does not hold, so they are a
+    # claim the example made, as Minitest::Assertion is.
+    FAILURES: Array[String]
+
+    # --backtrace keeps gem frames, which tell a gem's error from the code's,
+    # but RSpec's own frames say nothing about the code under test.
+    OWN_FRAME: Regexp
+
+    # A raise_error failure repeats the backtrace of the error it got, after
+    # this phrase. The frames move to the backtrace, so the phrase goes too.
+    QUOTED_FRAME: Regexp
+
+    QUOTED_HEADER: Regexp
+
+    # The backtrace goes on past the error's own frames into the error it
+    # was raised from: this line, the class, then the message and the
+    # frames indented under it.
+    CAUSED_BY: String
+
+    # : (String? report, String? stdout, String? stderr, ?normalizer: normalizer) -> doc
+    def self.parse: (String? report, String? stdout, String? stderr, ?normalizer: normalizer) -> doc
+
+    @normalizer: normalizer
+
+    @stderr: String
+
+    @stdout: String
+
+    @report: String?
+
+    # : (String? report, String stdout, String stderr, normalizer normalizer) -> void
+    def initialize: (String? report, String stdout, String stderr, normalizer normalizer) -> void
+
+    # : () -> doc
+    def parse: () -> doc
+
+    private
+
+    # : () -> doc?
+    def read_report: () -> doc?
+
+    # : (doc example) -> doc
+    def result_of: (doc example) -> doc
+
+    # A diff line can look like a quoted frame, so only the frames that end
+    # the message right after the header are quoted.
+    # : (Array[String] lines) -> [String, Array[String]]
+    def split_quoted: (Array[String] lines) -> [ String, Array[String] ]
+
+    # : (Array[String] lines) -> doc
+    def cause: (Array[String] lines) -> doc
+
+    # : (Array[String] backtrace) -> Array[doc]
+    def frames: (Array[String] backtrace) -> Array[doc]
+
+    # RSpec reports an error while it loads the file, or in a suite hook, as
+    # a message outside every example: "Failure/Error: ...", then the error
+    # class on a line of its own and the message indented under it.
+    # : (doc doc) -> doc?
+    def outside_error: (doc doc) -> doc?
+
+    # : () -> doc
+    def stream_error: () -> doc
+  end
+end

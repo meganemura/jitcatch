@@ -22,7 +22,8 @@ Gem::Specification.new do |spec|
 
   spec.files = Dir.chdir(__dir__) do
     `git ls-files -z`.split("\x0").select do |path|
-      path.start_with?("bin/", "lib/", "skills/") || %w[LICENSE README.md README.ja.md].include?(path)
+      path.start_with?("bin/", "lib/", "skills/") || (path.start_with?("sig/") && path.end_with?(".rbs")) ||
+        %w[LICENSE README.md README.ja.md].include?(path)
     end
   end
   spec.bindir = "bin"

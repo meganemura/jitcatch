@@ -1,0 +1,90 @@
+# Generated from lib/jitcatch/framework.rb with RBS::Inline
+
+module JitCatch
+  # How a candidate file runs and how its output reads. A `*_spec.rb` file
+  # is RSpec unless it requires minitest (minitest/spec names files that way
+  # too); every other file is Minitest.
+  module Framework
+    MINITEST_REQUIRE: Regexp
+
+    REPORT: String
+
+    # Framework::Minitest and Framework::RSpec answer the same calls.
+    type framework = singleton(Minitest) | singleton(RSpec)
+
+    # : (String relative, String source) -> framework
+    def self.for: (String relative, String source) -> framework
+
+    # : (String relative) -> bool
+    def self.named?: (String relative) -> bool
+
+    module Minitest
+      BARE: Regexp
+
+      # : (String basename) -> bool
+      def self?.names?: (String basename) -> bool
+
+      REPORTER: String
+
+      # : (String path) -> Array[String]
+      def self?.arguments: (String path) -> Array[String]
+
+      # : (String? report, String stdout, String stderr, normalizer normalizer) -> doc
+      def self?.parse: (String? report, String stdout, String stderr, normalizer normalizer) -> doc
+
+      LIBRARY: String
+
+      # Minitest is a bundled gem, so under Bundler only a Gemfile that lists
+      # it can load it.
+      # : (bool bundled) -> String
+      def self?.missing: (bool bundled) -> String
+
+      # : (String path, String? name, Integer? _line, ?pin_root: bool, ?launcher: bool) -> String
+      def self?.rerun: (String path, String? name, Integer? _line, ?pin_root: bool, ?launcher: bool) -> String
+
+      # A word a shell reads as written stays bare, so a path and a
+      # `Class#test` name stay readable; any other word is single-quoted.
+      # : (String part) -> String
+      def self?.quote: (String part) -> String
+    end
+
+    module RSpec
+      # RSpec puts lib/ of the nearest directory that holds spec/ first on
+      # the load path, which under a Rails app's tmp/ is the app's lib/, not
+      # the checkout's. Pinning that directory to the working directory
+      # loads the checkout's lib/ in the run and in its rerun line alike.
+      # RSpec cuts an object it prints to 200 characters, which can cut
+      # the class and message a raise_error got out of the row.
+      PIN_ROOT: String
+
+      LAUNCH: String
+
+      # : (String basename) -> bool
+      def self?.names?: (String basename) -> bool
+
+      # `--backtrace` keeps the gem frames that tell a gem's error apart.
+      # Formatters given here replace the ones a `.rspec` file names.
+      # : (String path) -> Array[String]
+      def self?.arguments: (String path) -> Array[String]
+
+      # : (String? report, String stdout, String stderr, normalizer normalizer) -> doc
+      def self?.parse: (String? report, String stdout, String stderr, normalizer normalizer) -> doc
+
+      LIBRARY: String
+
+      # : (bool bundled) -> String
+      def self?.missing: (bool bundled) -> String
+
+      # What `rspec -r` loads to lift the cut, when head's Ruby can load it.
+      LAUNCHER: String
+
+      # The same load path and launch as the run, so the rerun loads what
+      # the row loaded. In a checkout that holds spec/ RSpec already takes
+      # the working directory as its root and adds its lib/, so the line
+      # needs no pin, the one part that sets rspec-core's private state, and
+      # is plain `rspec` when head's Ruby loads the launcher.
+      # : (String path, String? _name, Integer? line, ?pin_root: bool, ?launcher: bool) -> String
+      def self?.rerun: (String path, String? _name, Integer? line, ?pin_root: bool, ?launcher: bool) -> String
+    end
+  end
+end

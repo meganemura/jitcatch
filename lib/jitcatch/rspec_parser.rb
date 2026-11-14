@@ -1,10 +1,11 @@
 # frozen_string_literal: true
+# rbs_inline: enabled
 
 module JitCatch
   # Parses the report RSpec's json formatter writes (`--format json --out`).
   # One example is one test, named by its full description.
   class RSpecParser
-    STATUSES = { "passed" => "pass", "pending" => "skip" }.freeze
+    STATUSES = { "passed" => "pass", "pending" => "skip" }.freeze #: Hash[String, String]
     # RSpec raises these when an expectation does not hold, so they are a
     # claim the example made, as Minitest::Assertion is.
     FAILURES = %w[
@@ -12,23 +13,30 @@ module JitCatch
       RSpec::Expectations::MultipleExpectationsNotMetError
       RSpec::Mocks::MockExpectationError
       RSpec::Core::Pending::PendingExampleFixedError
-    ].freeze
+    ].freeze #: Array[String]
     # --backtrace keeps gem frames, which tell a gem's error from the code's,
     # but RSpec's own frames say nothing about the code under test.
-    OWN_FRAME = %r{/gems/rspec-(?:core|expectations|mocks|support)-[^/]+/|\A-e\z}.freeze
+    OWN_FRAME = %r{/gems/rspec-(?:core|expectations|mocks|support)-[^/]+/|\A-e\z}.freeze #: Regexp
     # A raise_error failure repeats the backtrace of the error it got, after
     # this phrase. The frames move to the backtrace, so the phrase goes too.
-    QUOTED_FRAME = /\A\s*# \S.*:\d+:in /.freeze
-    QUOTED_HEADER = / with backtrace:\s*\z/.freeze
+    QUOTED_FRAME = /\A\s*# \S.*:\d+:in /.freeze #: Regexp
+    QUOTED_HEADER = / with backtrace:\s*\z/.freeze #: Regexp
     # The backtrace goes on past the error's own frames into the error it
     # was raised from: this line, the class, then the message and the
     # frames indented under it.
-    CAUSED_BY = "--- Caused by: ---"
+    CAUSED_BY = "--- Caused by: ---" #: String
 
+    #: (String? report, String? stdout, String? stderr, ?normalizer: normalizer) -> doc
     def self.parse(report, stdout, stderr, normalizer: ->(text) { text })
       new(report, normalizer.call(stdout.to_s), normalizer.call(stderr.to_s), normalizer).parse
     end
 
+    # @rbs @report: String?
+    # @rbs @stdout: String
+    # @rbs @stderr: String
+    # @rbs @normalizer: normalizer
+
+    #: (String? report, String stdout, String stderr, normalizer normalizer) -> void
     def initialize(report, stdout, stderr, normalizer)
       @report = report
       @stdout = stdout
@@ -36,13 +44,15 @@ module JitCatch
       @normalizer = normalizer
     end
 
+    #: () -> doc
     def parse
       doc = read_report
       return { "tests" => {}, "lines" => {}, "file_error" => stream_error } unless doc
 
-      tests = {}
-      lines = {}
-      Array(doc["examples"]).sort_by { |example| example["line_number"].to_i }.each do |example|
+      tests = {} #: Hash[String, doc]
+      lines = {} #: Hash[String, untyped]
+      examples = Array(doc["examples"]) #: Array[doc]
+      examples.sort_by { |example| example["line_number"].to_i }.each do |example|
         name = example["full_description"].to_s
         name = "#{name} (line #{example["line_number"]})" while tests.key?(name)
         tests[name] = result_of(example)
@@ -54,15 +64,17 @@ module JitCatch
 
     private
 
+    #: () -> doc?
     def read_report
       return nil if @report.to_s.strip.empty?
 
-      doc = JSON.parse(@report)
+      doc = JSON.parse(@report.to_s)
       doc.is_a?(Hash) ? doc : nil
     rescue JSON::ParserError
       nil
     end
 
+    #: (doc example) -> doc
     def result_of(example)
       status = STATUSES[example["status"]]
       return Failure.passed(status) if status
@@ -70,7 +82,8 @@ module JitCatch
       exception = example["exception"] || {}
       error_class = exception["class"].to_s
       message, quoted = split_quoted(@normalizer.call(exception["message"].to_s).lines)
-      backtrace = Array(exception["backtrace"]).map { |line| @normalizer.call(line.to_s) }
+      raw_backtrace = Array(exception["backtrace"]) #: Array[untyped]
+      backtrace = raw_backtrace.map { |line| @normalizer.call(line.to_s) }
       at = backtrace.index(CAUSED_BY)
       own = frames(backtrace.take(at || backtrace.size))
       # The expectation's line comes first, then the frames of the error it
@@ -81,6 +94,7 @@ module JitCatch
 
     # A diff line can look like a quoted frame, so only the frames that end
     # the message right after the header are quoted.
+    #: (Array[String] lines) -> [String, Array[String]]
     def split_quoted(lines)
       at = lines.size
       at -= 1 while at.positive? && lines[at - 1].match?(QUOTED_FRAME)
@@ -89,11 +103,13 @@ module JitCatch
       [[*lines.take(at - 1), lines[at - 1].sub(QUOTED_HEADER, "")].join, lines.drop(at)]
     end
 
+    #: (Array[String] lines) -> doc
     def cause(lines)
       message = lines.drop(1).take_while { |line| line.start_with?("  ") && !line.match?(Failure::FRAME) }
       { "error_class" => lines.first.to_s.delete_suffix(":"), "message" => message.map(&:strip).join("\n") }
     end
 
+    #: (Array[String] backtrace) -> Array[doc]
     def frames(backtrace)
       Failure.frames_in(Array(backtrace).map { |line| @normalizer.call(line.to_s) })
         .reject { |frame| frame["file"].match?(OWN_FRAME) }
@@ -102,6 +118,7 @@ module JitCatch
     # RSpec reports an error while it loads the file, or in a suite hook, as
     # a message outside every example: "Failure/Error: ...", then the error
     # class on a line of its own and the message indented under it.
+    #: (doc doc) -> doc?
     def outside_error(doc)
       return nil if doc.dig("summary", "errors_outside_of_examples_count").to_i.zero?
 
@@ -114,6 +131,7 @@ module JitCatch
       Failure.result("error", lines[at].delete_suffix(":"), message, frames(lines))
     end
 
+    #: () -> doc
     def stream_error
       Failure.from_streams(@stdout, @stderr) ||
         Failure.result("error", "RuntimeError", "rspec report not found", [])

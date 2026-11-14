@@ -1,0 +1,800 @@
+# Generated from lib/jitcatch/source_index.rb with RBS::Inline
+
+module JitCatch
+  # Indexes methods, constants, and calls in one Ruby file.
+  # Dynamic definitions (`define_method`, `class_eval`) are not indexed.
+  class SourceIndex
+    VISIBILITY: Array[Symbol]
+
+    CLASS_VISIBILITY: Hash[Symbol, Symbol]
+
+    # A symbol passed to these names a Hash key, not a method, so
+    # `snap[:total]` does not mention a method `total`.
+    HASH_KEY_CALLS: Array[Symbol]
+
+    # These name a method by their first argument, as a symbol or a string.
+    REFLECTIVE_CALLS: Array[Symbol]
+
+    SEND_CALLS: Array[Symbol]
+
+    # Exception#message and the messages built on it call to_s, the method an
+    # error class overrides to say what went wrong.
+    MESSAGE_CALLS: Array[Symbol]
+
+    # A relative path with a directory part and no spaces: `exe/tool`.
+    PATH_LIKE: Regexp
+
+    # Minitest assertions and expectations, RSpec matchers, and the string
+    # predicates a test asserts on.
+    COMPARING_CALL: Regexp
+
+    ATTRIBUTE_MACROS: Hash[Symbol, Array[String]]
+
+    # The constant a member list is given to, and whether its members get writers.
+    MEMBER_BUILDERS: Hash[Array[Symbol?], bool]
+
+    # Grape's route verbs, and the blocks that add a segment to the path of
+    # the endpoints inside them. `route_param :id` adds `:id`.
+    ENDPOINT_VERBS: Array[Symbol]
+
+    PATH_BLOCKS: Array[Symbol]
+
+    # `desc` and `params` describe the endpoint that follows them.
+    ENDPOINT_DESCRIPTIONS: Array[Symbol]
+
+    # A request path segment the test computes, as `#{thing.id}`.
+    COMPUTED_SEGMENT: String
+
+    ROUTE_HELPER: Regexp
+
+    # A class is an API when its superclass is Grape's, or an app's own base
+    # class named like one (`BaseAPI`, `Api::Base` is not).
+    API_SUPERCLASS: Regexp
+
+    # ActiveSupport::Concern blocks that define methods on the including
+    # class, and whether those are class methods.
+    CONCERN_BLOCKS: Hash[Symbol, bool]
+
+    # `macro` is nil for a `def`. A method an `attr_*` macro or a Struct or
+    # Data member list defines names that macro, and its source is the
+    # one-name form (`attr_reader :seed`), so dropping one name from a shared
+    # line does not read as a change to the names left on it.
+    class Method < Data
+      attr_reader file(): String
+
+      attr_reader bare_name(): String
+
+      attr_reader qualifier(): String
+
+      attr_reader qualified(): String
+
+      attr_reader kind(): String
+
+      attr_reader visibility(): String
+
+      attr_reader start_line(): Integer
+
+      attr_reader end_line(): Integer
+
+      attr_reader source(): String
+
+      attr_reader params(): String
+
+      attr_reader macro(): String?
+
+      def self.new: (String file, String bare_name, String qualifier, String qualified, String kind, String visibility, Integer start_line, Integer end_line, String source, String params, String? macro) -> instance
+                  | (file: String, bare_name: String, qualifier: String, qualified: String, kind: String, visibility: String, start_line: Integer, end_line: Integer, source: String, params: String, macro: String?) -> instance
+
+      def self.members: () -> [ :file, :bare_name, :qualifier, :qualified, :kind, :visibility, :start_line, :end_line, :source, :params, :macro ]
+
+      def members: () -> [ :file, :bare_name, :qualifier, :qualified, :kind, :visibility, :start_line, :end_line, :source, :params, :macro ]
+    end
+
+    class Constant < Data
+      attr_reader file(): String
+
+      attr_reader bare_name(): String
+
+      attr_reader qualifier(): String
+
+      attr_reader qualified(): String
+
+      attr_reader start_line(): Integer
+
+      attr_reader end_line(): Integer
+
+      attr_reader source(): String
+
+      def self.new: (String file, String bare_name, String qualifier, String qualified, Integer start_line, Integer end_line, String source) -> instance
+                  | (file: String, bare_name: String, qualifier: String, qualified: String, start_line: Integer, end_line: Integer, source: String) -> instance
+
+      def self.members: () -> [ :file, :bare_name, :qualifier, :qualified, :start_line, :end_line, :source ]
+
+      def members: () -> [ :file, :bare_name, :qualifier, :qualified, :start_line, :end_line, :source ]
+    end
+
+    # `enclosing` is the method, spec block, or endpoint the call is in, or
+    # nil at the top of a file.
+    class Call < Data
+      attr_reader file(): String
+
+      attr_reader bare_name(): String
+
+      attr_reader line(): Integer
+
+      attr_reader enclosing(): String?
+
+      attr_reader receiver(): Receiver
+
+      def self.new: (String file, String bare_name, Integer line, String? enclosing, Receiver receiver) -> instance
+                  | (file: String, bare_name: String, line: Integer, enclosing: String?, receiver: Receiver) -> instance
+
+      def self.members: () -> [ :file, :bare_name, :line, :enclosing, :receiver ]
+
+      def members: () -> [ :file, :bare_name, :line, :enclosing, :receiver ]
+    end
+
+    # What a call is sent to, as far as the source names it: the enclosing
+    # object (`self`), a class or module itself (`singleton`), an instance
+    # of one (`instance`), one of the constants a method of the same class
+    # returns (`one_of`, with `const` the list), or a value only a run would
+    # know (`unknown`), or a value the source does not type that Rails would
+    # name after its model (`named`, with `const` the name in snake case).
+    # `const` is the constant as written, or nil for the enclosing class.
+    # An instance variable is an `instance` when every `Const.new` assigned
+    # to it in the class names the same constant, and `named` when none
+    # does. A local variable is an `instance` when every assignment to it in
+    # its method builds the same constant, and `named` when none builds
+    # one, as for a parameter. A reader that `belongs_to` or `has_one`
+    # declares is an `instance` of the model it names. A local that every
+    # assignment in its method sets to a lambda or a proc literal, or that
+    # `&block` binds, is a `proc`: its `call` runs that block, never a
+    # method the repository defines.
+    # `const` is a String, or for `one_of` an Array of them, or nil.
+    class Receiver < Data
+      attr_reader kind(): String
+
+      attr_reader const(): untyped
+
+      def self.new: (String kind, untyped const) -> instance
+                  | (kind: String, const: untyped) -> instance
+
+      def self.members: () -> [ :kind, :const ]
+
+      def members: () -> [ :kind, :const ]
+    end
+
+    UNKNOWN_RECEIVER: Receiver
+
+    PROC_RECEIVER: Receiver
+
+    # A block given to an RSpec call: a `group` (describe, context), an
+    # `example` (it, specify), or a `setup` (let, subject, before). Code in
+    # an example or a setup block is referred to under `key`, and so are a
+    # group's arguments.
+    class SpecBlock < Data
+      attr_reader kind(): String
+
+      attr_reader key(): String
+
+      attr_reader start_line(): Integer
+
+      attr_reader end_line(): Integer
+
+      def self.new: (String kind, String key, Integer start_line, Integer end_line) -> instance
+                  | (kind: String, key: String, start_line: Integer, end_line: Integer) -> instance
+
+      def self.members: () -> [ :kind, :key, :start_line, :end_line ]
+
+      def members: () -> [ :kind, :key, :start_line, :end_line ]
+    end
+
+    SPEC_KINDS: Hash[Symbol, String]
+
+    # A local bound here can hold any value, so it types no call.
+    LOCAL_BINDINGS: Array[singleton(Prism::Node)]
+
+    SPEC_HELPERS: Array[Symbol]
+
+    # The Active Record macros that define a reader returning one record.
+    ASSOCIATION_READERS: Array[Symbol]
+
+    DESCRIBED_METHOD: Regexp
+
+    # FactoryBot's calls that build an object, so run its class's
+    # `initialize`. `attributes_for` builds a Hash.
+    FACTORY_CALLS: Array[Symbol]
+
+    RECORD_CALLBACKS: Hash[Symbol, Array[String]]
+
+    CALLBACK_CONDITIONS: Array[String]
+
+    # Rails reads `on:` only on a validation and on a commit or rollback
+    # callback. A context of its own (`on: :publish`) runs only from a
+    # call that takes one: `valid?(:publish)` or `save(context: :publish)`.
+    CONTEXT_MACROS: Array[Symbol]
+
+    CONTEXT_CALLS: Hash[String, Array[String]]
+
+    OWN_CONTEXT_CALLS: Array[String]
+
+    # FactoryBot's calls that save what they build, and so run its save
+    # callbacks. The other FACTORY_CALLS only build.
+    SAVING_FACTORY_CALLS: Array[String]
+
+    # A class header's superclass as written, and the namespace the header
+    # is in, which the name is looked up from.
+    class Superclass < Data
+      attr_reader qualified(): String
+
+      attr_reader written(): String
+
+      attr_reader scope(): String
+
+      def self.new: (String qualified, String written, String scope) -> instance
+                  | (qualified: String, written: String, scope: String) -> instance
+
+      def self.members: () -> [ :qualified, :written, :scope ]
+
+      def members: () -> [ :qualified, :written, :scope ]
+    end
+
+    # One method a callback or validation line in a class body names.
+    # `declared` is the line in short (`after_save :count_save`,
+    # `validates if: :checked?`). `contexts` holds the `on:` symbols as
+    # written, or nil when the line names none.
+    class Callback < Data
+      attr_reader qualifier(): String
+
+      attr_reader macro(): String
+
+      attr_reader method(): String
+
+      attr_reader declared(): String
+
+      attr_reader contexts(): Array[String]?
+
+      def self.new: (String qualifier, String macro, String method, String declared, Array[String]? contexts) -> instance
+                  | (qualifier: String, macro: String, method: String, declared: String, contexts: Array[String]?) -> instance
+
+      def self.members: () -> [ :qualifier, :macro, :method, :declared, :contexts ]
+
+      def members: () -> [ :qualifier, :macro, :method, :declared, :contexts ]
+    end
+
+    # One `require_relative` call with one argument. `path` is nil when the
+    # source does not settle it: only a string literal, or File.join of
+    # string literals, does.
+    class RelativeRequire < Data
+      attr_reader path(): String?
+
+      attr_reader line(): Integer
+
+      def self.new: (String? path, Integer line) -> instance
+                  | (path: String?, line: Integer) -> instance
+
+      def self.members: () -> [ :path, :line ]
+
+      def members: () -> [ :path, :line ]
+    end
+
+    # Data.define's block defines these; rbs-inline reads only the members,
+    # and Steep does not check those blocks.
+    class SpecBlock
+      def covers?: (Integer line) -> bool
+    end
+
+    class Callback
+      def calls: () -> Array[String]
+    end
+
+    attr_reader methods: Array[Method]
+
+    attr_reader constants: Array[Constant]
+
+    attr_reader namespaces: Array[Constant]
+
+    attr_reader superclasses: Array[Superclass]
+
+    attr_reader callbacks: Array[Callback]
+
+    attr_reader calls: Array[Call]
+
+    attr_reader private_constants: Array[String]
+
+    attr_reader parse_error: String?
+
+    @script: bool
+
+    @source: String
+
+    @lines: Array[String]
+
+    @file: String
+
+    @module_functions: Array[String]
+
+    @new_visibility: Hash[String, String]
+
+    @references: Hash[String?, Array[String]]
+
+    @ivar_classes: Hash[[ String, String ], Array[String]]
+
+    @local_classes: Hash[[ String?, String ], Array[Array[String]]]
+
+    @local_procs: Hash[[ String?, String ], Array[bool]]
+
+    @helper_classes: Hash[String, Array[String?]]
+
+    @spec_blocks: Array[SpecBlock]
+
+    @defined: Hash[String, Array[String]]
+
+    @described: Array[String?]
+
+    @returned: Hash[String, Array[String]?]
+
+    @association_classes: Hash[String, String]
+
+    @symbol_lists: Hash[String, Array[Prism::SymbolNode]]
+
+    @paths: Hash[String?, Array[String]]
+
+    @compared: Hash[Integer, bool]
+
+    @factory_calls: Hash[String?, Array[[ String, String, Array[String] ]]]
+
+    @endpoints: Hash[Integer, String]
+
+    @string_constants: Hash[String, String]
+
+    @spec_helpers: Array[String]
+
+    # The classes whose `new` the file made private, so no test builds them
+    # with it. `new` is inherited, never defined, so no Method carries it.
+    # : () -> Array[String]
+    def hidden_new: () -> Array[String]
+
+    # `script: true` reads the file as an executable, such as `exe/tool`:
+    # its top-level code is one method of kind `script`, named by
+    # `script_name`, whose calls are that method's.
+    # : (String? source, file: String, ?script: bool) -> SourceIndex
+    def self.parse: (String? source, file: String, ?script: bool) -> SourceIndex
+
+    # The executables a gem or an app ships, which carry no `.rb` suffix.
+    SCRIPT_PATH: Regexp
+
+    # : (String path) -> bool
+    def self.script_path?: (String path) -> bool
+
+    # A file whose first line runs Ruby.
+    # : (String? text) -> bool
+    def self.ruby_script?: (String? text) -> bool
+
+    # : (String file) -> String
+    def self.script_name: (String file) -> String
+
+    # Every require_relative of a source, wherever it is written. Only a
+    # run reads these, for its few candidate files, so the parse of every
+    # repository file does not pay for the walk.
+    # : (String? source) -> Array[RelativeRequire]
+    def self.relative_requires: (String? source) -> Array[RelativeRequire]
+
+    # : (Prism::Node? node) -> String?
+    def self.settled_path: (Prism::Node? node) -> String?
+
+    # : (String? source, String file, ?bool script) -> void
+    def initialize: (String? source, String file, ?bool script) -> void
+
+    # : () -> self
+    def parse: () -> self
+
+    # : (String? qualifier, String bare, bool singleton) -> String
+    def self.qualify: (String? qualifier, String bare, bool singleton) -> String
+
+    # How a test that builds an object from the factory `name` mentions it:
+    # `create(:loan)` when the call saves the record, `build(:loan)` when it
+    # does not, and `create(:loan, :cosigned)` with a trait.
+    # : (String? name, String | Symbol call, ?String? trait) -> String
+    def self.factory_mention: (String? name, String | Symbol call, ?String? trait) -> String
+
+    # : (String name) -> bool
+    def self.unsaved_mention?: (String name) -> bool
+
+    # The bare names of the record calls (`#save!`) among `calls`.
+    # : (Array[String] calls) -> Array[String]
+    def self.record_calls: (Array[String] calls) -> Array[String]
+
+    # Whether a test that names `names` makes one of `record_calls` on any
+    # receiver: the record `build(:loan)` returns sits in a local the source
+    # does not type, so the receiver cannot be checked. RSpec's `be_valid`
+    # calls `valid?`.
+    # : (Array[String] names, Array[String] record_calls) -> bool
+    def self.saves_or_validates?: (Array[String] names, Array[String] record_calls) -> bool
+
+    # Whether a call a test writes (`Loan.create!`, `Loan#save`) is the
+    # call `call` names. The written owner can be shorter or longer than
+    # the call's by whole namespace segments, as `Loan` is written inside
+    # `module Shop` for `Shop::Loan`.
+    # : (String written, String call) -> bool
+    def self.names_call?: (String written, String call) -> bool
+
+    # The model Rails names a record after: `line_item` is a LineItem.
+    # : (String snake) -> String
+    def self.model_name: (String snake) -> String
+
+    # Whether a request a test sends (`POST /v1/things/7/refresh`) reaches
+    # an endpoint (`POST /things/:id/refresh`): the same verb, and the
+    # request's path ends in the endpoint's segments, a `:param` matching
+    # any one. Leading segments are a mount point the API class does not name.
+    # A `*` segment is a part the test computes, which matches any one; a
+    # path that starts with one computes its mount point, so it can be
+    # shorter than the endpoint's. An endpoint whose path the source
+    # computes matches no request.
+    # : (String written, String endpoint) -> bool
+    def self.endpoint_call?: (String written, String endpoint) -> bool
+
+    # : (String name) -> bool
+    def self.endpoint?: (String name) -> bool
+
+    # A request sent to a path helper, as `post things_path` is.
+    # : (String name) -> bool
+    def self.route_helper_request?: (String name) -> bool
+
+    # : (String name) -> bool
+    def self.request?: (String name) -> bool
+
+    # An endpoint whose path holds a part the source computes, written as
+    # that part's source in braces.
+    # : (String name) -> bool
+    def self.computed_path?: (String name) -> bool
+
+    # The owner, the separator (`#` or `.`), and the bare name.
+    # : (String qname) -> [String, String, String]
+    def self.split_qualified: (String qname) -> [ String, String, String ]
+
+    # The names a method refers to in code, with the same-file helpers it
+    # calls: method calls, constant reads, and symbols. A constructor call
+    # is also listed as `Owner.new`. Strings and comments are not read, except
+    # a plain string that a REFLECTIVE_CALLS call takes first. A symbol that
+    # keys a Hash is not listed. When the file defines no method by that
+    # name, the whole file is read.
+    # : (String? qualified) -> Array[String]
+    def referenced_names: (String? qualified) -> Array[String]
+
+    # The method names that the test, the example on that line, or the
+    # whole file sends only to constants it names (`File.write`), each with
+    # those constants, in the same scope as the names it refers to.
+    # : (String qualified, Integer? line) -> Hash[String, Array[String]]
+    def names_sent_only_to_constants: (String qualified, Integer? line) -> Hash[String, Array[String]]
+
+    # The names an RSpec example starting on that line refers to: its own
+    # block, the `let`, `subject`, and hook blocks of the groups around it,
+    # the arguments of those groups, and the same-file helpers all of them
+    # call. A group described as `"#total"` or `".build"` names that method.
+    # Nil when no example starts on the line.
+    # : (Integer line) -> Array[String]?
+    def example_references: (Integer line) -> Array[String]?
+
+    # : (Integer line) -> Array[String]
+    def example_keys: (Integer line) -> Array[String]
+
+    # The strings shaped like a file path (`"exe/tool"`, `"../bin/x"`) that
+    # the test or example, or the same-file helpers it calls, writes: the
+    # path of a script it may start in another process. With no such test
+    # or example, those of the whole file.
+    # : (String qualified, Integer? line) -> Array[String]
+    def paths_named: (String qualified, Integer? line) -> Array[String]
+
+    # Code outside the namespace cannot name a private constant, so no method
+    # under it is an entry point, whatever its own visibility says. A revision
+    # passes the names from all its files, since a namespace can be reopened.
+    # : (Array[Method] methods, Array[String] names) -> Array[Method]
+    def self.hide_private_constants: (Array[Method] methods, Array[String] names) -> Array[Method]
+
+    private
+
+    # : (Array[String] keys) -> Array[String]
+    def names_reached_from: (Array[String] keys) -> Array[String]
+
+    # : (Array[String] keys) -> Array[String]
+    def reached_from: (Array[String] keys) -> Array[String]
+
+    # `Index.parse` for a call whose receiver the source names as the class
+    # `Index` or as an instance of it, so a reader can tell it from another
+    # class's `parse`. A constructor is already listed as `Owner.new`.
+    # : (Array[String?] enclosings) -> Array[String]
+    def receiver_names: (Array[String?] enclosings) -> Array[String]
+
+    # : (untyped node, String qualifier, Symbol visibility, bool singleton) -> void
+    def scan_body: (untyped node, String qualifier, Symbol visibility, bool singleton) -> void
+
+    # : (untyped node) -> Array[untyped]
+    def statements: (untyped node) -> Array[untyped]
+
+    # The visibility the statements after this one get.
+    # : (untyped stmt, String qualifier, Symbol visibility, bool singleton) -> Symbol
+    def scan_statement: (untyped stmt, String qualifier, Symbol visibility, bool singleton) -> Symbol
+
+    # : (Prism::CallNode node) -> bool
+    def visibility_modifier?: (Prism::CallNode node) -> bool
+
+    # : (untyped stmt, String qualifier, Symbol visibility, bool singleton) -> Symbol
+    def handle_visibility: (untyped stmt, String qualifier, Symbol visibility, bool singleton) -> Symbol
+
+    # `module_function` makes the public method `Mod.name` that callers use;
+    # the private instance copy it also makes is not listed.
+    # : (untyped stmt, String qualifier, Symbol visibility) -> Symbol
+    def handle_module_function: (untyped stmt, String qualifier, Symbol visibility) -> Symbol
+
+    # : (String qualifier, String bare) -> void
+    def to_module_function: (String qualifier, String bare) -> void
+
+    # : (untyped stmt, String qualifier) -> void
+    def record_private_constants: (untyped stmt, String qualifier) -> void
+
+    # : (untyped stmt, String qualifier) -> void
+    def handle_class_visibility: (untyped stmt, String qualifier) -> void
+
+    # : (Prism::DefNode node, String qualifier, Symbol visibility, bool singleton_context, ?explicit: bool) -> void
+    def record_method: (Prism::DefNode node, String qualifier, Symbol visibility, bool singleton_context, ?explicit: bool) -> void
+
+    # The statements of an executable outside its `def`, class, and module
+    # bodies, as one method: a change to its usage text or to the `case`
+    # that picks a command is a change to it, and an edit inside a `def`
+    # is not. Its source holds only those statements, so `changes` sees
+    # an edit to them by the source alone.
+    # The script's method name.
+    # : (untyped program) -> String
+    def record_script: (untyped program) -> String
+
+    # A string, a lambda, or a block runs code the line does not name, so
+    # only symbols count.
+    # : (untyped stmt, String qualifier) -> void
+    def record_callbacks: (untyped stmt, String qualifier) -> void
+
+    # `belongs_to :cosigner, class_name: "Borrower"` reads a Borrower. A
+    # polymorphic one reads whatever class the row names.
+    # : (untyped stmt, String qualifier) -> void
+    def record_association: (untyped stmt, String qualifier) -> void
+
+    # An `on:` the source does not spell as symbols could be any context,
+    # so it narrows nothing.
+    # : (untyped value) -> Array[String]?
+    def callback_contexts: (untyped value) -> Array[String]?
+
+    # : (untyped stmt, String qualifier, Symbol visibility, bool singleton) -> void
+    def record_attributes_as_methods: (untyped stmt, String qualifier, Symbol visibility, bool singleton) -> void
+
+    # `scope :recent, -> { ... }` and `scope(:old) { ... }` define the class
+    # method `Post.recent`, and its body is the whole statement.
+    # : (untyped stmt) -> bool
+    def scope?: (untyped stmt) -> bool
+
+    # : (untyped stmt) -> (Prism::LambdaNode | Prism::BlockNode)?
+    def scope_body: (untyped stmt) -> (Prism::LambdaNode | Prism::BlockNode)?
+
+    # : (untyped stmt, String qualifier) -> void
+    def record_scope: (untyped stmt, String qualifier) -> void
+
+    # `prefix :api` puts its segment before every path of the class.
+    # : (untyped body) -> Array[String]
+    def api_prefix: (untyped body) -> Array[String]
+
+    # `described` is the line of a `desc` or `params` before the block that
+    # holds these statements, which describes the first endpoint in it.
+    # The line of a `desc` or `params` that no endpoint has taken yet.
+    # : (untyped body, String qualifier, Array[String] path, ?Integer? described) -> Integer?
+    def record_endpoints: (untyped body, String qualifier, Array[String] path, ?Integer? described) -> Integer?
+
+    # : (Prism::CallNode stmt, String qualifier, Array[String] path, Integer start_line) -> void
+    def record_endpoint: (Prism::CallNode stmt, String qualifier, Array[String] path, Integer start_line) -> void
+
+    # A path argument's segments with no slash at either end, or nil for
+    # none. A part the source computes is kept as its source in braces, so
+    # the endpoint's name says that its path is not known.
+    # : (untyped node) -> String?
+    def path_segment: (untyped node) -> String?
+
+    # The parts of a path the source writes: the text of each literal part,
+    # and the node of each part it computes. A constant the file assigns a
+    # string or a symbol is literal.
+    # : (untyped node) -> Array[String | Prism::Node]
+    def path_parts: (untyped node) -> Array[String | Prism::Node]
+
+    # The string and symbol constants the file assigns, by name. A name
+    # assigned two values is left out, since the scope that reads it is not
+    # followed.
+    # : (Prism::Node root) -> Hash[String, String]
+    def string_constants: (Prism::Node root) -> Hash[String, String]
+
+    # A request a test sends, as `post "/things/#{thing.id}/refresh"`, by
+    # verb and path, with no query string and a `*` for each segment the
+    # test computes; or by verb and path helper, as `post things_path` is.
+    # : (Prism::CallNode node) -> String?
+    def request_name: (Prism::CallNode node) -> String?
+
+    # `delegate :name, to: :author, prefix: true` defines `author_name`, and
+    # a change to the options changes every name the line delegates.
+    # : (untyped stmt, String qualifier, bool singleton) -> void
+    def record_delegates: (untyped stmt, String qualifier, bool singleton) -> void
+
+    ENUM_OPTIONS: Array[String]
+
+    # `enum :status, { draft: 0, live: 1 }` defines `draft?`, `draft!`, and
+    # the scopes `Post.draft` and `Post.not_draft` for each value. Each value
+    # keeps its own line, so changing one value changes that value's methods.
+    # Rails 8 removed the `enum status: {...}` form, so it is not read.
+    # : (untyped stmt, String qualifier) -> void
+    def record_enum: (untyped stmt, String qualifier) -> void
+
+    # : (untyped call, String qualifier) -> void
+    def record_members: (untyped call, String qualifier) -> void
+
+    # The symbols a member list names, with `*FIELDS` read from a constant
+    # this file set to a list of symbols before it, looked up from the
+    # innermost namespace out. Each member keeps the line of its own symbol,
+    # so a change to the list is a change to that member.
+    # : (untyped call, String qualifier) -> Array[Prism::SymbolNode]
+    def member_symbols: (untyped call, String qualifier) -> Array[Prism::SymbolNode]
+
+    # `[:a, :b]`, `%i[a b]`, and either with `.freeze`.
+    # : (untyped node) -> Array[Prism::SymbolNode]?
+    def symbol_list: (untyped node) -> Array[Prism::SymbolNode]?
+
+    # : (Prism::Node arg, String qualifier, String bare, Symbol visibility, bool singleton, String macro, String source) -> void
+    def record_generated: (Prism::Node arg, String qualifier, String bare, Symbol visibility, bool singleton, String macro, String source) -> void
+
+    # : (String qualifier, String bare, Symbol visibility, bool singleton) -> void
+    def mark_visibility: (String qualifier, String bare, Symbol visibility, bool singleton) -> void
+
+    # A class or module header goes to the namespaces; it stands for the
+    # body, which belongs to the methods and constants inside it.
+    # : (Array[Constant] list, String full, Integer start_line, Integer end_line, String source) -> void
+    def record_constant: (Array[Constant] list, String full, Integer start_line, Integer end_line, String source) -> void
+
+    # The walk names an enclosing method by its `def`, which reads as an
+    # instance method; a module function is listed as `Mod.name`.
+    # : () -> void
+    def type_instance_variables: () -> void
+
+    # A local read starts `named`; most are parameters and stay so. This
+    # runs before the instance variables become `named` too.
+    # : () -> void
+    def type_local_variables: () -> void
+
+    # : (Array[String] built, bool every_assignment_builds, String name) -> Receiver
+    def typed_or_named: (Array[String] built, bool every_assignment_builds, String name) -> Receiver
+
+    # `let(:cart) { Cart.new }` makes `cart.total` a call on a Cart, as a
+    # local variable would. A name defined twice, in two groups, types none.
+    # : () -> void
+    def type_spec_helpers: () -> void
+
+    # `emitter_for(format).render` sends `render` to whatever `emitter_for`
+    # returns. When that method of the same class returns only constants (and
+    # nil), the call goes to one of them.
+    # : () -> void
+    def type_returned_receivers: () -> void
+
+    # The constants a method body can return, or nil when it can return
+    # anything else. A `nil` branch adds none.
+    # : (untyped node) -> Array[String]?
+    def returned_constants: (untyped node) -> Array[String]?
+
+    # : (untyped node) -> bool
+    def returns?: (untyped node) -> bool
+
+    # The constants a value builds with `Const.new`, through `a || b`,
+    # `c ? a : b`, and parentheses.
+    # `-> {}`, `lambda {}`, `proc {}`, and `Proc.new {}` make a Proc.
+    # : (untyped node) -> bool
+    def proc_literal?: (untyped node) -> bool
+
+    # : (untyped node) -> Array[String]
+    def built_constants: (untyped node) -> Array[String]
+
+    # : () -> void
+    def rename_module_function_callers: () -> void
+
+    # : (untyped node, String qualifier) -> String
+    def constant_target: (untyped node, String qualifier) -> String
+
+    # `Point = Struct.new(:x) do ... end` and `Class.new do ... end` define
+    # methods for that constant. Those methods are indexed on their own, so
+    # the constant keeps only the text up to the block's `do` or `{`, which
+    # still shows a block that came or went.
+    # : (untyped node) -> Prism::BlockNode?
+    def value_block: (untyped node) -> Prism::BlockNode?
+
+    # The constant's source up to its block, and the line that ends.
+    # : (untyped node) -> [String, Integer]
+    def constant_header: (untyped node) -> [ String, Integer ]
+
+    # : (untyped node, String qualifier, bool singleton_context, String? enclosing) -> void
+    def walk: (untyped node, String qualifier, bool singleton_context, String? enclosing) -> void
+
+    # A string an assertion or a matcher compares with a value, as in
+    # `assert_includes error.backtrace.first, "lib/tool/model.rb"`, is
+    # text the test expects, not the path of a script it starts. Only a
+    # direct argument counts, so `assert_equal "1\n", IO.popen(["ruby",
+    # "exe/tool"], &:read)` still names `exe/tool`.
+    # : (untyped node) -> void
+    def mark_compared_strings: (untyped node) -> void
+
+    # : (untyped node) -> bool
+    def spec_block?: (untyped node) -> bool
+
+    # : (untyped node, String qualifier, bool singleton_context, String? enclosing) -> void
+    def walk_spec_block: (untyped node, String qualifier, bool singleton_context, String? enclosing) -> void
+
+    # `let(:result)` and `subject(:result)` name a helper of the spec, so the
+    # symbol and a bare `result` call refer to the spec's own helper, not to
+    # a method `result` of the code under test.
+    # : (untyped node) -> Array[String]
+    def spec_helper_names: (untyped node) -> Array[String]
+
+    # An unnamed `subject` is called as `subject`, and a named one answers
+    # to both names.
+    # : (untyped node) -> void
+    def record_spec_helper: (untyped node) -> void
+
+    # : (untyped node, untyped arg) -> bool
+    def spec_helper_name?: (untyped node, untyped arg) -> bool
+
+    # : (untyped node) -> bool
+    def spec_helper_call?: (untyped node) -> bool
+
+    # `described_class.new` builds the constant the enclosing group describes.
+    # : (untyped node) -> String?
+    def described_owner: (untyped node) -> String?
+
+    # A file that defines a method of the call's name calls its own
+    # helper, not FactoryBot's.
+    # : (Array[String?] enclosings) -> Array[String]
+    def factory_names: (Array[String?] enclosings) -> Array[String]
+
+    # `create(:loan, :cosigned)` names the trait :cosigned after the factory.
+    # : (untyped node) -> Array[String]
+    def factory_traits: (untyped node) -> Array[String]
+
+    # `create(:loan)` or `FactoryBot.build("loan")` builds from the factory
+    # `loan`. A name a run computes cannot be read.
+    # : (untyped node) -> String?
+    def factory_built: (untyped node) -> String?
+
+    # : (String? enclosing, String | Symbol name) -> void
+    def refer: (String? enclosing, String | Symbol name) -> void
+
+    # `emitter.send(:write)` calls `write` on the receiver of `send`.
+    # : (untyped node) -> String?
+    def sent_name: (untyped node) -> String?
+
+    # : (untyped node) -> String?
+    def reflective_name: (untyped node) -> String?
+
+    # : (untyped node) -> Receiver
+    def receiver_of: (untyped node) -> Receiver
+
+    # : (untyped node) -> String?
+    def constructor_owner: (untyped node) -> String?
+
+    # Prism 0.19, the default on Ruby 3.3, has no ConstantPathNode#name: the
+    # last segment is a ConstantReadNode in `child`, which Prism 1.x deprecates.
+    # `full_name` and the source text after `::` are not the same on both.
+    # : (untyped node) -> Symbol
+    def name_of: (untyped node) -> Symbol
+
+    # : (untyped node) -> String?
+    def const_name: (untyped node) -> String?
+
+    # : (String? qualifier, String? name) -> String
+    def join_qual: (String? qualifier, String? name) -> String
+
+    # : (Integer start_line, Integer end_line) -> String
+    def extract_lines: (Integer start_line, Integer end_line) -> String
+
+    # : (Prism::Node node) -> String
+    def slice_of: (Prism::Node node) -> String
+  end
+end

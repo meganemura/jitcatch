@@ -1,0 +1,444 @@
+# Generated from lib/jitcatch/runner.rb with RBS::Inline
+
+module JitCatch
+  # Runs each candidate file on base and head worktrees and classifies it.
+  class Runner
+    FILE_CAP: Integer
+
+    PASSED_ENV: Array[String]
+
+    FIXED_ENV: Hash[String, String]
+
+    # Names jitcatch sets itself, so --env cannot pass them.
+    RESERVED_ENV: Array[String]
+
+    # How a child reaches the network. Tools read both https_proxy and
+    # HTTPS_PROXY, so the case does not matter.
+    NETWORK_ENV: Regexp
+
+    ENV_READ: Regexp
+
+    ENV_READ_GREP: String
+
+    # What reads a proxy or CA setting: an HTTP client, by the name a file
+    # requires or a Gemfile.lock lists, and a command a file starts that
+    # fetches, such as `npx --yes` or `bundle install`, in a string, a
+    # backtick, or an argument list. A spec of a local SQLite app uses none,
+    # so the host's proxy settings are noise there. A command spelled any
+    # other way, as in a script file, is not seen.
+    NETWORK_REQUIRES: Array[String]
+
+    NETWORK_GEMS: Array[String]
+
+    NETWORK_COMMANDS: Array[String]
+
+    FETCHING_TOOLS: Array[String]
+
+    FETCHING_SUBCOMMANDS: Array[String]
+
+    NETWORK_USE_GREP: String
+
+    NETWORK_USE: Regexp
+
+    # Rescuing in the child keeps Bundler's own message and drops its backtrace.
+    BUNDLE_SETUP: String
+
+    SETUP_STDERR_LINES: Integer
+
+    # A database server that refused the connection, as PostgreSQL and MySQL
+    # clients word it. The client then took its host and port from a default,
+    # often because the shell's setting for them was not passed.
+    DATABASE_REFUSED: Regexp
+
+    # What an app's database.yml or its client library reads: libpq reads
+    # PG* itself, and Rails reads DATABASE_URL and its per-database forms.
+    DATABASE_ENV: Regexp
+
+    SQLITE_RELATIVE: String
+
+    # The test databases of a side, as Active Record reads config/database.yml
+    # with that side's TEST_ENV_NUMBER and the variables --env passes, so a
+    # DATABASE_URL merges in as it does when rails_helper sets RAILS_ENV.
+    TEST_DATABASES: String
+
+    # `lines` maps an RSpec example's name to the line it starts on.
+    class Result < Data
+      attr_reader tests(): Hash[String, doc]
+
+      attr_reader lines(): Hash[String, Integer]
+
+      attr_reader file_error(): doc?
+
+      attr_reader timed_out(): bool
+
+      attr_reader exit_code(): Integer?
+
+      attr_reader seconds(): Float
+
+      def self.new: (Hash[String, doc] tests, Hash[String, Integer] lines, doc? file_error, bool timed_out, Integer? exit_code, Float seconds) -> instance
+                  | (tests: Hash[String, doc], lines: Hash[String, Integer], file_error: doc?, timed_out: bool, exit_code: Integer?, seconds: Float) -> instance
+
+      def self.members: () -> [ :tests, :lines, :file_error, :timed_out, :exit_code, :seconds ]
+
+      def members: () -> [ :tests, :lines, :file_error, :timed_out, :exit_code, :seconds ]
+    end
+
+    # One worker's two checkouts. A worker runs one file at a time in them.
+    class Pair < Data
+      attr_reader base(): String
+
+      attr_reader head(): String
+
+      def self.new: (String base, String head) -> instance
+                  | (base: String, head: String) -> instance
+
+      def self.members: () -> [ :base, :head ]
+
+      def members: () -> [ :base, :head ]
+    end
+
+    # The names a test can mention, and the constants head defines.
+    # `unsaved` maps a `build(:loan)` that only a callback lists to the
+    # record calls that make it run that callback.
+    # `routes` are the routes head's config/routes.rb draws.
+    class Known < Data
+      attr_reader names(): Array[String]
+
+      attr_reader constants(): Array[String]
+
+      attr_reader unsaved(): Hash[String, Array[String]]
+
+      attr_reader routes(): Routes
+
+      def self.new: (Array[String] names, Array[String] constants, Hash[String, Array[String]] unsaved, Routes routes) -> instance
+                  | (names: Array[String], constants: Array[String], unsaved: Hash[String, Array[String]], routes: Routes) -> instance
+
+      def self.members: () -> [ :names, :constants, :unsaved, :routes ]
+
+      def members: () -> [ :names, :constants, :unsaved, :routes ]
+    end
+
+    @git: GitRepo
+
+    @setup: String?
+
+    @base_ref: String
+
+    @head_ref: String
+
+    @tests_dir: String
+
+    @reruns: Integer
+
+    @timeout: Integer | Float | nil
+
+    @finished_in_time: finished_in_time
+
+    @env_names: Array[String]
+
+    @workers: Integer
+
+    @serial: bool
+
+    @number_database_url: bool
+
+    @frameworks: Hash[String, Framework::framework]
+
+    @pair_count: Integer
+
+    @test_env_numbers: Hash[String, String]
+
+    @temp_roots: Array[String]?
+
+    @tests_from_root: String?
+
+    # : (GitRepo | String repo, String base_ref, String head_ref, String tests_dir, ?reruns: Integer, ?timeout: Integer | Float | nil, ?env: Array[String], ?workers: Integer, ?serial: bool, ?number_database_url: bool, ?setup: String?, ?finished_in_time: finished_in_time?) -> doc
+    def self.run: (GitRepo | String repo, String base_ref, String head_ref, String tests_dir, ?reruns: Integer, ?timeout: Integer | Float | nil, ?env: Array[String], ?workers: Integer, ?serial: bool, ?number_database_url: bool, ?setup: String?, ?finished_in_time: finished_in_time?) -> doc
+
+    # `finished_in_time` takes the thread that waits on a child and says
+    # whether the child ended before the timeout. A test passes its own so
+    # that which child times out does not depend on the machine's load.
+    # `setup` is a shell command run once in each checkout before its
+    # candidates, such as a schema load into that checkout's database.
+    # : (GitRepo | String repo, String base_ref, String head_ref, String tests_dir, reruns: Integer, timeout: Integer | Float | nil, env: Array[String], ?workers: Integer, ?serial: bool, ?number_database_url: bool, ?setup: String?, ?finished_in_time: finished_in_time?) -> void
+    def initialize: (GitRepo | String repo, String base_ref, String head_ref, String tests_dir, reruns: Integer, timeout: Integer | Float | nil, env: Array[String], ?workers: Integer, ?serial: bool, ?number_database_url: bool, ?setup: String?, ?finished_in_time: finished_in_time?) -> void
+
+    # : () -> void
+    def check_database_url: () -> void
+
+    # An SQLite URL names a file, not a database on a server, so there is
+    # no database to number; a relative path already gives each checkout
+    # its own file.
+    # : (String? url) -> bool
+    def sqlite_url?: (String? url) -> bool
+
+    # `postgresql://host/app_test_wt1?sslmode=disable` with number 2 is
+    # `postgresql://host/app_test_wt1_2?sslmode=disable`. Nil when the URL
+    # names no database on a server.
+    # : (String? url, String number) -> String?
+    def numbered_database_url: (String? url, String number) -> String?
+
+    # : () -> doc
+    def run: () -> doc
+
+    private
+
+    # A side that has no copy of the directory yet, as the base of the
+    # commit that adds it, gets an empty one, as the empty tree does.
+    # : (Pair checkout, Pair pair, doc change) -> void
+    def check_out: (Pair checkout, Pair pair, doc change) -> void
+
+    # : (String checkout) -> String
+    def inside: (String checkout) -> String
+
+    # The checkout a directory from `inside` is in.
+    # : (String dir) -> String
+    def top_of: (String dir) -> String
+
+    # Said only from a directory inside the repository, so a run from its
+    # top keeps the same bytes.
+    # : () -> Hash[String, String]
+    def directory: () -> Hash[String, String]
+
+    # Each worker takes the next file and runs it in its own pair, so the
+    # rows do not depend on which worker ran which file.
+    # : (Array[String] files, Array[Pair] pairs, normalizer normalizer, Known known) -> Array[doc]
+    def classify_files: (Array[String] files, Array[Pair] pairs, normalizer normalizer, Known known) -> Array[doc]
+
+    # : (String relative, String base_dir, String head_dir, normalizer normalizer, Known known) -> Array[doc]
+    def classify_file: (String relative, String base_dir, String head_dir, normalizer normalizer, Known known) -> Array[doc]
+
+    # A test whose head fails the same way each time, with a value in the
+    # message that moves, such as a random id, still caught the change when
+    # base passes each time too. A test that fails at random is caught here
+    # instead: its base fails once in a while as well.
+    # : (Array[doc] rows, String base_dir, String relative, normalizer normalizer) -> void
+    def confirm_on_base: (Array[doc] rows, String base_dir, String relative, normalizer normalizer) -> void
+
+    # : (String relative, Result base_run, Result head_run, SourceIndex index, Known known, String head_dir) -> Array[doc]
+    def rows_for: (String relative, Result base_run, Result head_run, SourceIndex index, Known known, String head_dir) -> Array[doc]
+
+    # : (Result execution) -> boolish
+    def file_level?: (Result execution) -> boolish
+
+    # A test of its own can also end in "#load", so match the whole name.
+    # : (doc row) -> bool
+    def load_row?: (doc row) -> bool
+
+    # : (String relative, Result base_run, Result head_run) -> String
+    def file_level_name: (String relative, Result base_run, Result head_run) -> String
+
+    # : (Result execution) -> doc
+    def side_result: (Result execution) -> doc
+
+    # : (String relative, String name, Integer? line, doc? base_result, doc? head_result, Array[String] mentions) -> doc
+    def build_row: (String relative, String name, Integer? line, doc? base_result, doc? head_result, Array[String] mentions) -> doc
+
+    # A base that timed out may pass with more time, so a head that did not
+    # pass is a candidate the assessor discards, not a test that failed on
+    # base.
+    # : (doc base_result, doc head_result) -> String
+    def classify: (doc base_result, doc head_result) -> String
+
+    # The whole message is compared: an assertion's first line names the
+    # expected value, and the value that moves between runs is on a later line.
+    # : (doc result) -> String
+    def failure_key: (doc result) -> String
+
+    # : (doc result) -> [String?, String]
+    def outcome_key: (doc result) -> [ String?, String ]
+
+    # A symlinked temp directory (macOS /tmp) can appear under either name.
+    # : () -> Array[String]
+    def temp_roots: () -> Array[String]
+
+    # : (String worktree, String relative, normalizer normalizer) -> Result
+    def execute: (String worktree, String relative, normalizer normalizer) -> Result
+
+    # : (Array[String] cmd, chdir: String, stdout_path: String, stderr_path: String, env: Hash[String, String?]) -> [Process::Status?, String, String, bool, Float]
+    def run_process: (Array[String] cmd, chdir: String, stdout_path: String, stderr_path: String, env: Hash[String, String?]) -> [ Process::Status?, String, String, bool, Float ]
+
+    # : (Integer pid) -> void
+    def kill_group: (Integer pid) -> void
+
+    # : (String path) -> String
+    def read_text: (String path) -> String
+
+    # : (String worktree) -> Hash[String, String?]
+    def child_env: (String worktree) -> Hash[String, String?]
+
+    # : (String worktree) -> bool
+    def gemfile?: (String worktree) -> bool
+
+    # A database server that base and head reach under one name is one
+    # database, into which each side loads its own schema while the other
+    # runs; an SQLite file at a relative path is a file of each worktree.
+    # Nil when they share none, or when a side's config/database.yml does
+    # not read without booting the app.
+    # : (Pair pair) -> String?
+    def shared_test_database: (Pair pair) -> String?
+
+    # : (String worktree) -> Array[[Array[String?], String]]?
+    def test_databases: (String worktree) -> Array[[ Array[String?], String ]]?
+
+    # The names to create, without the rest of the URL, which can hold a
+    # password.
+    # : () -> Array[String]
+    def numbered_databases: () -> Array[String]
+
+    # One line says what happened, and one says how to run both sides at
+    # once. Rails reads a DATABASE_URL that names a database over the
+    # `database:` of database.yml, so then only the URL can split it, and
+    # one that names none takes `database:` from the file. A past commit's
+    # database.yml cannot change, so for it the run one process at a time is
+    # the one to keep.
+    # : (String name) -> Array[String]
+    def shared_database_warnings: (String name) -> Array[String]
+
+    # One check per side, so a side that cannot load its bundle or a
+    # framework is said once, as the setup failure it is, instead of as a
+    # load error on every candidate file.
+    # : (String side, String commit, String worktree, normalizer normalizer, Array[Framework::framework] frameworks) -> doc
+    def setup_status: (String side, String commit, String worktree, normalizer normalizer, Array[Framework::framework] frameworks) -> doc
+
+    # Every checkout, so a worker's pair holds the same schemas as the
+    # first. One at a time: two loads into one shared database would race.
+    # RAILS_ENV is test unless --env passes one, so a schema load never
+    # reaches the development database.
+    # : (Array[Pair] pairs, doc change, normalizer normalizer) -> Array[doc]
+    def run_setup: (Array[Pair] pairs, doc change, normalizer normalizer) -> Array[doc]
+
+    # A side that loads its bundle can still fail to boot what every
+    # candidate requires, such as a Rails app whose database does not exist.
+    # When no file loaded on either side, no row can tell base from head.
+    # : (doc change, Array[doc] rows, bool bundled, bool rails_app) -> doc?
+    def load_failure_doc: (doc change, Array[doc] rows, bool bundled, bool rails_app) -> doc?
+
+    # rails_app: the head has config/application.rb, so a credential that
+    # git ignores, such as config/master.key, is a likely cause.
+    # : (doc change, Array[doc] failed, rails_app: bool, ?stage: String) -> doc
+    def setup_failed_doc: (doc change, Array[doc] failed, rails_app: bool, ?stage: String) -> doc
+
+    # Bundler reads settings such as BUNDLE_WITHOUT from the environment,
+    # and the child gets only the names --env passes. `bundle exec` sets the
+    # Gemfile and lockfile names for jitcatch's own bundle, not the checkout's.
+    # Names the parent has and the child does not get that a child often
+    # waits on: names the head's Ruby source or a candidate reads from ENV,
+    # and network settings when either loads an HTTP client.
+    # : (String head, Array[String] files) -> Array[String]
+    def env_not_passed: (String head, Array[String] files) -> Array[String]
+
+    # : (String head, Array[String] candidates) -> bool
+    def network_library?: (String head, Array[String] candidates) -> bool
+
+    # : (Array[String] lines) -> Array[String]
+    def database_not_passed: (Array[String] lines) -> Array[String]
+
+    # : () -> Array[String]
+    def unpassed_bundler_settings: () -> Array[String]
+
+    # `bundle config set --local` writes .bundle/config, which git does not
+    # track, so a worktree would load its bundle without the checkout's
+    # settings, such as BUNDLE_WITHOUT. A relative BUNDLE_PATH names a
+    # directory of the checkout, so it is written out from there.
+    # : (String worktree) -> void
+    def copy_bundler_settings: (String worktree) -> void
+
+    # : (String worktree) -> void
+    def install: (String worktree) -> void
+
+    # : (String relative) -> String
+    def read_candidate: (String relative) -> String
+
+    # : () -> [Array[String], Integer]
+    def candidate_files: () -> [ Array[String], Integer ]
+
+    # The names a test can mention. A test runs `Owner#initialize` by writing
+    # `Owner.new`, so a constructor is mentioned as `Owner.new`, with the
+    # owner's last name segment, the shortest way a test can write it, and
+    # so is a record builder or a save that runs a changed callback.
+    # : (doc change) -> Array[String]
+    def mention_names: (doc change) -> Array[String]
+
+    # Mentions are taken from the test method and the same-file helpers it
+    # calls, so a neighbor test in the same file does not change its tags.
+    # : (SourceIndex index, String test_name, Integer? line, Known known, String relative, String head_dir) -> Array[String]
+    def mentions_for: (SourceIndex index, String test_name, Integer? line, Known known, String relative, String head_dir) -> Array[String]
+
+    # A `build(:loan)` that builds a changed class runs its constructor
+    # whatever the test does next, so only one that no method lists as a
+    # builder waits for a save or a validation.
+    # : (doc change) -> Hash[String, Array[String]]
+    def unsaved_mentions: (doc change) -> Hash[String, Array[String]]
+
+    # `File.write` reaches no method of the repository, so neither it nor
+    # the bare `write` it refers to is a mention of `Emitter.write`. A
+    # constant counts as the repository's when one it defines ends in it.
+    # : (SourceIndex index, String test_name, Integer? line, Array[String] constants) -> Array[String]
+    def foreign_calls: (SourceIndex index, String test_name, Integer? line, Array[String] constants) -> Array[String]
+
+    # A test that starts a script in another process (`IO.popen(["ruby",
+    # "exe/tool"])`) reaches the code that script calls, which no call in
+    # the test names. A path the test writes, read from the worktree root,
+    # from the candidate's directory, or from the candidate file as
+    # `File.expand_path` reads it, names such a script when it is a file of
+    # head outside `.jitcatch/`; the names it refers to count as mentions.
+    # The test runs in head_dir, and the script is named from the
+    # checkout's top, as the diff names it.
+    # : (Array[String] paths, String relative, String head_dir) -> Array[String]
+    def script_names: (Array[String] paths, String relative, String head_dir) -> Array[String]
+
+    # A helper that config/routes.rb draws through `draw`, a loop, or a
+    # concern is not read, so a request to it ties its row to no action.
+    # : (Array[String] files, Routes routes) -> Array[String]
+    def route_helper_warnings: (Array[String] files, Routes routes) -> Array[String]
+
+    # : (Array[String] files) -> Array[String]
+    def require_warnings: (Array[String] files) -> Array[String]
+
+    # A file-level row (`file#load`, `file#timeout`) reruns the whole file.
+    # : (doc row, bool bundled, bool pin_root, bool launcher) -> String
+    def rerun_command: (doc row, bool bundled, bool pin_root, bool launcher) -> String
+
+    # The rerun line runs in the reader's checkout, whose Gemfile can list
+    # jitcatch while the commits under test do not, so the launcher is
+    # tried there, with that Gemfile, and not in a worktree.
+    # : () -> bool
+    def launcher_loads?: () -> bool
+
+    # The rerun line runs from the directory jitcatch ran in (the repository
+    # root, or a directory inside it), so the tests directory is named by
+    # its path from there, outside the repository too: a quoted line then
+    # names no directory of one machine.
+    # : () -> String
+    def tests_from_root: () -> String
+
+    # A path outside the repository is named from the root while that is
+    # shorter than its absolute path, as `../catch` beside the checkout is.
+    # A climb out of a checkout deep in a home directory to a directory
+    # under /tmp is longer than the absolute path, and says less.
+    # : (String full) -> String
+    def from_root: (String full) -> String
+
+    # : (Array[doc] rows) -> void
+    def assign_test_ids: (Array[doc] rows) -> void
+
+    # : (doc method) -> doc
+    def slim_method: (doc method) -> doc
+
+    # : (doc const) -> doc
+    def slim_constant: (doc const) -> doc
+
+    # : (Array[String?] roots) -> normalizer
+    def build_normalizer: (Array[String?] roots) -> normalizer
+
+    # : () -> doc
+    def pass_result: () -> doc
+
+    # : () -> doc
+    def missing_result: () -> doc
+
+    # : () -> doc
+    def timeout_result: () -> doc
+  end
+end

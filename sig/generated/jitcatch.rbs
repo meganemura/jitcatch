@@ -1,0 +1,65 @@
+# Generated from lib/jitcatch.rb with RBS::Inline
+
+module JitCatch
+  # A JSON document as jitcatch builds, prints, and reads it: a row, a
+  # result, a change. Its keys are strings, as JSON's are.
+  type doc = Hash[String, untyped]
+
+  # What the runner passes a parser to rewrite the worktree roots, temp
+  # names, and addresses in a test's text.
+  type normalizer = ^(String) -> String
+
+  # Takes the thread that waits on a child, and says whether the child
+  # ended before the timeout.
+  type finished_in_time = ^(Thread) -> bool
+
+  class Error < StandardError
+  end
+
+  class UsageError < Error
+  end
+
+  class GitError < Error
+  end
+
+  # A side whose setup check failed would turn every candidate into a load
+  # error, which reads like a test finding, so the run stops instead.
+  # `doc` is the document the CLI prints.
+  class EnvironmentError < Error
+    attr_reader doc: doc
+
+    # @rbs doc: doc
+    # @rbs return: void
+    def initialize: (doc doc) -> void
+  end
+
+  module Text
+    # : (String? text, ?limit: Integer, ?head: Integer, ?tail: Integer) -> String?
+    def self?.cap_lines: (String? text, ?limit: Integer, ?head: Integer, ?tail: Integer) -> String?
+
+    # : (String? text) -> String?
+    def self?.dedent: (String? text) -> String?
+
+    # A name a test creates under the temp directory is new on every run, so
+    # it would make one deterministic failure look like two different ones.
+    # : (String text, String | Pathname tmpdir) -> String
+    def self?.mask_temp_names: (String text, String | Pathname tmpdir) -> String
+
+    # An object's inspect (`#<Class:0x00007f...>`) names its address, which
+    # is new on every run.
+    # : (String text) -> String
+    def self?.mask_addresses: (String text) -> String
+
+    # A record prints the time it was saved (`created_at: "2026-11-04
+    # 19:02:03.212197000 +0000"`), which is new on every run. A date alone
+    # stays: a test can claim one.
+    # : (String text) -> String
+    def self?.mask_times: (String text) -> String
+
+    # : (untyped message) -> Array[String]
+    def self?.message_lines: (untyped message) -> Array[String]
+
+    # : (String? text, Integer spaces) -> String
+    def self?.indent: (String? text, Integer spaces) -> String
+  end
+end

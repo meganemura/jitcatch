@@ -1,0 +1,376 @@
+# Generated from lib/jitcatch/readers.rb with RBS::Inline
+
+module JitCatch
+  # Lists, for each value a change edits in a Rails app, the code at head
+  # that reads that value without calling it by name: a route helper that
+  # reaches `to_param`, a `send` of a literal name, a callback, a scope, a
+  # constant in SQL, a template, a validation, a setting. Each row says how
+  # it reads the value, why that matters, and what a test would check.
+  #
+  # It reads source only: Prism over `app/`, `config/`, `lib/`,
+  # `db/schema.rb`, and ERB templates turned into Ruby line for line. It
+  # names an object's model by its variable or method name, so a reader
+  # whose receiver has an unrelated name is not listed (BLIND).
+  class Readers
+    # A value the change edits. `kind` is one of the RULES keys, `owner` the
+    # class as its own file names it (the table's model, for a schema default),
+    # which is how code elsewhere names it too, and `scope` the full name
+    # with its enclosing modules. `line` and `last_line` are the lines it is
+    # declared on, `state` is added, modified, or removed, and `node` is its
+    # declaration (the default value, for a default).
+    class Value < Data
+      attr_reader kind(): Symbol
+
+      attr_reader owner(): String?
+
+      attr_reader scope(): String?
+
+      attr_reader name(): String
+
+      attr_reader file(): String
+
+      attr_reader line(): Integer
+
+      attr_reader last_line(): Integer
+
+      attr_reader state(): Symbol?
+
+      attr_reader node(): untyped
+
+      def self.new: (Symbol kind, String? owner, String? scope, String name, String file, Integer line, Integer last_line, Symbol? state, untyped node) -> instance
+                  | (kind: Symbol, owner: String?, scope: String?, name: String, file: String, line: Integer, last_line: Integer, state: Symbol?, node: untyped) -> instance
+
+      def self.members: () -> [ :kind, :owner, :scope, :name, :file, :line, :last_line, :state, :node ]
+
+      def members: () -> [ :kind, :owner, :scope, :name, :file, :line, :last_line, :state, :node ]
+    end
+
+    class Row < Data
+      attr_reader value(): Value
+
+      attr_reader file(): String
+
+      attr_reader line(): Integer
+
+      attr_reader mechanism(): Symbol
+
+      attr_reader why(): String
+
+      attr_reader score(): Integer
+
+      attr_reader rank(): String
+
+      attr_reader test(): String
+
+      attr_reader group(): String
+
+      attr_reader also(): Array[String]
+
+      attr_reader edited(): bool
+
+      def self.new: (Value value, String file, Integer line, Symbol mechanism, String why, Integer score, String rank, String test, String group, Array[String] also, bool edited) -> instance
+                  | (value: Value, file: String, line: Integer, mechanism: Symbol, why: String, score: Integer, rank: String, test: String, group: String, also: Array[String], edited: bool) -> instance
+
+      def self.members: () -> [ :value, :file, :line, :mechanism, :why, :score, :rank, :test, :group, :also, :edited ]
+
+      def members: () -> [ :value, :file, :line, :mechanism, :why, :score, :rank, :test, :group, :also, :edited ]
+    end
+
+    class Source < Data
+      attr_reader path(): String
+
+      attr_reader tree(): Prism::ProgramNode
+
+      attr_reader template(): bool
+
+      def self.new: (String path, Prism::ProgramNode tree, bool template) -> instance
+                  | (path: String, tree: Prism::ProgramNode, template: bool) -> instance
+
+      def self.members: () -> [ :path, :tree, :template ]
+
+      def members: () -> [ :path, :tree, :template ]
+    end
+
+    # How strongly a mechanism points at a test, the reason that ranks it,
+    # and the test sentence, with `%<where>s` and the other fields a rule
+    # fills in.
+    class Mechanism < Data
+      attr_reader score(): Integer
+
+      attr_reader rank(): String
+
+      attr_reader test(): String
+
+      def self.new: (Integer score, String rank, String test) -> instance
+                  | (score: Integer, rank: String, test: String) -> instance
+
+      def self.members: () -> [ :score, :rank, :test ]
+
+      def members: () -> [ :score, :rank, :test ]
+    end
+
+    # Data.define's block defines this; rbs-inline reads only the members,
+    # and Steep does not check those blocks.
+    class Value
+      def label: () -> String
+    end
+
+    BLIND: Array[String]
+
+    # What a repository with no `config/application.rb` can still hide:
+    # models, routes, and templates are Rails's, and a gem has none.
+    BLIND_OUTSIDE_RAILS: Array[String]
+
+    DISPATCH: Array[Symbol]
+
+    SQL_CALLS: Array[Symbol]
+
+    QUERY_CALLS: Array[Symbol]
+
+    CALLBACKS: Regexp
+
+    VALIDATIONS: Array[Symbol]
+
+    SQL_TEXT: Regexp
+
+    SCHEMA: String
+
+    READ_ROOTS: Array[String]
+
+    MECHANISMS: Hash[Symbol, Mechanism]
+
+    # The rules a method's name adds to the ones every method gets.
+    SPECIAL: Hash[String, Array[Symbol]]
+
+    # The rules each kind of changed value has.
+    RULES: Hash[Symbol, ^(Readers, Value) -> Array[Row]]
+
+    @parents: Hash[String?, Array[[ untyped, Array[String] ]]]
+
+    @calls: Array[[ Source, Prism::CallNode, Array[untyped] ]]?
+
+    @references: Array[[ Source, untyped, Array[untyped] ]]?
+
+    @tables: Hash[String, String]?
+
+    @names: Hash[String, [ String, Symbol ]]
+
+    @models: Array[String]
+
+    @sources: Array[Source]
+
+    @inflections: Inflections
+
+    @routes: Routes
+
+    @lines: Hash[String, { old: Array[Integer], new: Array[Integer] }]
+
+    @head_sources: Hash[String, String]
+
+    @base_sources: Hash[String, String]
+
+    @suffixes: Array[String]
+
+    @defined: Hash[String, bool]
+
+    # `head_sources` and `base_sources` map a path to its text on each side;
+    # `diff` is every file's hunks, as `DiffParser.parse` gives them.
+    # : (base_sources: Hash[String, String], head_sources: Hash[String, String], diff: Array[doc], routes: Routes, inflections: Inflections) -> [Array[Value], Array[Row]]
+    def self.between: (base_sources: Hash[String, String], head_sources: Hash[String, String], diff: Array[doc], routes: Routes, inflections: Inflections) -> [ Array[Value], Array[Row] ]
+
+    # : (Hash[String, String] base_sources, Hash[String, String] head_sources, Array[doc] diff, Routes routes, Inflections inflections) -> void
+    def initialize: (Hash[String, String] base_sources, Hash[String, String] head_sources, Array[doc] diff, Routes routes, Inflections inflections) -> void
+
+    # The values the change edits and the rows that read them, highest
+    # score first.
+    # : () -> [Array[Value], Array[Row]]
+    def found: () -> [ Array[Value], Array[Row] ]
+
+    # The lines each file's hunks cover, on the base side and the head side.
+    # : (Array[doc] diff) -> Hash[String, { old: Array[Integer], new: Array[Integer] }]
+    def changed_lines: (Array[doc] diff) -> Hash[String, { old: Array[Integer], new: Array[Integer] }]
+
+    # : () -> Array[Value]
+    def changed_values: () -> Array[Value]
+
+    # The values a file declares, with no state yet: methods, scopes,
+    # default scopes, constants, callbacks, validations, attributes, schema
+    # column defaults, and config assignments.
+    # : (String path, String? source) -> Array[Value]
+    def declarations: (String path, String? source) -> Array[Value]
+
+    # Actions that turn a param back into the model, whoever built the URL.
+    # : (Value value) -> Array[Row]
+    def param_lookup_rows: (Value value) -> Array[Row]
+
+    # : (Value value) -> Array[Row]
+    def route_rows: (Value value) -> Array[Row]
+
+    # : (Value value) -> Array[Row]
+    def polymorphic_rows: (Value value) -> Array[Row]
+
+    # : (Value value) -> Array[Row]
+    def to_s_rows: (Value value) -> Array[Row]
+
+    # : (Value value) -> Array[Row]
+    def json_rows: (Value value) -> Array[Row]
+
+    # A name a dispatch can reach: a literal, or an interpolation whose fixed
+    # parts match it.
+    # : (Value value) -> Array[Row]
+    def dispatch_rows: (Value value) -> Array[Row]
+
+    # : (Value value) -> Array[Row]
+    def template_rows: (Value value) -> Array[Row]
+
+    # : (Value value) -> Array[Row]
+    def attribute_rows: (Value value) -> Array[Row]
+
+    # : (Value value) -> Array[Row]
+    def constant_rows: (Value value) -> Array[Row]
+
+    # : (Value value) -> Array[Row]
+    def config_rows: (Value value) -> Array[Row]
+
+    # : (Value value) -> Array[Row]
+    def scope_rows: (Value value) -> Array[Row]
+
+    # : (Value value) -> Array[Row]
+    def default_scope_rows: (Value value) -> Array[Row]
+
+    # : (Value value) -> Array[Row]
+    def save_rows: (Value value) -> Array[Row]
+
+    private
+
+    # : (Value value, Source src, untyped node, Symbol mechanism, String why, ?group: String?, **untyped fields) -> Row
+    def row: (Value value, Source src, untyped node, Symbol mechanism, String why, ?group: String?, **untyped fields) -> Row
+
+    # A dispatch on another known model cannot reach this owner.
+    # : (Value value, Prism::CallNode node, Array[untyped] stack) -> boolish
+    def dispatch_on_other_model?: (Value value, Prism::CallNode node, Array[untyped] stack) -> boolish
+
+    # A symbol or string spelled like the method, in code that also
+    # dispatches by a name it computes. Only a name kept in a list
+    # (`%w[late lost]`, a constant's array or hash) counts as one a computed
+    # dispatch iterates; a lone "late" passed as a column value is data.
+    # : (Value value, Array[[Source, Prism::CallNode]] dynamic) -> Array[Row]
+    def computed_dispatch_rows: (Value value, Array[[ Source, Prism::CallNode ]] dynamic) -> Array[Row]
+
+    # Where a record is made without naming the attribute, the default is
+    # the value it gets.
+    # : (Value value, String owner, String attr) -> Array[Row]
+    def default_taker_rows: (Value value, String owner, String attr) -> Array[Row]
+
+    # : (Value value, Source src, untyped node, Array[untyped] stack) -> Row
+    def constant_row: (Value value, Source src, untyped node, Array[untyped] stack) -> Row
+
+    # `Order.where`, `orders.where`, a bare `where` in a scope: a query.
+    # `f.select` on a form builder is not.
+    # : (untyped call) -> boolish
+    def query?: (untyped call) -> boolish
+
+    # A reference that names its owner from a file the change does not touch
+    # is a reader nobody looked at; one that resolves to nothing visible may
+    # come through a gem or a concern the index cannot see. A read beside the
+    # edit, in a file the change touches, was in front of its author; a query
+    # there still changes which rows come back, so it keeps its score.
+    # : (Row row, untyped node, String? target) -> Row
+    def ranked_constant: (Row row, untyped node, String? target) -> Row
+
+    # What a `to_param` body returns, when it is one attribute: `code`,
+    # `"#{id}-#{name}"`, or `id`.
+    # : (Value value) -> String
+    def param_source: (Value value) -> String
+
+    # : (String text) -> bool
+    def id_param?: (String text) -> bool
+
+    # How an action reads one param: `find(params[:id])`, `find_by(id: ...)`,
+    # `where(branch_id: ...)` compare it to an id; `find_by(code: ...)` does not.
+    # : (Array[untyped] action_nodes, String key) -> Array[[Integer, String, String]]
+    def param_lookups: (Array[untyped] action_nodes, String key) -> Array[[ Integer, String, String ]]
+
+    # : (untyped node) -> boolish
+    def params_read?: (untyped node) -> boolish
+
+    # The controller file of a route's action, and the nodes that run for
+    # it: the action's def and its before_action filters. A filter's
+    # `only:`/`except:` is not read, so every filter counts.
+    # : (String action) -> [Source, Array[untyped]]?
+    def action_def: (String action) -> [ Source, Array[untyped] ]?
+
+    # Variable and method names that hold a model, by name: `branch`,
+    # `@branch`, `home_branch` (from `class_name: "Branch"`), and plurals.
+    # : () -> Hash[String, [String, Symbol]]
+    def model_names: () -> Hash[String, [ String, Symbol ]]
+
+    # The model an expression holds, and whether one or many, judged by its
+    # last name only.
+    # : (untyped node) -> [String, Symbol]?
+    def model_of: (untyped node) -> [ String, Symbol ]?
+
+    # : (String word) -> String
+    def plural: (String word) -> String
+
+    # The model a table holds, or the table when no model in app/models does.
+    # : (String table) -> String
+    def model_of_table: (String table) -> String
+
+    # `Admin::OrderItem` is an `order_item`, the name its variables take.
+    # : (String constant) -> String
+    def snake: (String constant) -> String
+
+    # : (String constant) -> String
+    def underscore_path: (String constant) -> String
+
+    # Every class, module, and constant a file defines, by full name, and
+    # each class's superclass and `include`s as nodes, with the scopes they
+    # are written in.
+    # : () -> void
+    def constant_table: () -> void
+
+    # The full name a constant reference means, the way Ruby looks it up:
+    # the enclosing scopes from inside out, then the innermost scope's
+    # ancestors, then the top level. `also` counts as defined (a value the
+    # change removed). nil when nothing visible defines it. `seen` stops a
+    # class whose `include` names itself through its ancestors from looping.
+    # : (untyped node, Array[String] crefs, ?String? also, ?Hash[String?, bool] seen) -> String?
+    def resolve: (untyped node, Array[String] crefs, ?String? also, ?Hash[String?, bool] seen) -> String?
+
+    # : (String? full, ?Hash[String?, bool] seen) -> Array[String]
+    def ancestors: (String? full, ?Hash[String?, bool] seen) -> Array[String]
+
+    # Every call at head with the nodes around it. Each rule walks them for
+    # each value, so they are collected once.
+    # : () { (Source, Prism::CallNode, Array[untyped]) -> void } -> void
+    def each_call: () { (Source, Prism::CallNode, Array[untyped]) -> void } -> void
+
+    # : (untyped node, ?Array[untyped] stack) { (untyped, Array[untyped]) -> void } -> void
+    def each_node: (untyped node, ?Array[untyped] stack) { (untyped, Array[untyped]) -> void } -> void
+
+    # : (untyped node) -> Array[untyped]
+    def arguments: (untyped node) -> Array[untyped]
+
+    # : (untyped node) -> String?
+    def literal_name: (untyped node) -> String?
+
+    # : (Array[untyped] args) -> Hash[String, untyped]
+    def keywords: (Array[untyped] args) -> Hash[String, untyped]
+
+    # Prism 0.19, which Ruby 3.3 ships, names a path's last part through `child`.
+    # : (untyped node) -> String
+    def path_name: (untyped node) -> String
+
+    # : (Array[untyped] stack) -> String?
+    def enclosing_class: (Array[untyped] stack) -> String?
+
+    # The lexical scopes around a node, outermost first, as full names:
+    # `module Admin; class OrdersController` gives Admin, Admin::OrdersController.
+    # : (Array[untyped] stack) -> Array[String]
+    def nesting: (Array[untyped] stack) -> Array[String]
+
+    # : (Array[untyped] stack) -> Symbol?
+    def enclosing_def: (Array[untyped] stack) -> Symbol?
+  end
+end

@@ -1,4 +1,5 @@
 # frozen_string_literal: true
+# rbs_inline: enabled
 
 # Loaded into a Minitest candidate's process with `ruby -r`, never into
 # jitcatch itself. It writes each result to a report file for
@@ -14,7 +15,10 @@ else
   # error it was raised from, so this puts that error's class and message
   # between the message and the frames, under the line RSpec prints for
   # the same thing.
+  # The methods below sit in anonymous modules and classes, which RBS cannot
+  # name, so their types are for the reader; Steep does not read this file.
   Minitest::UnexpectedError.prepend(Module.new do
+    #: () -> String
     def message
       text = super
       cause = error.cause
@@ -34,10 +38,12 @@ else
     # Framework::REPORT, resolved before a test can change the directory.
     define_method(:initialize) { @io = File.open(File.expand_path(".jitcatch-report.json"), "wb").tap { |io| io.sync = true } }
 
+    #: (Minitest::Result result) -> void
     def record(result)
       @io.write("#{[[result.class_name, result.name].join("#"), result.result_code, result.to_s].map(&:dump).join("\t")}\n")
     end
 
+    #: () -> void
     def report
       @io.write("finished\n")
     end
