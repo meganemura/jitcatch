@@ -602,8 +602,15 @@ module JitCatch
             "edited_by_change" => row.edited, "mechanism" => row.mechanism.to_s, "score" => row.score, "rank" => row.rank,
             "why" => row.why, "also" => row.also, "test" => row.test }
         },
-        "not_seen" => Readers::BLIND
+        "not_seen" => rails_shaped?(head_idx) ? Readers::BLIND : Readers::BLIND_OUTSIDE_RAILS
       }
+    end
+
+    # Models, routes, and templates live in app/ and config/routes.rb, so a
+    # history with neither, as a gem's, hides none of what Rails would.
+    def rails_shaped?(idx)
+      paths = idx["sources"].keys + idx["templates"].keys
+      paths.any? { |path| path.start_with?("app/") || %w[config/application.rb config/routes.rb].include?(path) }
     end
 
     # The method or constant entry a value is, by its name and where it is

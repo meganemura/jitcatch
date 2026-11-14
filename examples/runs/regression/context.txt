@@ -87,7 +87,7 @@ methods:
         Money.percent(subtotal_cents, VOLUME_PERCENT)
       end
 readers: (none)
-  not seen: receivers named unlike their model (`x = Branch.first; link_to x`); dispatch names built at run time from data outside the source (a DB column, a request param); routes drawn by `draw`, loops, or concerns; `to_param` reached through a gem's helper; serializers, jbuilder, and other template languages than ERB; callbacks and validations added by concerns or gems; config read through ENV or a YAML file at boot
+  not seen: dispatch names built at run time from data outside the source (a file, an argument); config read through ENV or a YAML file at load time
 entrypoints Shop::Cart:
   Shop::Cart.new modified
   Shop::Cart#apply_coupon added

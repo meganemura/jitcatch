@@ -46,6 +46,13 @@ module JitCatch
       "config read through ENV or a YAML file at boot"
     ].freeze
 
+    # What a repository with no `config/application.rb` can still hide:
+    # models, routes, and templates are Rails's, and a gem has none.
+    BLIND_OUTSIDE_RAILS = [
+      "dispatch names built at run time from data outside the source (a file, an argument)",
+      "config read through ENV or a YAML file at load time"
+    ].freeze
+
     DISPATCH = %i[send public_send __send__ try try! method public_method respond_to? instance_method].freeze
     SQL_CALLS = %i[where order reorder select joins group having pluck find_by_sql exec_query execute from not count_by_sql].freeze
     QUERY_CALLS = %i[all find find_by find_by! where first last take count exists? pluck order includes find_each].freeze

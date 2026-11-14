@@ -926,6 +926,7 @@ readers: 1 for 1 changed value
 メソッドの `callsites:` にすでにある行と、定数の `read_by:` にすでにあるメソッドの中のただの読み出しは出さない。
 `not seen:` は、見えないものを挙げる。
 レコードのモデルは変数名かメソッド名(`@branch`、`home_branch`、`branches`)で決めるので、`x = Branch.first; link_to x` は出ない。
+`app/`、`config/routes.rb`、`config/application.rb` のどれもない履歴 (gem など) では、モデルもルートもテンプレートもないので、どの Ruby にもある二つだけを挙げる。
 
 ## インストール
 

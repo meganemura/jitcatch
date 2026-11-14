@@ -317,6 +317,22 @@ class TestCLI < Minitest::Test
     stdout, stderr = capture_io { status = JitCatch::CLI.start(args, finished_in_time: finished_in_time) }
     [stdout, stderr, status]
   end
+  # A gem has no models, routes, or templates, so what the readers cannot
+  # see there is only what any Ruby hides.
+  def test_context_outside_rails_names_only_what_any_ruby_hides
+    with_repo do |repo|
+      repo.write("lib/calc.rb", "module Calc\n  LIMIT = 1\nend\n")
+      repo.commit("Gem", date: "2026-11-01T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/calc.rb", "module Calc\n  LIMIT = 2\nend\n")
+      repo.commit("Raise the limit", date: "2026-11-02T00:00:00Z")
+
+      text, = cli("context", "--repo", repo.dir, "base", "HEAD")
+      assert_includes text, "readers: (none)\n  not seen: dispatch names built at run time from data outside the source (a file, an argument); " \
+                            "config read through ENV or a YAML file at load time\n"
+    end
+  end
+
   # A change read in many places prints the ten readers that score highest,
   # how many it left out, and the flag that prints them all.
   def test_context_shows_ten_readers_unless_asked_for_all
@@ -324,6 +340,7 @@ class TestCLI < Minitest::Test
       repo.write("app/models/loan.rb", "class Loan < ApplicationRecord\nend\n")
       repo.write("app/controllers/loans_controller.rb", "class LoansController < ApplicationController\n" +
         (1..12).map { |n| "  def a#{n}\n    Loan.find(#{n})\n  end\n" }.join + "end\n")
+      repo.write("config/application.rb", "module Desk\n  class Application < Rails::Application\n  end\nend\n")
       repo.commit("App", date: "2026-11-01T00:00:00Z")
       repo.branch("base")
       repo.write("app/models/loan.rb", "class Loan < ApplicationRecord\n  default_scope { order(:due_on) }\nend\n")
