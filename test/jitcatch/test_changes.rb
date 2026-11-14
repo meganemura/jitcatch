@@ -251,6 +251,29 @@ class TestChanges < Minitest::Test
     end
   end
 
+  # A grep for a member such as `code` finds files that never touch its
+  # class, and the app code of a fixture project under test/ tests nothing.
+  def test_a_member_grep_needs_its_class_and_fixture_app_code_is_no_test
+    with_repo do |repo|
+      repo.write("lib/scan.rb", "module Scan\n  Hit = Data.define(:line)\n\n  def self.label(code) = code\nend\n")
+      repo.write("test/hit_test.rb", "class HitTest\n  def test_code = Scan::Hit.new(line: 2, code: 1).code\nend\n")
+      repo.write("test/other_test.rb", "class OtherTest\n  def test_code = response.code\nend\n")
+      repo.write("test/fixture/shop/app/models/order.rb", "class Order\n  def code = Scan.label(1)\nend\n")
+      repo.write("test/fixture/shop/test/order_test.rb", "class OrderTest\n  def test_code = [Order.new.code, Scan.label(1)]\nend\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/scan.rb", "module Scan\n  Hit = Data.define(:line, :code)\n\n  def self.label(code) = \"\#{code}\"\nend\n")
+      repo.commit("Add a code.", date: "2026-02-12T00:00:00Z")
+
+      doc = JitCatch::Changes.between(repo.dir, "base", "HEAD")
+      tests = doc["methods"].to_h { |method| [method["name"], method["existing_tests"].map { |hit| hit["file"] }] }
+
+      # order_test.rb names Scan, the namespace around Hit, which a test
+      # that gets its hits from a Scan method writes.
+      assert_equal({ "Scan.label" => %w[test/fixture/shop/test/order_test.rb], "Scan::Hit#code" => %w[test/fixture/shop/test/order_test.rb test/hit_test.rb] }, tests)
+    end
+  end
+
   def test_intent_leaves_out_each_commit_trailer_block
     with_repo do |repo|
       repo.write("lib/box.rb", BOX)

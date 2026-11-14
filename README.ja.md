@@ -563,6 +563,8 @@ Concern の `included do`、`prepended do`、`class_methods do` ブロックの�
 これは `new` のほかにそれを走らせる呼び出しで、Active Record のモデルの `create`、`create!`、`build` と、そのクラスを作る FactoryBot のファクトリーごとの `build(:loan)` と `create(:loan)` である。
 その `tests:` には、そのどれかか `Owner.new` を呼ぶテストファイルが、呼んでいるもの（`spec/models/loan_spec.rb via create(:loan)`）と一緒に出る。
 テストが `initialize` をその名前で呼ぶことはないので、コンストラクタには grep の結果を出さない。
+`attr_reader` や `Data.define` のメンバー（`Targets::Hit#code`）の名前は短い語が多いので、grep の結果は、そのクラスかそれを囲む名前空間の名前（`Hit` か `Targets`）も書いたファイルに限る。
+`test/fixture/depot/app/` のように、`test/` や `spec/` の下に置いたフィクスチャのプロジェクトの `app/`、`lib/`、`config/`、`db/` にあるコードはテストではないので、`tests:` に出さない。
 ファクトリーは `spec/factories` と `test/factories` から、読み込まずにソースとして読む。
 クラスはまず `class:`（定数、文字列、シンボル）から、次に親（`parent:` か、入れ子の外側のファクトリー）から、最後に名前を camelize したものから決まり、`aliases:` の別名も同じクラスを作る。
 ファクトリーは、その関連が作るクラスにも数える。

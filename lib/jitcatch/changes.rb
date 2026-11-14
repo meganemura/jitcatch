@@ -504,7 +504,7 @@ module JitCatch
           elsif controller_action?(node.qualified) && (routes ||= app_routes(head_idx)).drawn?(node.qualified)
             route_hits(test_sources, node.qualified, requests ||= test_requests(test_sources, routes, base_idx, head_idx))
           else
-            merge_hits(call_hits(test_sources.keys, method["run_by"], "callback", base_idx, head_idx), grep_hits(test_sources, node.bare_name))
+            merge_hits(call_hits(test_sources.keys, method["run_by"], "callback", base_idx, head_idx), grep_hits(test_sources, node.bare_name, owner_pattern(node)))
           end
         end
         method["entry_point_tests"] = if @coverage || !method["existing_tests"].empty?
@@ -652,15 +652,30 @@ module JitCatch
       }
     end
 
-    def grep_hits(test_sources, bare)
+    # `owner`, when given, is a pattern the file must match too.
+    def grep_hits(test_sources, bare, owner = nil)
       return [] if bare.nil? || bare.length < 3
 
       pattern = /\b#{called(bare)}/
       test_sources.filter_map { |file, source|
-        next unless source.match?(pattern)
+        next unless source.match?(pattern) && (owner.nil? || source.match?(owner))
 
         { "file" => file, "via" => "grep" }
       }.sort_by { |hit| hit["file"] }.first(TEST_CAP)
+    end
+
+    # A reader or a member (`attr_reader :file`, `Data.define(:code, :line)`)
+    # is most often a common word, which a grep finds in files that never
+    # touch the class. Such a hit counts only in a file that also names the
+    # class or the namespace around it, as `Hit` or `Targets` for
+    # `Targets::Hit#code`.
+    MEMBER_MACRO = /\A(?:attr_reader|attr_writer|Struct\.new|Data\.define)\z/
+
+    def owner_pattern(node)
+      return nil unless MEMBER_MACRO.match?(node.macro.to_s)
+
+      words = node.qualifier.split("::").last(2)
+      words.empty? ? nil : /\b(?:#{words.map { |word| Regexp.escape(word) }.join("|")})\b/
     end
 
     # A factory that builds a class no file defines may need an inflection
@@ -805,8 +820,25 @@ module JitCatch
     end
 
     def test_sources_for(base_idx, head_idx)
-      paths = (base_idx["sources"].keys | head_idx["sources"].keys).select { |path| test_file?(path) }.sort
+      paths = (base_idx["sources"].keys | head_idx["sources"].keys).select { |path| test_file?(path) && !fixture_code?(path) }.sort
       paths.to_h { |path| [path, head_idx["sources"][path] || base_idx["sources"][path]] }
+    end
+
+    # A project kept as a fixture under test/ or spec/ (a small Rails app in
+    # `test/fixture/depot`) holds code of its own in app/, lib/, config/,
+    # and db/. That code tests nothing, so it is no test a `tests:` line
+    # can name; the fixture's own test and spec files still are.
+    FIXTURE_DIR = /\Afixtures?\z/
+    FIXTURE_CODE = %w[app lib config db].freeze
+
+    def fixture_code?(path)
+      parts = path.split("/")
+      at = parts.index { |part| FIXTURE_DIR.match?(part) }
+      return false unless at && parts.first(at).any? { |part| %w[test spec].include?(part) }
+
+      base = parts.last
+      inner = parts[(at + 1)...-1]
+      !(base.start_with?("test_") || base.end_with?("_test.rb", "_spec.rb")) && inner.any? { |part| FIXTURE_CODE.include?(part) }
     end
 
     def test_file?(path)
