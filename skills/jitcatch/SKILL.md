@@ -25,6 +25,8 @@ When `BASE` is not an ancestor of `HEAD` (for example, a main branch that moved 
 
 Pass `--repo DIR` when that repository is not the working directory.
 
+In a monorepo whose gem sits in a directory with its own `lib/` and `Gemfile`, such as `ruby/`, run every command from that directory (`cd ruby && jitcatch run BASE HEAD catch`), or pass `--repo ruby` from the top. Candidates, the bundle check, `--setup`, and each `rerun:` line then run in `ruby/` of each checkout, with `-Ilib` as `ruby/lib` and `BUNDLE_GEMFILE` as `ruby/Gemfile`, so a candidate needs no `$LOAD_PATH` or `GEM_PATH` workaround. Put `TESTS_DIR` under that directory, and run each rerun line from there. The report prints `directory ruby` under `head`. File paths in the change, the methods, and the frames stay from the repository root (`ruby/lib/shelf.rb`).
+
 Commit messages from `BASE` to `HEAD` are the intent the CLI can see (`git log BASE..HEAD`, oldest first, commits separated by `---`). The CLI leaves out the trailer block that git parses at the end of each message (`Co-Authored-By:`, `Signed-off-by:`, and the like). Git counts a last paragraph made only of `Word: text` lines as trailers too, so a closing line such as `Note: callers must refresh.` is also left out. When the intent looks cut short, read `git log BASE..HEAD`. Also read the pull request or the task when you have it. The tool does not.
 
 ## Context

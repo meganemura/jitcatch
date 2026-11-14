@@ -299,12 +299,30 @@ jitcatch context --repo DIR BASE HEAD
 jitcatch run --repo DIR BASE HEAD TESTS_DIR
 ```
 
+### A gem in a directory of a larger repository
+
+When the gem sits in a directory of the repository, such as `ruby/` with its own `lib/`, `Gemfile`, and `Gemfile.lock`, run jitcatch from that directory:
+
+```sh
+cd ruby
+jitcatch run BASE HEAD catch
+```
+
+Each candidate, the bundle check, `--setup`, and each `rerun:` line then run in `ruby/` of each checkout. `-Ilib` is `ruby/lib`, `BUNDLE_GEMFILE` is `ruby/Gemfile`, and the Bundler settings are read from `ruby/.bundle/config`. `TESTS_DIR` and the rerun line are named from `ruby/`, so the rerun line runs from where you ran jitcatch. `--repo ruby` from the repository root is the same run. The report says so under `head`:
+
+```text
+head 6af3acfb1a733406d202eaed737b7dabfbece7fa
+directory ruby (candidates, the bundle check, and each rerun line run here; file paths are from the repository root)
+```
+
+The diff, the changed methods, and the backtrace frames keep their paths from the repository root (`ruby/lib/shelf.rb`), as git names them. `context` reads the locked gems from `ruby/Gemfile.lock`. The Rails parts of `context` (routes, models, controllers, and `readers:`) and the scripts under `exe/` and `bin/` are read only at the repository root.
+
 ### Options
 
 | Flag | Commands | Effect |
 | --- | --- | --- |
 | `--json` | `context`, `run`, `assess` | Print the same document as JSON. |
-| `--repo DIR` | `context`, `run` | Git repository to read. The default is the working directory. |
+| `--repo DIR` | `context`, `run` | Git repository to read, or a directory inside it to run from (see above). The default is the working directory. |
 | `--all-readers` | `context` | Print every row under `readers:`, not the 10 that score highest. |
 | `--coverage FILE` | `context` | Replace the grep of existing tests with this file. The JSON has `"format": "jitcatch-coverage-v1"` and a `tests` array. See `examples/coverage/jitcatch-coverage-v1.sample.json`. |
 | `--reruns N` | `run` | Extra runs on head after a pass-on-base / fail-on-head result. The default is 2. `0` skips the flake check. |

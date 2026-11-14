@@ -38,14 +38,18 @@ module JitCatch
     # +tests+, the tests directory from the repository root, so a message
     # names it after the root, and a frame names it, where either named the
     # copy. An absolute +tests+ is outside every worktree, so it stands alone.
-    def naming_tests(result, tests)
+    # +prefix+ is the directory the run ran in, from the worktree root, as
+    # `ruby/`, where the copy sits and from where +tests+ is named.
+    def naming_tests(result, tests, prefix = "")
       return nil if result.nil?
 
-      rooted = tests.start_with?("/") ? tests : "#{WORKTREE}#{tests}"
-      named = ->(text) { text.to_s.gsub(TESTS_COPY) { rooted }.gsub(COPY_PATH) { "#{$1}#{tests}/" } }
+      copy = prefix.empty? ? TESTS_COPY : /#{Regexp.escape("#{WORKTREE}#{prefix}")}\.jitcatch(?![\w.-])/
+      copy_frame = prefix.empty? ? COPY_FRAME : %r{\A(?:#{Regexp.escape(prefix)})?\.jitcatch/}
+      rooted = tests.start_with?("/") ? tests : "#{WORKTREE}#{prefix}#{tests}"
+      named = ->(text) { text.to_s.gsub(copy) { rooted }.gsub(COPY_PATH) { "#{$1}#{tests}/" } }
       message = named.call(result["message"])
       cause = result["cause"] && result["cause"].merge("message" => named.call(result["cause"]["message"]))
-      backtrace = Array(result["backtrace"]).map { |frame| frame.merge("file" => frame["file"].sub(COPY_FRAME) { "#{tests}/" }) }
+      backtrace = Array(result["backtrace"]).map { |frame| frame.merge("file" => frame["file"].sub(copy_frame) { "#{tests}/" }) }
       result.merge("message" => message, "message_first_line" => first_line(message), "cause" => cause, "backtrace" => backtrace)
     end
 

@@ -380,12 +380,37 @@ jitcatch context --repo DIR BASE HEAD
 jitcatch run --repo DIR BASE HEAD TESTS_DIR
 ```
 
+### 大きなリポジトリのディレクトリにある gem
+
+gem がリポジトリの中のディレクトリにあり、そこに自分の `lib/`、`Gemfile`、`Gemfile.lock` を持つときは、そのディレクトリから jitcatch を実行する。
+たとえば `ruby/` なら次のようにする。
+
+```sh
+cd ruby
+jitcatch run BASE HEAD catch
+```
+
+すると、各候補、バンドルの検査、`--setup`、各 `rerun:` 行は、それぞれのチェックアウトの `ruby/` で実行される。
+`-Ilib` は `ruby/lib` を指し、`BUNDLE_GEMFILE` は `ruby/Gemfile` を指し、Bundler の設定は `ruby/.bundle/config` から読む。
+`TESTS_DIR` と再実行の行は `ruby/` からのパスで書くので、再実行の行は jitcatch を実行した場所から動く。
+リポジトリのルートから `--repo ruby` を渡しても同じ実行になる。
+レポートは `head` の下でそれを示す。
+
+```text
+head 6af3acfb1a733406d202eaed737b7dabfbece7fa
+directory ruby (candidates, the bundle check, and each rerun line run here; file paths are from the repository root)
+```
+
+差分、変更されたメソッド、バックトレースのフレームは、git が書くとおりリポジトリのルートからのパスのままである (`ruby/lib/shelf.rb`)。
+`context` はロックされた gem を `ruby/Gemfile.lock` から読む。
+`context` の Rails の部分 (ルート、モデル、コントローラ、`readers:`) と、`exe/` と `bin/` の下のスクリプトは、リポジトリのルートにあるものだけを読む。
+
 ### オプション
 
 | フラグ | コマンド | 効果 |
 | --- | --- | --- |
 | `--json` | `context`, `run`, `assess` | 同じ内容を JSON で出す。 |
-| `--repo DIR` | `context`, `run` | 読む git リポジトリ。既定は作業ディレクトリ。 |
+| `--repo DIR` | `context`, `run` | 読む git リポジトリ、またはその中の実行するディレクトリ (上を参照)。既定は作業ディレクトリ。 |
 | `--all-readers` | `context` | `readers:` の行を、スコアの高い 10 行だけでなく全部出す。 |
 | `--coverage FILE` | `context` | 既存テストの grep の代わりにこのファイルを使う。JSON は `"format": "jitcatch-coverage-v1"` と `tests` 配列を持つ。例は `examples/coverage/jitcatch-coverage-v1.sample.json`。 |
 | `--reruns N` | `run` | base で通り head で落ちたあとの、head での追加実行回数。既定は 2。`0` でフレーク検査をしない。 |

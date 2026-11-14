@@ -121,15 +121,18 @@ module JitCatch
     # a change to it, so a row can fail on a missing column and read as a
     # regression. A helper that calls maintain_test_schema! loads the
     # schema of the checkout it boots in; without one, only --setup can.
+    # The app is the directory jitcatch runs in, so its schema and helpers
+    # sit under the repository path of that directory.
     def schema_warnings(head, files)
-      changed = files.map { |file| file["file"] }.grep(SCHEMA_FILE).sort
+      prefix = @git.prefix
+      changed = files.map { |file| file["file"] }.select { |path| path.start_with?(prefix) && path.delete_prefix(prefix).match?(SCHEMA_FILE) }.sort
       return [] if changed.empty?
 
       warning = "head changes the database schema (#{changed.join(", ")}), so each side's test database must hold that side's schema, " \
                 "or a row can fail on the database and not on the code."
       return ["#{warning} `--setup` ran `#{@setup}` in each checkout before the candidates."] if @setup
 
-      helpers = TEST_HELPERS.select { |path| @git.show(head, path) }
+      helpers = TEST_HELPERS.map { |path| "#{prefix}#{path}" }.select { |path| @git.show(head, path) }
       return [warning] if helpers.empty? || helpers.any? { |path| @git.show(head, path).include?("maintain_test_schema!") }
 
       databases = @databases.each_slice(2).map { |base, head_db| "base #{base}, head #{head_db}" }
@@ -140,6 +143,8 @@ module JitCatch
 
     # Each spec line in a lockfile is four spaces, a name, and the version
     # in parentheses. A gem locked for several platforms has several lines.
+    # The lockfile is the one beside the Gemfile of the directory jitcatch
+    # runs in.
     def dependencies(base, head)
       old = locked_versions(base)
       new = locked_versions(head)
@@ -151,7 +156,7 @@ module JitCatch
     end
 
     def locked_versions(sha)
-      @git.show(sha, "Gemfile.lock").to_s.scan(/^    (\S+) \(([^)]+)\)$/)
+      @git.show(sha, "#{@git.prefix}Gemfile.lock").to_s.scan(/^    (\S+) \(([^)]+)\)$/)
         .group_by(&:first)
         .transform_values { |pairs| pairs.map(&:last).uniq.sort.join(" ") }
     end

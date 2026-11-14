@@ -5,12 +5,29 @@ require "fileutils"
 
 module JitCatch
   # Thin git wrapper. Every invocation is an argv array, never a shell.
+  # `dir` is the directory the reader works in, which can be a directory
+  # inside the repository, as a gem's `ruby/` is in a monorepo. git runs
+  # from the repository's top, so every path it prints or takes is from
+  # there, the way the diff names them.
   class GitRepo
     attr_reader :dir
 
     def initialize(path)
       @dir = File.expand_path(path)
       raise UsageError, "not a directory: #{path}" unless File.directory?(@dir)
+    end
+
+    # The path of `dir` from the repository's top, with a trailing slash,
+    # as `ruby/`, or "" at the top.
+    def prefix
+      locate
+      @prefix
+    end
+
+    # The top of the repository, as git prints it.
+    def toplevel
+      locate
+      @toplevel
     end
 
     def rev(ref)
@@ -163,7 +180,24 @@ module JitCatch
     # git quotes a path with non-ASCII bytes by default, and a quoted path
     # names no file in `show` and matches no hunk path.
     def capture(*args, env: nil)
-      command = ["git", "--no-pager", "-c", "core.quotePath=false", "-C", @dir, *args]
+      capture_in(toplevel, *args, env: env)
+    end
+
+    # From a directory inside the repository, `ls-tree` and `grep` list only
+    # that directory, by paths from it, which name no file of the diff.
+    def locate
+      return if @toplevel
+
+      stdout, stderr, status = capture_in(@dir, "rev-parse", "--show-toplevel", "--show-prefix")
+      raise GitError, "git rev-parse failed: #{stderr.strip}" unless status.success?
+
+      top, prefix = stdout.lines.map(&:chomp)
+      @prefix = prefix.to_s
+      @toplevel = top
+    end
+
+    def capture_in(dir, *args, env: nil)
+      command = ["git", "--no-pager", "-c", "core.quotePath=false", "-C", dir, *args]
       merged = ENV.to_h.merge(env || {})
       stdout, stderr, status = Open3.capture3(merged, *command)
       [as_utf8(stdout), as_utf8(stderr), status]

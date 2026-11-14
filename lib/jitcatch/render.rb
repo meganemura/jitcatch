@@ -96,6 +96,7 @@ module JitCatch
       lines << "version #{doc["version"]}"
       lines << "base #{doc["base"]}"
       lines << "head #{doc["head"]}"
+      lines.concat(directory_lines(doc))
       lines.concat(warning_lines(doc))
       lines.concat(no_table_warning_lines(doc))
       lines << "reruns #{doc["reruns"]}"
@@ -140,6 +141,7 @@ module JitCatch
       end]
       lines << "base #{doc["base"]}"
       lines << "head #{doc["head"]}"
+      lines.concat(directory_lines(doc))
       lines << "ruby #{doc.dig("ruby", "version")} #{doc.dig("ruby", "path")}"
       doc["setup_failed"].each do |failure|
         lines << "#{load ? "load" : "setup"} #{failure["side"]} failed: #{failure["command"]}"
@@ -153,7 +155,7 @@ module JitCatch
         "Run that command in a checkout of that side, with its TEST_ENV_NUMBER and the variables --env passes, fix what it says, and run jitcatch again."
       elsif load
         rails = " A file git ignores, such as config/master.key, is not in the checkouts jitcatch makes; pass its value with --env, such as RAILS_MASTER_KEY." if doc["rails_app"]
-        "Run that command from the repository root with that side checked out, fix what it says (often a database, a credential, or a service the app needs at boot), and run jitcatch again.#{rails}"
+        "Run that command from #{doc["directory"] ? "#{doc["directory"]}/ in the repository" : "the repository root"} with that side checked out, fix what it says (often a database, a credential, or a service the app needs at boot), and run jitcatch again.#{rails}"
       else
         "Run that command with that Ruby in a checkout of that side, fix what it says (often `bundle install` there; a bundle installed for another Ruby reads as gems not installed), and run jitcatch again."
       end
@@ -166,10 +168,19 @@ module JitCatch
       lines << "version #{doc["version"]}"
       lines << "base #{doc["base"]}"
       lines << "head #{doc["head"]}"
+      lines.concat(directory_lines(doc))
       lines.concat(warning_lines(doc))
       lines << counts_line(doc["counts"])
       lines.concat(assess_body(doc))
       finish(lines)
+    end
+
+    # A run from a directory inside the repository says which, since its
+    # rerun lines and its tests directory are named from there, while each
+    # file of the change is named from the repository root.
+    def directory_lines(doc)
+      dir = doc["directory"]
+      dir ? ["directory #{dir} (candidates, the bundle check, and each rerun line run here; file paths are from the repository root)"] : []
     end
 
     def assess_json(doc)

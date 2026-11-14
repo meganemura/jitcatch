@@ -138,20 +138,26 @@ module JitCatch
       changes = Changes.new(@git, @base_ref, @head_ref, setup: @setup, databases: numbered_databases)
       change = changes.build
       parent = Dir.mktmpdir("jitcatch-")
-      pairs = (1..@pair_count).map { |n|
+      checkouts = (1..@pair_count).map { |n|
         Pair.new(base: File.join(parent, n.to_s, "base"), head: File.join(parent, n.to_s, "head"))
       }
+      # Every process runs in the checkout's copy of the directory jitcatch
+      # was run from, as `ruby/` of a monorepo, so its lib/ and Gemfile are
+      # the ones the reader's own commands would use.
+      pairs = checkouts.map { |pair| Pair.new(base: inside(pair.base), head: inside(pair.head)) }
       # The variable parallel_tests sets: a Rails database.yml that appends
       # it to the database name gives each checkout its own database, so base
       # and head never load their schemas into one database at the same time.
       @test_env_numbers = pairs.each_with_index.flat_map { |pair, index| [[pair.base, (2 * index + 1).to_s], [pair.head, (2 * index + 2).to_s]] }.to_h
       begin
         # One at a time: git takes a lock on the repository for each add.
-        pairs.each { |pair| check_out(pair, change) }
+        checkouts.zip(pairs).each { |checkout, pair| check_out(checkout, pair, change) }
         rails_app = File.file?(File.join(pairs.first.head, "config", "application.rb"))
         # A Rails app boots and loads db/schema.rb in each new checkout.
         @timeout ||= rails_app ? 60 : 10
-        normalizer = build_normalizer([*pairs.flat_map { |pair| [pair.base, pair.head] }, @git.dir])
+        # Only the checkout's top is cut, so a frame keeps the path the diff
+        # names, as ruby/lib/gem.rb.
+        normalizer = build_normalizer([*checkouts.flat_map { |pair| [pair.base, pair.head] }, @git.toplevel, top_of(@git.dir)])
         first = pairs.first
         frameworks = @frameworks.values.uniq
         base_setup = Thread.new { setup_status("base", change["base"], first.base, normalizer, frameworks) }
@@ -179,7 +185,7 @@ module JitCatch
         unloaded = load_failure_doc(change, rows, bundled, rails_app)
         raise EnvironmentError, unloaded if unloaded
       ensure
-        pairs.each do |pair|
+        checkouts.each do |pair|
           @git.worktree_remove(pair.base)
           @git.worktree_remove(pair.head)
         end
@@ -192,6 +198,7 @@ module JitCatch
         "command" => "run",
         "base" => change["base"],
         "head" => change["head"],
+        **directory,
         "warnings" => change["warnings"] + require_warnings(files) + helper_warnings + [*(shared_database_warnings(shared) if shared)],
         "reruns" => @reruns,
         "timeout_s" => @timeout,
@@ -215,17 +222,35 @@ module JitCatch
 
     private
 
-    def check_out(pair, change)
+    # A side that has no copy of the directory yet, as the base of the
+    # commit that adds it, gets an empty one, as the empty tree does.
+    def check_out(checkout, pair, change)
       if @git.empty_tree?(change["base"])
-        FileUtils.mkdir_p(pair.base)
+        FileUtils.mkdir_p(checkout.base)
       else
-        @git.worktree_add(pair.base, change["base"])
+        @git.worktree_add(checkout.base, change["base"])
       end
-      @git.worktree_add(pair.head, change["head"])
+      @git.worktree_add(checkout.head, change["head"])
       [pair.base, pair.head].each do |worktree|
+        FileUtils.mkdir_p(worktree)
         install(worktree)
         copy_bundler_settings(worktree)
       end
+    end
+
+    def inside(checkout)
+      @git.prefix.empty? ? checkout : File.join(checkout, @git.prefix.chomp("/"))
+    end
+
+    # The checkout a directory from `inside` is in.
+    def top_of(dir)
+      @git.prefix.empty? ? dir : dir.delete_suffix("/#{@git.prefix.chomp("/")}")
+    end
+
+    # Said only from a directory inside the repository, so a run from its
+    # top keeps the same bytes.
+    def directory
+      @git.prefix.empty? ? {} : { "directory" => @git.prefix.chomp("/") }
     end
 
     # Each worker takes the next file and runs it in its own pair, so the
@@ -423,9 +448,9 @@ module JitCatch
 
       parsed = framework.parse(File.file?(report_path) ? read_text(report_path) : nil, stdout, stderr, normalizer)
       Result.new(
-        tests: parsed["tests"].transform_values { |result| Failure.naming_tests(result, tests_from_root) },
+        tests: parsed["tests"].transform_values { |result| Failure.naming_tests(result, tests_from_root, @git.prefix) },
         lines: parsed["lines"],
-        file_error: Failure.naming_tests(parsed["file_error"], tests_from_root),
+        file_error: Failure.naming_tests(parsed["file_error"], tests_from_root, @git.prefix),
         timed_out: false,
         exit_code: status&.exitstatus,
         seconds: seconds
@@ -636,6 +661,7 @@ module JitCatch
         "ruby" => { "version" => RUBY_VERSION, "path" => RbConfig.ruby },
         "base" => change["base"],
         "head" => change["head"],
+        **directory,
         "setup_failed" => failed
       }
     end
@@ -655,7 +681,7 @@ module JitCatch
     end
 
     def network_library?(head, candidates)
-      locked = @git.show(head, "Gemfile.lock").to_s.scan(/^    (\S+) \(/).flatten
+      locked = @git.show(head, "#{@git.prefix}Gemfile.lock").to_s.scan(/^    (\S+) \(/).flatten
       (locked & NETWORK_GEMS).any? || [@git.ruby_matches(head, NETWORK_USE_GREP), *candidates].any? { |text| text.match?(NETWORK_USE) }
     end
 
@@ -775,9 +801,11 @@ module JitCatch
     # from the candidate's directory, or from the candidate file as
     # `File.expand_path` reads it, names such a script when it is a file of
     # head outside `.jitcatch/`; the names it refers to count as mentions.
+    # The test runs in head_dir, and the script is named from the
+    # checkout's top, as the diff names it.
     def script_names(paths, relative, head_dir)
       candidate = File.join(head_dir, ".jitcatch", relative)
-      root = File.join(head_dir, "")
+      root = File.join(top_of(head_dir), "")
       own = File.join(head_dir, ".jitcatch", "")
       paths.flat_map { |path|
         [head_dir, File.dirname(candidate), candidate].map { |dir| File.expand_path(path, dir) }
@@ -822,7 +850,10 @@ module JitCatch
           end
 
           path = required.path.end_with?(".rb") ? required.path : "#{required.path}.rb"
-          in_run = Pathname(File.expand_path(path, File.dirname(File.join("/.jitcatch", relative)))).relative_path_from(Pathname("/")).to_s
+          # The run's directory sits at its place under the checkout's top,
+          # so a path that climbs out of it lands where it would in a checkout.
+          here = File.join("/", @git.prefix)
+          in_run = Pathname(File.expand_path(path, File.dirname(File.join(here, ".jitcatch", relative)))).relative_path_from(Pathname(here)).to_s
           in_rerun = from_root(File.expand_path(path, File.dirname(File.join(tests, relative))))
           next if in_run.start_with?(".jitcatch/") || in_run == in_rerun
 
@@ -849,9 +880,10 @@ module JitCatch
       system(env, RbConfig.ruby, "-e", script, chdir: @git.dir, unsetenv_others: true, out: File::NULL, err: File::NULL) == true
     end
 
-    # The rerun line runs from the repository root, so the tests directory
-    # is named by its path from there, outside the repository too: a quoted
-    # line then names no directory of one machine.
+    # The rerun line runs from the directory jitcatch ran in (the repository
+    # root, or a directory inside it), so the tests directory is named by
+    # its path from there, outside the repository too: a quoted line then
+    # names no directory of one machine.
     def tests_from_root
       @tests_from_root ||= from_root(File.realpath(@tests_dir))
     end

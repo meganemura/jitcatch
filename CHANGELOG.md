@@ -1,5 +1,9 @@
 # Changelog
 
+## [Unreleased]
+
+- jitcatch run from a directory inside a repository, as `ruby/` of a monorepo, or with `--repo` naming that directory, uses it as the base of each run: candidates, the bundle check, `--setup`, and the rerun lines run in that directory of each checkout, so `-Ilib` is its `lib/`, `BUNDLE_GEMFILE` is its `Gemfile`, its `.bundle/config` is copied, and `TESTS_DIR` and each rerun line are named from there. Before, candidates ran at the checkout's top, so a gem in `ruby/` needed `$LOAD_PATH` and `GEM_PATH` workarounds in every candidate. The locked gems, the gems that need the network, and the schema warning read that directory's `Gemfile.lock`, `db/`, and test helpers. The report prints `directory ruby` under `head`, and `--json` carries `directory`. Paths in the change and in frames stay from the repository root. git now runs from the repository's top, so `context` from such a directory lists the whole repository's methods, the same as from the top.
+
 ## [0.2.0] - 2026-11-14
 
 - On a row where head stopped raising the error the test expects (`X expected but nothing was raised.`), the related guess leaves out a changed method whose edit only changes the arguments of a `raise`. Head no longer reaches that method, so the downstream rule picked the wrong one; the pool now holds the code that called it. `context --json` and `run --json` mark such a method with `edits_only_raise`.
