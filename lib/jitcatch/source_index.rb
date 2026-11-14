@@ -156,8 +156,27 @@ module JitCatch
       @new_visibility.filter_map { |qualifier, visibility| qualifier unless visibility == "public" }
     end
 
-    def self.parse(source, file:)
-      new(source, file).parse
+    # `script: true` reads the file as an executable, such as `exe/tool`:
+    # its top-level code is one method of kind `script`, named by
+    # `script_name`, whose calls are that method's.
+    def self.parse(source, file:, script: false)
+      new(source, file, script).parse
+    end
+
+    # The executables a gem or an app ships, which carry no `.rb` suffix.
+    SCRIPT_PATH = %r{\A(?:exe|bin)/[\w-]+\z}
+
+    def self.script_path?(path)
+      SCRIPT_PATH.match?(path)
+    end
+
+    # A file whose first line runs Ruby.
+    def self.ruby_script?(text)
+      text.to_s.lines.first.to_s.match?(/\A#!.*\bruby\b/)
+    end
+
+    def self.script_name(file)
+      "#{file} <main>"
     end
 
     # Every require_relative of a source, wherever it is written. Only a
@@ -183,7 +202,8 @@ module JitCatch
       parts.all?(Prism::StringNode) && !parts.empty? ? File.join(*parts.map(&:unescaped)) : nil
     end
 
-    def initialize(source, file)
+    def initialize(source, file, script = false)
+      @script = script
       @source = source.to_s.gsub("\r\n", "\n")
       @lines = @source.lines
       @file = file.tr("\\", "/")
@@ -222,8 +242,9 @@ module JitCatch
 
       @string_constants = string_constants(result.value)
       scan_body(result.value, "", :public, false)
+      main = @script ? record_script(result.value) : nil
       @spec_helpers = spec_helper_names(result.value)
-      walk(result.value, "", false, nil)
+      walk(result.value, "", false, main)
       type_local_variables
       type_instance_variables
       type_spec_helpers
@@ -624,6 +645,25 @@ module JitCatch
         params: params,
         macro: nil
       )
+    end
+
+    # The statements of an executable outside its `def`, class, and module
+    # bodies, as one method: a change to its usage text or to the `case`
+    # that picks a command is a change to it, and an edit inside a `def`
+    # is not. Its source holds only those statements, so `changes` sees
+    # an edit to them by the source alone.
+    def record_script(program)
+      top = statements(program).reject { |stmt| [Prism::DefNode, Prism::ClassNode, Prism::ModuleNode].any? { |kind| stmt.is_a?(kind) } }
+      name = self.class.script_name(@file)
+      return name if top.empty?
+
+      @methods << self.class::Method.new(
+        file: @file, bare_name: name, qualifier: "", qualified: name, kind: "script", visibility: "public",
+        start_line: top.first.location.start_line, end_line: top.last.location.end_line,
+        source: top.map { |stmt| extract_lines(stmt.location.start_line, stmt.location.end_line) }.join("\n"),
+        params: "", macro: "script"
+      )
+      name
     end
 
     # A string, a lambda, or a block runs code the line does not name, so

@@ -169,7 +169,7 @@ module JitCatch
       map = {}
       files.each do |file|
         path = file["new_path"] || file["old_path"]
-        next unless path&.end_with?(".rb")
+        next unless path&.end_with?(".rb") || SourceIndex.script_path?(path.to_s)
 
         map[path] = file
       end
@@ -191,6 +191,9 @@ module JitCatch
       template_calls = []
       listed = @git.source_blobs(sha).select { |blob| blob.size <= MAX_BLOB }
       @texts.merge!(@git.read_blobs(listed.map(&:oid).uniq - @texts.keys))
+      scripts, listed = listed.partition { |blob| SourceIndex.script_path?(blob.path) }
+      # An executable that is not Ruby, such as a shell `bin/setup`, is not read.
+      scripts.select! { |blob| SourceIndex.ruby_script?(@texts.fetch(blob.oid)) }
       listed, views = listed.partition { |blob| blob.path.end_with?(".rb") }
       # A template defines no method, so its calls only add call sites, each
       # made from the template itself.
@@ -199,11 +202,11 @@ module JitCatch
         index = (@parsed[[blob.path, blob.oid]] ||= SourceIndex.parse(Template.as_ruby(templates[blob.path]), file: blob.path))
         template_calls.concat(index.calls.map { |call| call.with(enclosing: call.enclosing || blob.path) }) unless index.parse_error
       end
-      listed.each do |blob|
+      (listed + scripts).sort_by(&:path).each do |blob|
         file = blob.path
         sources[file] = @texts.fetch(blob.oid)
         # A file both sides share is parsed once.
-        index = (@parsed[[file, blob.oid]] ||= SourceIndex.parse(sources[file], file: file))
+        index = (@parsed[[file, blob.oid]] ||= SourceIndex.parse(sources[file], file: file, script: scripts.include?(blob)))
         indexes[file] = index
         if index.parse_error
           errors << { "ref" => label, "file" => file, "message" => index.parse_error }
@@ -494,6 +497,10 @@ module JitCatch
             merge_hits(call_hits(test_sources.keys, ["#{node.qualifier}.new", *method["builders"]], "builder", base_idx, head_idx), [])
           elsif node.kind == "endpoint"
             request_hits(test_sources, node.bare_name)
+          elsif node.kind == "script"
+            # A test starts an executable by its path, as `exe/tool` or
+            # `../exe/tool`, not by a method name.
+            grep_hits(test_sources, node.file)
           elsif controller_action?(node.qualified) && (routes ||= app_routes(head_idx)).drawn?(node.qualified)
             route_hits(test_sources, node.qualified, requests ||= test_requests(test_sources, routes, base_idx, head_idx))
           else

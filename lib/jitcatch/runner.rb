@@ -783,8 +783,12 @@ module JitCatch
         [head_dir, File.dirname(candidate), candidate].map { |dir| File.expand_path(path, dir) }
           .select { |full| full.start_with?(root) && !full.start_with?(own) && File.file?(full) }
       }.uniq.flat_map { |full|
-        script = SourceIndex.parse(read_text(full), file: full.delete_prefix(root))
-        script.parse_error ? [] : script.referenced_names("")
+        relative_path = full.delete_prefix(root)
+        script = SourceIndex.parse(read_text(full), file: relative_path)
+        # Starting an executable runs its top-level code, which the change
+        # document lists as one method when the diff edits it.
+        main = SourceIndex.script_path?(relative_path) ? [SourceIndex.script_name(relative_path)] : []
+        script.parse_error ? main : main + script.referenced_names("")
       }
     end
 

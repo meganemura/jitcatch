@@ -83,7 +83,7 @@ module JitCatch
       git("ls-tree", "-r", "-l", "-z", "--end-of-options", ref).split("\0").filter_map { |entry|
         meta, path = entry.split("\t", 2)
         mode, type, oid, size = meta.split
-        next unless type == "blob" && mode != SYMLINK_MODE && (path.end_with?(".rb") || Template.template?(path))
+        next unless type == "blob" && mode != SYMLINK_MODE && (path.end_with?(".rb") || Template.template?(path) || SourceIndex.script_path?(path))
 
         Blob.new(path: path, oid: oid, size: size.to_i)
       }.sort_by(&:path)

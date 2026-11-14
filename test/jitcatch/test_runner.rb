@@ -934,6 +934,38 @@ class TestRunner < Minitest::Test
     end
   end
 
+  # An edit to the top-level code of a script, such as its usage text, is
+  # the related method of a test that starts it.
+  def test_a_test_that_starts_a_script_relates_to_its_changed_top_level_code
+    with_repo do |repo|
+      repo.write("lib/tool.rb", "module Tool\n  def self.run = 1\nend\n")
+      repo.write("exe/tool", "#!/usr/bin/env ruby\nrequire_relative \"../lib/tool\"\nwarn \"usage: tool run\" unless ARGV.first == \"run\"\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("exe/tool", "#!/usr/bin/env ruby\nrequire_relative \"../lib/tool\"\nwarn \"usage: tool run|help\" unless ARGV.first == \"run\"\n")
+      repo.commit("Name help.", date: "2026-02-12T00:00:00Z")
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, {
+        "tool_test.rb" => <<~RUBY
+          require "minitest/autorun"
+          require "open3"
+
+          class ToolTest < Minitest::Test
+            def test_usage
+              assert_equal "usage: tool run\\n", Open3.capture3("ruby", "exe/tool")[1]
+            end
+          end
+        RUBY
+      })
+
+      doc = execute(repo, tests)
+      row = doc["tests"].fetch(0)
+
+      assert_equal ["m01", %w[assertion report touches:changed_method]], row.values_at("method_id", "tags")
+      assert_equal "exe/tool <main>", doc["methods"].fetch(0)["name"]
+    end
+  end
+
   def test_reruns_judge_only_candidates_and_run_every_rerun
     with_repo do |repo|
       repo.write("lib/calc.rb", BASE_CALC)

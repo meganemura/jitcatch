@@ -210,6 +210,47 @@ class TestChanges < Minitest::Test
     end
   end
 
+  # An executable's top-level code is a method of its own, so a change to
+  # its usage text is listed, with the tests that start it by its path. An
+  # edit inside one of its defs is that def's, and a shell script is not read.
+  def test_the_top_level_code_of_an_executable_is_a_method
+    tool = <<~RUBY
+      #!/usr/bin/env ruby
+      require_relative "../lib/tool"
+
+      def usage = "usage: tool run"
+
+      case ARGV.first
+      when "run" then puts Tool.run
+      else warn usage
+      end
+    RUBY
+    with_repo do |repo|
+      repo.write("lib/tool.rb", "module Tool\n  def self.run = 1\nend\n")
+      repo.write("exe/tool", tool)
+      repo.write("bin/setup", "#!/bin/sh\necho ok\n")
+      repo.write("test/tool_test.rb", "class ToolTest\n  def test_usage = system(\"exe/tool\")\nend\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      helped = tool.sub("then puts Tool.run", "then puts Tool.run\nwhen \"help\" then puts usage")
+      repo.write("exe/tool", helped)
+      repo.write("bin/setup", "#!/bin/sh\necho done\n")
+      repo.commit("Add help.", date: "2026-02-12T00:00:00Z")
+
+      doc = JitCatch::Changes.between(repo.dir, "base", "HEAD")
+      main = doc["methods"].find { |method| method["name"] == "exe/tool <main>" }
+
+      assert_equal [["exe/tool <main>"]], doc["methods"].map { |method| [method["name"]] }
+      assert_equal ["modified", "script", 2, 10], main.values_at("change", "kind", "start_line", "end_line")
+      assert_equal [{ "file" => "test/tool_test.rb", "via" => "grep" }], main["existing_tests"]
+
+      repo.write("exe/tool", helped.sub("usage: tool run", "usage: tool run|help"))
+      repo.commit("Name help.", date: "2026-02-13T00:00:00Z")
+      names = JitCatch::Changes.between(repo.dir, "HEAD~1", "HEAD")["methods"].map { |method| method["name"] }
+      assert_equal ["#usage"], names
+    end
+  end
+
   def test_intent_leaves_out_each_commit_trailer_block
     with_repo do |repo|
       repo.write("lib/box.rb", BOX)
