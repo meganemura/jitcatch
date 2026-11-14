@@ -23,7 +23,7 @@ module JitCatch
 
     # +cause+ is the error the failing one was raised from, when the
     # framework printed it: {"error_class", "message"}.
-    #: (String status, String? error_class, untyped message, Array[doc] frames, ?cause: doc?) -> doc
+    #: (String status, String? error_class, String? message, Array[doc] frames, ?cause: doc?) -> doc
     def result(status, error_class, message, frames, cause: nil)
       message = message.to_s.strip.lines.first(MESSAGE_LINES).join.rstrip
       {
@@ -91,9 +91,9 @@ module JitCatch
       result("error", error_class, text.lines.map(&:strip).reject(&:empty?).first, frames_in(text.lines))
     end
 
-    #: (untyped message) -> String
+    #: (String? message) -> String
     def first_line(message)
-      message.to_s.lines.map(&:strip).reject(&:empty?).first.to_s[0, 180]
+      message.to_s.lines.map(&:strip).reject(&:empty?).first.to_s[0, 180].to_s
     end
   end
 end

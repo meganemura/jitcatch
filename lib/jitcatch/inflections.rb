@@ -14,6 +14,9 @@ module JitCatch
     # @rbs!
     #   # A rule's pattern, and the text that replaces what it matched.
     #   type rule = [Regexp | String, String]
+    #
+    #   # An argument of an inflection call, as the source writes it.
+    #   type literal = String | Regexp | Array[literal]
 
     # @rbs @plurals: Array[rule]
     # @rbs @singulars: Array[rule]
@@ -141,11 +144,10 @@ module JitCatch
       return unless node.is_a?(Prism::CallNode) && READ.include?(node.name) && node.receiver
 
       args = Array(node.arguments&.arguments).map { |arg| literal(arg) }
-      public_send(node.name, *args) unless args.empty? || args.include?(UNREAD)
+      public_send(node.name, *args) unless args.empty? || args.include?(nil)
     end
 
     READ = %i[plural singular irregular uncountable acronym].freeze #: Array[Symbol]
-    UNREAD = Object.new.freeze #: Object
 
     private
 
@@ -158,16 +160,17 @@ module JitCatch
       result
     end
 
-    # A string, a regular expression, an array of them, or UNREAD.
-    #: (Prism::Node node) -> untyped
+    # A string, a regular expression, an array of them, or nil for a node
+    # that is none of these.
+    #: (Prism::Node node) -> literal?
     def literal(node)
       case node
       when Prism::StringNode, Prism::SymbolNode then node.unescaped
       when Prism::RegularExpressionNode then Regexp.new(node.unescaped, node.options)
       when Prism::ArrayNode
         items = node.elements.map { |element| literal(element) }
-        items.include?(UNREAD) ? UNREAD : items
-      else UNREAD
+        read = items.compact
+        read.size == items.size ? read : nil
       end
     end
   end

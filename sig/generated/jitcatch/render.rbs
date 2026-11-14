@@ -21,8 +21,8 @@ module JitCatch
     def self?.context_json: (doc doc, ?readers_limit: Integer?) -> doc
 
     # How many readers each changed value has, by its id.
-    # : (doc? readers) -> Hash[untyped, Integer]
-    def self?.reader_counts: (doc? readers) -> Hash[untyped, Integer]
+    # : (doc? readers) -> Hash[String, Integer]
+    def self?.reader_counts: (doc? readers) -> Hash[String, Integer]
 
     # The highest-scored rows, and how many the limit left out.
     # : (doc readers, Integer? limit) -> doc
@@ -54,8 +54,8 @@ module JitCatch
     # : (doc doc) -> doc
     def self?.assess_json: (doc doc) -> doc
 
-    # : (untyped obj) -> String
-    def self?.dump: (untyped obj) -> String
+    # : (doc obj) -> String
+    def self?.dump: (doc obj) -> String
 
     # : (doc doc) -> Array[String]
     def self?.warning_lines: (doc doc) -> Array[String]
@@ -66,8 +66,8 @@ module JitCatch
     # : (Array[doc] constants) -> Array[String]
     def self?.constant_lines: (Array[doc] constants) -> Array[String]
 
-    # : (Array[doc] methods, ?Hash[untyped, Integer] readers) -> Array[String]
-    def self?.method_lines: (Array[doc] methods, ?Hash[untyped, Integer] readers) -> Array[String]
+    # : (Array[doc] methods, ?Hash[String, Integer] readers) -> Array[String]
+    def self?.method_lines: (Array[doc] methods, ?Hash[String, Integer] readers) -> Array[String]
 
     # : (Array[doc] entrypoints) -> Array[String]
     def self?.entrypoint_lines: (Array[doc] entrypoints) -> Array[String]
@@ -162,8 +162,8 @@ module JitCatch
     # names. With no pick, no frame of head's failure is in a changed
     # method, so the value can come from a file the brief lists no method
     # for, such as a view.
-    # : (doc row, Hash[untyped, untyped] names, doc doc) -> String
-    def self?.guess_line: (doc row, Hash[untyped, untyped] names, doc doc) -> String
+    # : (doc row, Hash[String, String] names, doc doc) -> String
+    def self?.guess_line: (doc row, Hash[String, String] names, doc doc) -> String
 
     OUT_OF_DATE: Hash[String, String]
 

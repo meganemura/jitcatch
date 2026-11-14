@@ -11,6 +11,9 @@ module JitCatch
     # A rule's pattern, and the text that replaces what it matched.
     type rule = [ Regexp | String, String ]
 
+    # An argument of an inflection call, as the source writes it.
+    type literal = String | Regexp | Array[literal]
+
     @acronyms: Hash[String, String]
 
     @uncountables: Array[String]
@@ -66,15 +69,14 @@ module JitCatch
 
     READ: Array[Symbol]
 
-    UNREAD: Object
-
     private
 
     # : (String word, Array[rule] rules) -> String
     def apply: (String word, Array[rule] rules) -> String
 
-    # A string, a regular expression, an array of them, or UNREAD.
-    # : (Prism::Node node) -> untyped
-    def literal: (Prism::Node node) -> untyped
+    # A string, a regular expression, an array of them, or nil for a node
+    # that is none of these.
+    # : (Prism::Node node) -> literal?
+    def literal: (Prism::Node node) -> literal?
   end
 end

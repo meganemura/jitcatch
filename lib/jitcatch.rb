@@ -29,6 +29,9 @@ module JitCatch
   #   # result, a change. Its keys are strings, as JSON's are.
   #   type doc = Hash[String, untyped]
   #
+  #   # One value JSON can hold, for a field a reader must check before use.
+  #   type json = nil | bool | Integer | Float | String | Array[json] | Hash[String, json]
+  #
   #   # What the runner passes a parser to rewrite the worktree roots, temp
   #   # names, and addresses in a test's text.
   #   type normalizer = ^(String) -> String
@@ -105,7 +108,7 @@ module JitCatch
       text.gsub(/(?<!\d)\d{4}-\d\d-\d\d[ T]\d\d:\d\d:\d\d(?:\.\d+)?(?: ?(?:[+-]\d\d:?\d\d|UTC)|Z)?/, "{time}")
     end
 
-    #: (untyped message) -> Array[String]
+    #: (String? message) -> Array[String]
     def message_lines(message)
       message.to_s.lines.map(&:strip).reject(&:empty?)
     end

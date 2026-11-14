@@ -255,9 +255,10 @@ module JitCatch
       first = args.first
       if first.is_a?(Prism::KeywordHashNode)
         # Array#grep does not narrow its elements to the class it is given.
-        pairs = first.elements.grep(Prism::AssocNode) #: Array[untyped]
+        pairs = first.elements.grep(Prism::AssocNode) #: Array[Prism::AssocNode]
         pair = pairs.find { |assoc| assoc.key.is_a?(Prism::StringNode) }
-        return [pair.key.unescaped, string_of(pair.value)] if pair
+        key = pair&.key
+        return [key.unescaped, string_of(pair&.value)] if key.is_a?(Prism::StringNode)
       end
       path = string_of(first)
       [path, target_of(options, scope, path)]
@@ -320,8 +321,11 @@ module JitCatch
       hash = args.grep(Prism::KeywordHashNode).first #: Prism::KeywordHashNode?
       return {} unless hash
 
-      pairs = hash.elements.grep(Prism::AssocNode) #: Array[untyped]
-      pairs.select { |pair| pair.key.is_a?(Prism::SymbolNode) }.to_h { |pair| [pair.key.unescaped, pair.value] }
+      pairs = hash.elements.grep(Prism::AssocNode) #: Array[Prism::AssocNode]
+      pairs.filter_map { |pair|
+        key = pair.key
+        [key.unescaped, pair.value] if key.is_a?(Prism::SymbolNode)
+      }.to_h
     end
 
     #: (Array[Prism::Node] args) -> Array[String]

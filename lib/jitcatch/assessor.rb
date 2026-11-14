@@ -87,7 +87,7 @@ module JitCatch
 
     # A row whose side timed out, or found no database or no table, says
     # nothing about the change, whatever its classification.
-    #: (doc test, untyped timeout_s) -> bool
+    #: (doc test, json timeout_s) -> bool
     def self.untested?(test, timeout_s)
       !untested_causes(test, timeout_s).empty?
     end
@@ -98,7 +98,7 @@ module JitCatch
       "found no table" => ->(result) { no_table?(result) }
     }.freeze #: Hash[String, ^(doc) -> bool]
 
-    #: (doc test, untyped timeout_s) -> Array[String]
+    #: (doc test, json timeout_s) -> Array[String]
     def self.untested_causes(test, timeout_s)
       results = %w[base head].map { |side| test[side] || {} }
       causes = UNTESTED_CAUSES.select { |_cause, seen| results.any?(&seen) }.keys
@@ -108,7 +108,7 @@ module JitCatch
     # Base passed in at most half the time head ran out of, so a slow boot
     # does not explain head's timeout: head may loop or wait forever, as a
     # wait that checks a clock the test froze does.
-    #: (doc test, untyped timeout_s) -> bool
+    #: (doc test, json timeout_s) -> bool
     def self.head_only_timeout?(test, timeout_s)
       base = test["base"] || {}
       # A run document from JSON can hold anything here; is_a? below checks it.
@@ -129,7 +129,7 @@ module JitCatch
     end
 
     # Base passed and neither side hit an untested cause.
-    #: (doc test, untyped timeout_s) -> bool
+    #: (doc test, json timeout_s) -> bool
     def self.compared?(test, timeout_s)
       test.dig("base", "status") == "pass" && !untested?(test, timeout_s)
     end
@@ -379,7 +379,7 @@ module JitCatch
     # picks it, but head no longer reaches it. A method whose edit only
     # changes the arguments of a raise did not decide that, so it leaves
     # the pool while another method is in it.
-    #: (Array[doc] items, ?Hash[untyped, Integer] depths, ?bool stopped) -> [doc?, Array[doc], bool]
+    #: (Array[doc] items, ?Hash[String?, Integer] depths, ?bool stopped) -> [doc?, Array[doc], bool]
     def guess(items, depths = {}, stopped = false)
       deciders = items.reject { |item| item["edits_only_raise"] }
       items = deciders if stopped && deciders.any?
@@ -517,7 +517,7 @@ module JitCatch
     # each method it calls runs only for the command that picks it. So it
     # ranks before the downstream rule: a test of `exe/tool bogus` whose
     # usage text changed reached none of the methods below it.
-    #: (doc item, Array[doc] items, Hash[untyped, Integer] depths) -> Array[Integer | String]
+    #: (doc item, Array[doc] items, Hash[String?, Integer] depths) -> Array[Integer | String]
     def guess_rank(item, items, depths)
       others = items.reject { |other| other["id"] == item["id"] }
       covered = others.count { |other| reached_by(item).include?(other["name"]) }
@@ -528,7 +528,7 @@ module JitCatch
 
     # The fewest calls between each item and an entry point the test
     # names. A run file from before `caller_depths` existed has none.
-    #: (Array[doc] items, Array[String] mentions) -> Hash[untyped, Integer]
+    #: (Array[doc] items, Array[String] mentions) -> Hash[String?, Integer]
     def depth_below_entry(items, mentions)
       items.to_h do |item|
         depths = Hash(item["caller_depths"]).filter_map { |name, depth| depth if mentions.include?(bare(name)) }

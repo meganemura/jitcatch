@@ -59,7 +59,7 @@ module JitCatch
     end
 
     # How many readers each changed value has, by its id.
-    #: (doc? readers) -> Hash[untyped, Integer]
+    #: (doc? readers) -> Hash[String, Integer]
     def reader_counts(readers)
       values = Array(readers && readers["values"]) #: Array[doc]
       values.select { |value| value["id"] }.to_h { |value| [value["id"], value["readers"]] }
@@ -210,7 +210,7 @@ module JitCatch
       }
     end
 
-    #: (untyped obj) -> String
+    #: (doc obj) -> String
     def dump(obj)
       JSON.pretty_generate(obj) + "\n"
     end
@@ -246,7 +246,7 @@ module JitCatch
       end
     end
 
-    #: (Array[doc] methods, ?Hash[untyped, Integer] readers) -> Array[String]
+    #: (Array[doc] methods, ?Hash[String, Integer] readers) -> Array[String]
     def method_lines(methods, readers = {})
       if methods.empty?
         ["methods: (none)"]
@@ -549,7 +549,7 @@ module JitCatch
     # names. With no pick, no frame of head's failure is in a changed
     # method, so the value can come from a file the brief lists no method
     # for, such as a view.
-    #: (doc row, Hash[untyped, untyped] names, doc doc) -> String
+    #: (doc row, Hash[String, String] names, doc doc) -> String
     def guess_line(row, names, doc)
       pool = row["method_ids"].map { |id| "#{names[id] || id} (#{id})" }
       if row["method_id"]

@@ -93,9 +93,12 @@ module JitCatch
     def written(node, file, outer)
       first, *rest = Array(node.arguments&.arguments)
       # Array#grep does not narrow its elements to the class it is given.
-      hashes = rest.grep(Prism::KeywordHashNode) #: Array[untyped]
-      options = hashes.flat_map(&:elements).grep(Prism::AssocNode)
-        .select { |pair| pair.key.is_a?(Prism::SymbolNode) }.to_h { |pair| [pair.key.unescaped, pair.value] }
+      hashes = rest.grep(Prism::KeywordHashNode) #: Array[Prism::KeywordHashNode]
+      pairs = hashes.flat_map(&:elements).grep(Prism::AssocNode) #: Array[Prism::AssocNode]
+      options = pairs.filter_map { |pair|
+        key = pair.key
+        [key.unescaped, pair.value] if key.is_a?(Prism::SymbolNode)
+      }.to_h
       name = literal(first)
       reason = "its name is not a symbol or a string" unless name
       own_class = class_named(options["class"]) if options.key?("class")
@@ -139,9 +142,9 @@ module JitCatch
     #: (Prism::CallNode call) -> String?
     def association_name(call)
       first, *rest = Array(call.arguments&.arguments)
-      hashes = rest.grep(Prism::KeywordHashNode) #: Array[untyped]
-      factory = hashes.flat_map(&:elements).grep(Prism::AssocNode)
-        .find { |pair| pair.key.is_a?(Prism::SymbolNode) && pair.key.unescaped == "factory" }&.value
+      hashes = rest.grep(Prism::KeywordHashNode) #: Array[Prism::KeywordHashNode]
+      pairs = hashes.flat_map(&:elements).grep(Prism::AssocNode) #: Array[Prism::AssocNode]
+      factory = pairs.find { |pair| pair.key.is_a?(Prism::SymbolNode) && pair.key.unescaped == "factory" }&.value
       factory = factory.elements.first if factory.is_a?(Prism::ArrayNode)
       literal(factory) || literal(first)
     end

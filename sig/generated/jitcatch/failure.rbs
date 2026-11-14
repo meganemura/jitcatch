@@ -26,8 +26,8 @@ module JitCatch
 
     # +cause+ is the error the failing one was raised from, when the
     # framework printed it: {"error_class", "message"}.
-    # : (String status, String? error_class, untyped message, Array[doc] frames, ?cause: doc?) -> doc
-    def self?.result: (String status, String? error_class, untyped message, Array[doc] frames, ?cause: doc?) -> doc
+    # : (String status, String? error_class, String? message, Array[doc] frames, ?cause: doc?) -> doc
+    def self?.result: (String status, String? error_class, String? message, Array[doc] frames, ?cause: doc?) -> doc
 
     # A test reads its own files from the copy, and the rerun line names
     # +tests+, the tests directory from the repository root, so a message
@@ -51,7 +51,7 @@ module JitCatch
     # : (String stdout, String stderr) -> doc?
     def self?.from_streams: (String stdout, String stderr) -> doc?
 
-    # : (untyped message) -> String
-    def self?.first_line: (untyped message) -> String
+    # : (String? message) -> String
+    def self?.first_line: (String? message) -> String
   end
 end

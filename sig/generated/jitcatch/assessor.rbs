@@ -46,19 +46,19 @@ module JitCatch
 
     # A row whose side timed out, or found no database or no table, says
     # nothing about the change, whatever its classification.
-    # : (doc test, untyped timeout_s) -> bool
-    def self.untested?: (doc test, untyped timeout_s) -> bool
+    # : (doc test, json timeout_s) -> bool
+    def self.untested?: (doc test, json timeout_s) -> bool
 
     UNTESTED_CAUSES: Hash[String, ^(doc) -> bool]
 
-    # : (doc test, untyped timeout_s) -> Array[String]
-    def self.untested_causes: (doc test, untyped timeout_s) -> Array[String]
+    # : (doc test, json timeout_s) -> Array[String]
+    def self.untested_causes: (doc test, json timeout_s) -> Array[String]
 
     # Base passed in at most half the time head ran out of, so a slow boot
     # does not explain head's timeout: head may loop or wait forever, as a
     # wait that checks a clock the test froze does.
-    # : (doc test, untyped timeout_s) -> bool
-    def self.head_only_timeout?: (doc test, untyped timeout_s) -> bool
+    # : (doc test, json timeout_s) -> bool
+    def self.head_only_timeout?: (doc test, json timeout_s) -> bool
 
     # A run where no row compared base with head, and the environment hid
     # at least one row that might have, tested nothing, which must not read
@@ -69,8 +69,8 @@ module JitCatch
     def self.untested_run?: (doc doc) -> bool
 
     # Base passed and neither side hit an untested cause.
-    # : (doc test, untyped timeout_s) -> bool
-    def self.compared?: (doc test, untyped timeout_s) -> bool
+    # : (doc test, json timeout_s) -> bool
+    def self.compared?: (doc test, json timeout_s) -> bool
 
     private
 
@@ -181,8 +181,8 @@ module JitCatch
     # picks it, but head no longer reaches it. A method whose edit only
     # changes the arguments of a raise did not decide that, so it leaves
     # the pool while another method is in it.
-    # : (Array[doc] items, ?Hash[untyped, Integer] depths, ?bool stopped) -> [doc?, Array[doc], bool]
-    def guess: (Array[doc] items, ?Hash[untyped, Integer] depths, ?bool stopped) -> [ doc?, Array[doc], bool ]
+    # : (Array[doc] items, ?Hash[String?, Integer] depths, ?bool stopped) -> [doc?, Array[doc], bool]
+    def guess: (Array[doc] items, ?Hash[String?, Integer] depths, ?bool stopped) -> [ doc?, Array[doc], bool ]
 
     # Minitest's assert_raises and RSpec's raise_error both end their
     # message this way when the block returned.
@@ -257,13 +257,13 @@ module JitCatch
     # each method it calls runs only for the command that picks it. So it
     # ranks before the downstream rule: a test of `exe/tool bogus` whose
     # usage text changed reached none of the methods below it.
-    # : (doc item, Array[doc] items, Hash[untyped, Integer] depths) -> Array[Integer | String]
-    def guess_rank: (doc item, Array[doc] items, Hash[untyped, Integer] depths) -> Array[Integer | String]
+    # : (doc item, Array[doc] items, Hash[String?, Integer] depths) -> Array[Integer | String]
+    def guess_rank: (doc item, Array[doc] items, Hash[String?, Integer] depths) -> Array[Integer | String]
 
     # The fewest calls between each item and an entry point the test
     # names. A run file from before `caller_depths` existed has none.
-    # : (Array[doc] items, Array[String] mentions) -> Hash[untyped, Integer]
-    def depth_below_entry: (Array[doc] items, Array[String] mentions) -> Hash[untyped, Integer]
+    # : (Array[doc] items, Array[String] mentions) -> Hash[String?, Integer]
+    def depth_below_entry: (Array[doc] items, Array[String] mentions) -> Hash[String?, Integer]
 
     # : (doc item) -> Integer
     def preference: (doc item) -> Integer
