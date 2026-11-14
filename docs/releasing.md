@@ -19,6 +19,8 @@ Nobody pushes a `v*` tag or runs `gem push` by hand.
 The first version is the one `lib/jitcatch/version.rb` already holds, 0.1.0.
 The commit that renames `## [Unreleased]` to `## [0.1.0]` does not change `version.rb`, so its push starts nothing.
 Start that release by hand from `main`: in the Actions tab, open Release and choose Run workflow on `main`, or run `gh workflow run release.yml --ref main`.
+Give that run the RubyGems.org id of the account that will own the gem in the `rubygems-owner` input, as the account's Pending Trusted Publishers page shows it.
+RubyGems needs the id only to create the gem, so a later release starts from its push and sends no owner.
 A run on any other branch stops at `check`.
 
 When a job fails, rerun the failed jobs.
