@@ -369,7 +369,8 @@ module JitCatch
       return timeout_result if execution.timed_out
       return execution.file_error if execution.file_error
       return pass_result if !execution.tests.empty? && execution.tests.values.all? { |test| test["status"] == "pass" }
-      return pass_result if execution.tests.empty? && execution.exit_code.zero?
+      # A process a signal ended has no exit code, and did not pass.
+      return pass_result if execution.tests.empty? && execution.exit_code == 0
 
       values = execution.tests.values
       failed = values.find { |test| test["status"] != "pass" }

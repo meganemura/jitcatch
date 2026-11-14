@@ -345,6 +345,42 @@ class TestRunner < Minitest::Test
     end
   end
 
+  # A process a signal ends has no exit code. Beside a side that failed to
+  # load, one that ran no test and then got a signal is an error, not a pass.
+  def test_a_side_a_signal_ended_after_no_test_did_not_pass
+    with_repo do |repo|
+      repo.write("lib/flag.rb", "module Flag; def self.ok; true; end; end\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/flag.rb", "module Flag\n  def self.ok\n    true\n  end\nend\n")
+      repo.commit("Reformat only.", date: "2026-02-12T00:00:00Z")
+
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, {
+        "killed_test.rb" => <<~RUBY,
+          require "minitest/autorun"
+          require "flag"
+          raise "one line" if File.read($LOADED_FEATURES.grep(/flag\\.rb/).first).lines.size == 1
+          Minitest.after_run { Process.kill("KILL", Process.pid) }
+        RUBY
+        "flag_test.rb" => <<~RUBY
+          require "minitest/autorun"
+          require "flag"
+
+          class FlagTest < Minitest::Test
+            def test_ok
+              assert Flag.ok
+            end
+          end
+        RUBY
+      })
+      doc = execute(repo, tests)
+      row = doc["tests"].find { |test| test["file"] == "killed_test.rb" }
+      assert_equal ["error", "error"], [row["base"]["status"], row["head"]["status"]]
+      assert_equal "no tests ran", row["head"]["message"]
+    end
+  end
+
   def test_discards_a_name_error_on_a_removed_nested_class
     with_repo do |repo|
       repo.write("lib/model.rb", "class Model\n  class Unsupported < StandardError; end\n\n  def check(op)\n    raise Unsupported, op unless op == \"+\"\n  end\nend\n")

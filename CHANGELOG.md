@@ -4,6 +4,7 @@
 
 - A `config/routes.rb` that passes a block with `&`, as `namespace :admin, &admin_routes`, no longer stops `context` and `run` with a `NoMethodError`. The routes that block draws are not read, and the routes around it still are.
 - `context` no longer stops with a `NoMethodError` when the change edits a `to_param` defined outside any class.
+- `run` no longer stops with a `NoMethodError` when one side of a candidate ran no test and then ended on a signal while the other side failed to load it. That side's row now reads `error`, `no tests ran`.
 
 ## [0.2.1] - 2026-11-14
 
