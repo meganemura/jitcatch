@@ -1,5 +1,5 @@
 jitcatch run
-version 0.1.0
+version 0.2.0
 base cf7f35144524b7a0606df29197ac609b2f17773f
 head f2f5f6c3778bca3f65d06728583ca9e089523dfc
 reruns 2

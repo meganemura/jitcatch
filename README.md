@@ -63,7 +63,7 @@ The last commit asks a senior officer from 10000 cents, where it used to ask onl
 <!-- rails:output -->
 ```
 jitcatch run
-version 0.1.0
+version 0.2.0
 base e994a60bff5a85b3bcc92960dd251d598b15835a
 head c3ef8997c50fc389a24ec4aa3f79caca2d6437b9
 reruns 2
@@ -145,7 +145,7 @@ jitcatch prints this. The two commit ids are your own.
 <!-- quickstart:output -->
 ```
 jitcatch run
-version 0.1.0
+version 0.2.0
 base 81b05b22f14f2b5a1e580c048856a5e9d9b25b85
 head 7c53dd7485d4c994d97bddd3cb7bd5481a337b61
 reruns 2
@@ -193,7 +193,7 @@ A coding agent reviewing a change writes tests for that diff. A test that only d
 
 The method follows Meta's catching JiT tests ([Harden and Catch](https://arxiv.org/abs/2504.16472); [Just-in-Time Catching Test Generation at Meta](https://arxiv.org/abs/2601.22832)).
 
-Ruby 3.3 or newer. No gems. `minitest` and `prism` ship with Ruby. `jitcatch --version` (or `-v`) prints `jitcatch 0.1.0`, followed by the commit, as in `jitcatch 0.1.0 (1fbcd18)`, when jitcatch runs from its own git checkout, as a gem installed from git does, and `--help` prints the commands. RSpec candidates need `rspec-core` where they run: in the project's bundle, or installed for that Ruby when the project has no `Gemfile`. `BASE` is the parent revision and `HEAD` is the change. Each must resolve to a commit. Uncommitted files are not in the diff.
+Ruby 3.3 or newer. No gems. `minitest` and `prism` ship with Ruby. `jitcatch --version` (or `-v`) prints `jitcatch 0.2.0`, followed by the commit, as in `jitcatch 0.2.0 (1fbcd18)`, when jitcatch runs from its own git checkout, as a gem installed from git does, and `--help` prints the commands. RSpec candidates need `rspec-core` where they run: in the project's bundle, or installed for that Ruby when the project has no `Gemfile`. `BASE` is the parent revision and `HEAD` is the change. Each must resolve to a commit. Uncommitted files are not in the diff.
 
 You write the candidate files in a scratch directory. A Minitest file starts with `require "minitest/autorun"`, then requires the library the way the repository loads it. An RSpec file is named `*_spec.rb` and starts with `require "spec_helper"` or `require "rails_helper"`, as the project's own specs do. jitcatch runs those files. You judge each `reported` row against the intent and the diff. The intent in the brief is the commit messages from `BASE` to `HEAD`, without the trailer lines git parses at the end of each message (such as `Co-Authored-By:`). likely-regression means the behavior changed and the intent does not ask for that change. intended means the intent asks for it. unclear means the intent is not enough to tell.
 
