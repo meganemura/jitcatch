@@ -490,6 +490,9 @@ gem の中から始まったエラーには `touches:changed_method` を付け�
 テストが変更されていない呼び出し元を通してだけ届くメソッドの中では、テストが名指しする入口から最も多くの呼び出しを下ったメソッドを選ぶ。
 たとえば、リクエストスペックが 1 回下の `LoansController#officer` と 5 回下の `Borrower#approved_cents` に届くときは `Borrower#approved_cents` を選ぶ。
 `--json` の `caller_depths` がその回数を持つ。
+変更されたスクリプトを起動するテストは、そのコードが呼ぶ変更メソッドより先に、スクリプトの `exe/tool <main>` を選ぶ。
+起動するたびにそのコードは動くが、その下のメソッドはそれを選ぶコマンドのときだけ動くからである。
+たとえば、使い方の文言が変わった `quint_driver bogus` のテストは `related guess: exe/quint_driver <main> (m01), ranked first of 3: exe/quint_driver <main> (m01), QuintDriver::Spec#outline (m10), QuintDriver::Targets.report (m14)` となる。
 テストが待つ例外を head が上げなくなった行 (`X expected but nothing was raised.`) では、`raise` の引数だけを変えた編集 (`--json` の `edits_only_raise`) を候補から外す。
 そのメソッドはどの呼び出し元よりも下にあるが、head はもうそこへ届かず、上げなくなった原因はそれを呼ぶ側にあることが多い。
 上位の二つを id でしか並べられないときは、どれも選ばない。

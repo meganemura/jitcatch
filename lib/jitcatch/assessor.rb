@@ -454,11 +454,18 @@ module JitCatch
     # a request spec of a Rails app, the method farthest from the entry
     # point the test calls was the one the failure came from in both, and
     # the lowest id in one, so depth ranks before the count below.
+    #
+    # A script's top-level code (`exe/tool <main>`) is in the pool only
+    # when the test starts that script, and it runs on every start, while
+    # each method it calls runs only for the command that picks it. So it
+    # ranks before the downstream rule: a test of `exe/tool bogus` whose
+    # usage text changed reached none of the methods below it.
     def guess_rank(item, items, depths)
       others = items.reject { |other| other["id"] == item["id"] }
       covered = others.count { |other| reached_by(item).include?(other["name"]) }
       below = @methods.count { |other| reached_by(other).include?(item["name"]) }
-      [preference(item), -covered, -depths.fetch(item["id"], 0), -below, item["id"].to_s]
+      started = item["kind"] == "script" ? 0 : 1
+      [preference(item), started, -covered, -depths.fetch(item["id"], 0), -below, item["id"].to_s]
     end
 
     # The fewest calls between each item and an entry point the test

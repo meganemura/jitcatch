@@ -378,6 +378,27 @@ class TestAssessor < Minitest::Test
     assert_nil JitCatch::Assessor.apply(old)["tests"].fetch(0)["method_id"], "a run file without depths cannot tell the two apart"
   end
 
+  # A test that starts a script runs its top-level code whatever command
+  # it names, and runs a method that code calls only for one command. So
+  # the script's top-level code is the pick, ahead of the methods it
+  # calls, and those stay in the pool.
+  def test_a_test_that_starts_a_script_picks_its_top_level_code_over_what_it_calls
+    main = { "id" => "m01", "change" => "modified", "signature" => "same", "kind" => "script", "bare_name" => "exe/tool <main>",
+             "name" => "exe/tool <main>", "file" => "exe/tool", "start_line" => 3, "end_line" => 9, "reached_by" => [] }
+    outline = method("m02", "modified", "same", "outline", [], 1).merge("name" => "Spec#outline", "reached_by" => ["exe/tool <main>"], "caller_depths" => { "exe/tool <main>" => 1 })
+    doc = {
+      "methods" => [main, outline],
+      "constants" => [],
+      "tests_dir" => "candidates",
+      "tests" => [candidate("t01", "CliTest#test_usage", ["exe/tool <main>", "Spec#outline", "outline"], failure("Expected: \"usage: tool outline\"\n  Actual: \"usage: tool targets\""))]
+    }
+
+    row = JitCatch::Assessor.apply(doc)["tests"].fetch(0)
+    assert_equal ["m01", %w[m01 m02], true], [row["method_id"], row["method_ids"], row["tags"].include?("related:guess")]
+    in_process = doc.merge("tests" => [candidate("t01", "SpecTest#test_outline", %w[Spec.new outline], failure("Expected: 1\n  Actual: 2"))])
+    assert_equal ["m02", %w[m02]], JitCatch::Assessor.apply(in_process)["tests"].fetch(0).values_at("method_id", "method_ids")
+  end
+
   # Only the id would order two methods that sit at the same depth, link
   # to the same changed code, and both existed on base, so the row names
   # the pool and no pick: an id says when a method appears in the diff,
