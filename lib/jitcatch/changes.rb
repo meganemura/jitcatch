@@ -56,6 +56,7 @@ module JitCatch
       base_edges = edges_for(base_idx)
       decorate_calls(methods, head_edges, base_edges)
       mark_forwarders(methods, head_edges, hunks)
+      mark_raise_edits(methods)
       decorate_dynamic_callers(methods, head_idx, base_idx)
       factories = factories_of(head_idx)
       builders = builders_for(methods, head_idx, factories)
@@ -403,6 +404,36 @@ module JitCatch
       methods.each do |method|
         method["forwards_to_added"] = method["change"] == "modified" && added.any? && forwards?(method["new"], added, head_edges, hunks)
       end
+    end
+
+    # An edit that changes only the arguments of a `raise` changes what the
+    # method raises, not whether it does. A test whose expected error head
+    # stopped raising then points at the code that stopped calling it, so
+    # the assessor ranks such a method after the others.
+    def mark_raise_edits(methods)
+      methods.each do |method|
+        method["edits_only_raise"] = method["change"] == "modified" &&
+          method["old"].source != method["new"].source &&
+          without_raises(method["old"].source) == without_raises(method["new"].source)
+      end
+    end
+
+    # The source with each receiverless `raise` or `fail` call written as
+    # the bare word, so two sources that differ only there compare equal.
+    def without_raises(source)
+      text = source.b
+      pending = [Prism.parse(source).value]
+      spans = []
+      until pending.empty?
+        node = pending.pop
+        if node.is_a?(Prism::CallNode) && node.receiver.nil? && %i[raise fail].include?(node.name)
+          spans << [node.location.start_offset, node.location.end_offset]
+        else
+          pending.concat(node.compact_child_nodes)
+        end
+      end
+      spans.sort.reverse_each { |first, last| text = text.byteslice(0, first) + "raise".b + text.byteslice(last..) }
+      text
     end
 
     def forwards?(node, added, head_edges, hunks)
@@ -1000,6 +1031,7 @@ module JitCatch
         "entry_point_tests" => item["entry_point_tests"],
         "via_constant" => item["via_constant"],
         "forwards_to_added" => item["forwards_to_added"],
+        "edits_only_raise" => item["edits_only_raise"],
         "moved_from" => item["moved_from"]
       }
     end

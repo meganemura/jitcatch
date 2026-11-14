@@ -701,6 +701,36 @@ class TestAssessor < Minitest::Test
     assert_equal ["m02", %w[m01 m02]], row.values_at("method_id", "method_ids")
   end
 
+  # When head stops raising the error a test expects, the method that
+  # raises it is below every caller, and head no longer reaches it. An
+  # edit that only changed that raise's arguments did not stop it, so the
+  # pool leaves it out while another method is in it.
+  def test_a_row_where_head_stopped_raising_leaves_out_a_method_that_only_edits_the_raise
+    raiser = method("m03", "modified", "same", "refuse", ["Calc#eval", "Calc#lookup", "Calc#step"], 30).merge("edits_only_raise" => true, "caller_depths" => { "Calc#step" => 2 })
+    doc = {
+      "methods" => [
+        method("m01", "modified", "same", "eval", ["Calc#step"], 1).merge("caller_depths" => { "Calc#step" => 1 }),
+        method("m02", "modified", "same", "lookup", ["Calc#eval", "Calc#step"], 10).merge("caller_depths" => { "Calc#step" => 2 }),
+        raiser
+      ],
+      "constants" => [],
+      "tests_dir" => "candidates",
+      "tests" => [
+        candidate("t01", "LazyTest#test_refused", %w[step], failure("Calc::Unsupported expected but nothing was raised.")),
+        candidate("t02", "LazyTest#test_value", %w[step], failure("Expected: 1\n  Actual: 2")),
+        candidate("t03", "LazySpec refuses", %w[step], { "status" => "fail", "error_class" => "RSpec::Expectations::ExpectationNotMetError",
+                                                        "message" => "expected Calc::Unsupported but nothing was raised", "backtrace" => [] })
+      ]
+    }
+
+    rows = JitCatch::Assessor.apply(doc)["tests"].to_h { |test| [test["id"], test.values_at("method_id", "method_ids")] }
+
+    assert_equal({ "t01" => ["m02", %w[m01 m02]], "t02" => ["m03", %w[m01 m02 m03]], "t03" => ["m02", %w[m01 m02]] }, rows)
+    alone = doc.merge("methods" => [raiser], "tests" => doc["tests"].first(1))
+    assert_equal ["m03", %w[m03]], JitCatch::Assessor.apply(alone)["tests"].fetch(0).values_at("method_id", "method_ids"),
+      "a raiser alone in the pool stays"
+  end
+
   # A moved method's old lines count in the file it came from, not in the
   # file a frame names.
   def test_a_frame_on_the_old_lines_of_a_moved_method_does_not_hit_it

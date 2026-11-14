@@ -172,6 +172,44 @@ class TestChanges < Minitest::Test
     end
   end
 
+  # Only an edit inside the arguments of a raise leaves when the method
+  # raises as it was. One to the guard beside the raise, on the same line,
+  # does not.
+  def test_an_edit_changes_only_a_raise_when_the_rest_of_the_method_is_the_same
+    base = <<~RUBY
+      class Gate
+        def refuse(what)
+          raise ArgumentError, "no \#{what}"
+        end
+
+        def check(n)
+          fail ArgumentError, "low" if n < 0
+          n
+        end
+
+        def wide(n)
+          raise ArgumentError, "low" if n < 0
+          n
+        end
+      end
+    RUBY
+    head = base.sub('"no #{what}"', '"no #{what}", caller_locations')
+               .sub('fail ArgumentError, "low" if n < 0', 'fail ArgumentError, "too low" if n < 0')
+               .sub('raise ArgumentError, "low" if n < 0', 'raise ArgumentError, "low" if n < -1')
+    with_repo do |repo|
+      repo.write("lib/gate.rb", base)
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/gate.rb", head)
+      repo.commit("Say where a refusal came from.", date: "2026-02-12T00:00:00Z")
+
+      doc = JitCatch::Changes.between(repo.dir, "base", "HEAD")
+      only = doc["methods"].to_h { |method| [method["bare_name"], method["edits_only_raise"]] }
+
+      assert_equal({ "check" => true, "refuse" => true, "wide" => false }, only)
+    end
+  end
+
   def test_intent_leaves_out_each_commit_trailer_block
     with_repo do |repo|
       repo.write("lib/box.rb", BOX)

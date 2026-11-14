@@ -94,8 +94,8 @@ class TestRunner < Minitest::Test
       assert_equal "reported", by_name["TotalTest#test_total"]["disposition"]
       assert_includes by_name["TotalTest#test_total"]["tags"], "caller:unchanged:lib/calc.rb:11"
       assert_includes by_name["TotalTest#test_total"]["tags"], "touches:unchanged_caller"
-      assert_equal %w[bare_name builders callbacks caller_depths callsites_omitted change dynamic_callers end_line file forwards_to_added id kind moved_from name new_end new_start
-        old_end old_start reachable_from reached_by run_by signature start_line via_constant visibility],
+      assert_equal %w[bare_name builders callbacks caller_depths callsites_omitted change dynamic_callers edits_only_raise end_line file forwards_to_added id kind moved_from
+        name new_end new_start old_end old_start reachable_from reached_by run_by signature start_line via_constant visibility],
         doc["methods"].flat_map(&:keys).uniq.sort
 
       json =JitCatch::Render.dump(JitCatch::Render.run_json(doc))

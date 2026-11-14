@@ -314,7 +314,8 @@ module JitCatch
       # Almost every test builds its object with `.new`, so a changed
       # constructor is the related method only when nothing else points.
       constructors, named = mentioned.partition { |item| mention(item).end_with?(".new") }
-      return guess(named) if named.any?
+      stopped = stopped_raising?(test)
+      return guess(named, {}, stopped) if named.any?
 
       via_caller = @methods.select { |item|
         upstream = reached_by(item).map { |name| bare(name) }
@@ -323,15 +324,30 @@ module JitCatch
       sent = via_caller.select { |item| reached_by(item).any? { |name| sent_to?(name, mentions) } }
       via_caller = sent unless sent.empty?
       pool = via_caller.empty? ? constructors : via_caller
-      guess(pool, depth_below_entry(pool, mentions))
+      guess(pool, depth_below_entry(pool, mentions), stopped)
     end
 
     # The pick, the pool, and whether only the id ordered the best two.
     # A tied pick still sets the tags, as it did when the id was shown.
-    def guess(items, depths = {})
+    #
+    # On a row where head stopped raising the error the test expects, the
+    # method that raises it sits below every caller, so the downstream rule
+    # picks it, but head no longer reaches it. A method whose edit only
+    # changes the arguments of a raise did not decide that, so it leaves
+    # the pool while another method is in it.
+    def guess(items, depths = {}, stopped = false)
+      deciders = items.reject { |item| item["edits_only_raise"] }
+      items = deciders if stopped && deciders.any?
       ranked = items.sort_by { |item| guess_rank(item, items, depths) }
       tied = ranked.size > 1 && guess_rank(ranked[0], items, depths)[0...-1] == guess_rank(ranked[1], items, depths)[0...-1]
       [ranked.first, items, tied]
+    end
+
+    # Minitest's assert_raises and RSpec's raise_error both end their
+    # message this way when the block returned.
+    def stopped_raising?(test)
+      test.dig("base", "status") == "pass" && test.dig("head", "status") == "fail" &&
+        test.dig("head", "message").to_s.match?(/but nothing was raised\.?\z/)
     end
 
     # A test that names the class it sends a method to (`Index.parse`,

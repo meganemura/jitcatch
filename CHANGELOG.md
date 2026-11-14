@@ -1,5 +1,9 @@
 # Changelog
 
+## [Unreleased]
+
+- On a row where head stopped raising the error the test expects (`X expected but nothing was raised.`), the related guess leaves out a changed method whose edit only changes the arguments of a `raise`. Head no longer reaches that method, so the downstream rule picked the wrong one; the pool now holds the code that called it. `context --json` and `run --json` mark such a method with `edits_only_raise`.
+
 ## [0.1.0] - 2026-11-13
 
 First release. jitcatch keeps the Ruby tests that pass on the parent of a change and fail on the change, and names the changed method each one reaches. It never calls a model: an agent writes the candidate tests and judges each result.
