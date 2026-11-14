@@ -75,7 +75,7 @@ jitcatch は次を出す。
 <!-- rails:output -->
 ```
 jitcatch run
-version 0.2.0
+version 0.2.1
 base e994a60bff5a85b3bcc92960dd251d598b15835a
 head c3ef8997c50fc389a24ec4aa3f79caca2d6437b9
 reruns 2
@@ -172,7 +172,7 @@ jitcatch は次を出す。
 <!-- quickstart:output -->
 ```
 jitcatch run
-version 0.2.0
+version 0.2.1
 base 81b05b22f14f2b5a1e580c048856a5e9d9b25b85
 head 7c53dd7485d4c994d97bddd3cb7bd5481a337b61
 reruns 2
@@ -233,8 +233,8 @@ jitcatch はそのテストを両方のリビジョンで走らせ、フレー�
 Ruby 3.3 以降。
 追加の gem はない。
 `minitest` と `prism` は Ruby に付いている。
-`jitcatch --version`（または `-v`）は `jitcatch 0.2.0` を出し、`--help` はコマンドの一覧を出す。
-git から入れた gem のように jitcatch 自身の git のチェックアウトから動くときは、`jitcatch 0.2.0 (1fbcd18)` のようにコミットも出す。
+`jitcatch --version`（または `-v`）は `jitcatch 0.2.1` を出し、`--help` はコマンドの一覧を出す。
+git から入れた gem のように jitcatch 自身の git のチェックアウトから動くときは、`jitcatch 0.2.1 (1fbcd18)` のようにコミットも出す。
 RSpec の候補には、実行する場所に `rspec-core` が要る。
 プロジェクトの bundle に入れるか、`Gemfile` が無いプロジェクトならその Ruby にインストールしておく。
 `BASE` は親のリビジョン、`HEAD` は変更である。
