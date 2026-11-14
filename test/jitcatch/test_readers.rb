@@ -109,6 +109,14 @@ class TestReaders < Minitest::Test
     end
   end
 
+  # A `to_param` outside any class names no model, so no action looks it up.
+  def test_a_to_param_outside_a_class_has_no_param_lookup
+    readers_after(->(repo) { repo.write("lib/slug.rb", "def to_param\n  code\nend\n") }) do |doc|
+      assert_equal ["#to_param"], doc["readers"]["values"].map { |value| value["value"] }
+      assert_equal [], rows(doc, "#to_param").select { |mechanism, _| mechanism == "param_lookup" }
+    end
+  end
+
   def test_as_json_is_read_by_render_json
     readers_after(->(repo) { repo.write("app/models/loan.rb", LOAN.sub("  def days_late", "  def as_json(options = nil)\n    super(only: %i[id])\n  end\n\n  def days_late")) }) do |doc|
       assert_includes rows(doc, "Loan#as_json"), ["json_render", "app/controllers/loans_controller.rb:6"]

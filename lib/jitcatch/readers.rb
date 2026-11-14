@@ -255,7 +255,9 @@ module JitCatch
 
     # Actions that turn a param back into the model, whoever built the URL.
     def param_lookup_rows(value)
-      one = snake(value.owner)
+      # A `to_param` outside any class belongs to no model a param names.
+      owner = value.owner or return []
+      one = snake(owner)
       rows = []
       @sources.select { |src| src.path.start_with?("app/controllers/") }.each do |src|
         each_node(src.tree) do |node, stack|
