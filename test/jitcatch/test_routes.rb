@@ -99,6 +99,27 @@ class TestRoutes < Minitest::Test
     refute routes.helper?("extra_path")
     assert_equal [], JitCatch::Routes.parse(nil).actions("GET /books")
   end
+
+  # A block passed with `&` draws its routes at run time, so its routes are
+  # unknown, and the routes around it are still read.
+  def test_a_block_passed_with_an_ampersand_is_not_read
+    routes = JitCatch::Routes.parse(<<~RUBY)
+      admin = proc { resources :users }
+      Rails.application.routes.draw do
+        namespace :admin, &admin
+        resources :books, only: :show, &admin
+        scope "/shop", &admin
+        constraints(&admin)
+        get "about", to: "pages#about"
+      end
+      Rails.application.routes.draw(&admin)
+    RUBY
+
+    assert_equal ["BooksController#show"], routes.actions("GET /books/7")
+    assert_equal ["PagesController#about"], routes.actions("GET /about")
+    assert_equal [], routes.actions("GET /admin/users")
+  end
+
   # A path helper and a URL helper build their URL from one route.
   def test_a_helper_names_the_route_it_builds_a_url_for
     routes = JitCatch::Routes.parse(ROUTES)

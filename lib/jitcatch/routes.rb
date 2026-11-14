@@ -99,33 +99,35 @@ module JitCatch
 
         args = Array(stmt.arguments&.arguments)
         options = keyword_options(args)
+        # A block passed with `&` draws its routes at run time, so it is not read.
+        block = stmt.block.is_a?(Prism::BlockNode) ? stmt.block : nil
         case stmt.name
         when :resources, :resource
           plural = stmt.name == :resources
-          symbol_names(args).each { |name| read_resource(name, plural, options, stmt.block, scope) }
+          symbol_names(args).each { |name| read_resource(name, plural, options, block, scope) }
         when :namespace
           name = symbol_names(args).first
-          next unless name && stmt.block
+          next unless name && block
 
-          read(stmt.block.body, scope.with(path: "#{scope.path}/#{name}", helper: "#{scope.helper}#{name}_", modules: [*scope.modules, name], resource: nil, controller: nil))
+          read(block.body, scope.with(path: "#{scope.path}/#{name}", helper: "#{scope.helper}#{name}_", modules: [*scope.modules, name], resource: nil, controller: nil))
         when :scope
           path = string_of(args.first) || string_of(options["path"])
           as = string_of(options["as"])
-          read(stmt.block&.body, scope.with(path: path ? "#{scope.path}/#{path.delete_prefix("/")}" : scope.path, modules: modules_of(scope, options),
+          read(block&.body, scope.with(path: path ? "#{scope.path}/#{path.delete_prefix("/")}" : scope.path, modules: modules_of(scope, options),
             helper: as ? "#{scope.helper}#{as}_" : scope.helper, controller: string_of(options["controller"]) || scope.controller))
         when :member, :collection
           resource = scope.resource
-          next unless resource && stmt.block
+          next unless resource && block
 
           member = stmt.name == :member
-          read_actions(stmt.block.body, scope, member ? resource.member_path : resource.collection_path, member ? resource.member_helper : resource.collection_helper, resource.controller)
+          read_actions(block.body, scope, member ? resource.member_path : resource.collection_path, member ? resource.member_helper : resource.collection_helper, resource.controller)
         when :root
           target = string_of(args.first) || target_of(options, scope, nil)
           add("GET", scope.path.empty? ? "/" : scope.path, "#{scope.helper}root", target, scope)
         when *VERBS
           read_verb(stmt.name, args, options, scope)
         when *PASS_THROUGH
-          read(stmt.block&.body, scope)
+          read(block&.body, scope)
         end
       end
     end
@@ -257,7 +259,7 @@ module JitCatch
 
     # The statements of `Rails.application.routes.draw do ... end`.
     def draw_body(stmt)
-      return [stmt] unless stmt.is_a?(Prism::CallNode) && stmt.name == :draw && stmt.block
+      return [stmt] unless stmt.is_a?(Prism::CallNode) && stmt.name == :draw && stmt.block.is_a?(Prism::BlockNode)
 
       statements(stmt.block.body)
     end
