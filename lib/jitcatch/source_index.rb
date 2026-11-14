@@ -19,6 +19,9 @@ module JitCatch
     MESSAGE_CALLS = %i[message full_message detailed_message].freeze
     # A relative path with a directory part and no spaces: `exe/tool`.
     PATH_LIKE = %r{\A(?:\.\.?/)*[\w.-]+(?:/[\w.-]+)+\z}
+    # Minitest assertions and expectations, RSpec matchers, and the string
+    # predicates a test asserts on.
+    COMPARING_CALL = /\A(?:assert|refute|must|wont)(?:_\w+)?\z|\A(?:eq|eql|equal|include|match|start_with|end_with|include\?|match\?|start_with\?|end_with\?|==|=~)\z/
     ATTRIBUTE_MACROS = { attr_reader: [""], attr: [""], attr_writer: ["="], attr_accessor: ["", "="] }.freeze
     # The constant a member list is given to, and whether its members get writers.
     MEMBER_BUILDERS = { %i[Struct new] => true, %i[Data define] => false }.freeze
@@ -205,6 +208,7 @@ module JitCatch
       @association_classes = {}
       @symbol_lists = {}
       @paths = Hash.new { |hash, key| hash[key] = [] }
+      @compared = {}
       @factory_calls = Hash.new { |hash, key| hash[key] = [] }
       @endpoints = {}
     end
@@ -1167,6 +1171,7 @@ module JitCatch
           refer(enclosing, request) if request
           factory = factory_built(node)
           @factory_calls[enclosing] << [node.name.to_s, factory, factory_traits(node)] if factory
+          mark_compared_strings(node)
         end
         node.compact_child_nodes.each do |child|
           children = child.is_a?(Prism::ArgumentsNode) && HASH_KEY_CALLS.include?(node.name) ? child.arguments.grep_v(Prism::SymbolNode) : [child]
@@ -1186,7 +1191,7 @@ module JitCatch
         refer(enclosing, node.unescaped)
       when Prism::StringNode
         text = node.unescaped
-        @paths[enclosing] << text if text.valid_encoding? && text.match?(PATH_LIKE)
+        @paths[enclosing] << text if text.valid_encoding? && text.match?(PATH_LIKE) && !@compared.key?(node.location.start_offset)
       when Prism::LocalVariableWriteNode
         @local_classes[[enclosing, node.name.to_s]] << built_constants(node.value).uniq
         node.compact_child_nodes.each { |child| walk(child, qualifier, singleton_context, enclosing) }
@@ -1199,6 +1204,17 @@ module JitCatch
       else
         node.compact_child_nodes.each { |child| walk(child, qualifier, singleton_context, enclosing) }
       end
+    end
+
+    # A string an assertion or a matcher compares with a value, as in
+    # `assert_includes error.backtrace.first, "lib/tool/model.rb"`, is
+    # text the test expects, not the path of a script it starts. Only a
+    # direct argument counts, so `assert_equal "1\n", IO.popen(["ruby",
+    # "exe/tool"], &:read)` still names `exe/tool`.
+    def mark_compared_strings(node)
+      return unless COMPARING_CALL.match?(node.name.to_s) && node.arguments
+
+      node.arguments.arguments.grep(Prism::StringNode).each { |arg| @compared[arg.location.start_offset] = true }
     end
 
     def spec_block?(node)

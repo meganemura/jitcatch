@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 - On a row where head stopped raising the error the test expects (`X expected but nothing was raised.`), the related guess leaves out a changed method whose edit only changes the arguments of a `raise`. Head no longer reaches that method, so the downstream rule picked the wrong one; the pool now holds the code that called it. `context --json` and `run --json` mark such a method with `edits_only_raise`.
+- A path string that an assertion or a matcher compares directly, as `assert_includes error.backtrace.first, "lib/tool/model.rb"`, no longer reads as a script the test starts, so the names in that file are no longer the test's mentions.
 
 ## [0.1.0] - 2026-11-13
 

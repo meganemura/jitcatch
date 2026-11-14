@@ -96,6 +96,27 @@ class TestSourceIndex < Minitest::Test
     assert_equal ["bin/a", "bin/b"], index.paths_named("T#load", nil)
   end
 
+  # A path an assertion or a matcher compares with a value is text the
+  # test expects, not a script it starts. A path inside a call that is
+  # itself an argument of the assertion still is one.
+  def test_a_path_an_assertion_compares_names_no_script
+    source = <<~RUBY
+      class T
+        def test_a
+          assert_includes error.backtrace.first, "lib/tool/model.rb"
+          refute_match "lib/x.rb", line
+          assert line.start_with?("lib/y.rb")
+          expect(line).to include("lib/z.rb")
+          assert_equal "1\\n", IO.popen(["ruby", "exe/tool"], &:read)
+          assert_equal "ok", run(File.expand_path("../bin/b", __dir__))
+        end
+      end
+    RUBY
+    index = JitCatch::SourceIndex.parse(source, file: "test/t.rb")
+
+    assert_equal ["../bin/b", "exe/tool"], index.paths_named("T#test_a", nil)
+  end
+
   def test_calls_name_the_enclosing_method_in_each_singleton_context
     source = <<~RUBY
       module Shop
