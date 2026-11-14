@@ -47,6 +47,13 @@ module JitCatch
 
       LIBRARY = "minitest" #: String
 
+      # The runner reads this through a value that holds either framework,
+      # and Steep cannot read a constant through such a value.
+      #: () -> String
+      def library
+        LIBRARY
+      end
+
       # Minitest is a bundled gem, so under Bundler only a Gemfile that lists
       # it can load it.
       #: (bool bundled) -> String
@@ -102,6 +109,11 @@ module JitCatch
       end
 
       LIBRARY = "rspec/core" #: String
+
+      #: () -> String
+      def library
+        LIBRARY
+      end
 
       #: (bool bundled) -> String
       def missing(bundled)

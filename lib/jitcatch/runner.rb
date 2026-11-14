@@ -644,11 +644,9 @@ module JitCatch
       bundled = gemfile?(worktree)
       bundle = bundled ? "ok" : "none"
       # Every framework is tried, so one run names all that are missing.
-      # Steep cannot read a constant through a union of modules, as
-      # `framework::LIBRARY` does, so those two lines are not checked.
       checks = frameworks.map { |framework|
-        "begin; require #{framework::LIBRARY.inspect}; rescue LoadError; $stderr.puts #{framework.missing(bundled).inspect}; missing = true; end" # steep:ignore
-      } #: Array[String]
+        "begin; require #{framework.library.inspect}; rescue LoadError; $stderr.puts #{framework.missing(bundled).inspect}; missing = true; end"
+      }
       status, _stdout, stderr, timed_out = run_process(
         [RbConfig.ruby, "-e", [*(BUNDLE_SETUP if bundled), "missing = false", *checks, "exit 1 if missing"].join("; ")],
         chdir: worktree,
@@ -658,7 +656,7 @@ module JitCatch
       )
       return { "bundle" => bundle, "failure" => nil } if !timed_out && status&.success?
 
-      requires = [*("bundler/setup" if bundled), *frameworks.map { |framework| framework::LIBRARY }] # steep:ignore
+      requires = [*("bundler/setup" if bundled), *frameworks.map(&:library)]
       tail = Text.message_lines(normalizer.call(stderr)).last(SETUP_STDERR_LINES)
       failure = {
         "side" => side,
