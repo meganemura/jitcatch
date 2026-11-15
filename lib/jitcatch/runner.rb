@@ -963,7 +963,8 @@ module JitCatch
     def rerun_command(row, bundled, pin_root, launcher)
       file_level = row["line"].nil? && row["name"].start_with?("#{File.basename(row["file"])}#")
       name = file_level ? nil : row["name"]
-      command = @frameworks.fetch(row["file"]).rerun(File.join(tests_from_root, row["file"]), name, row["line"], pin_root: pin_root, launcher: launcher)
+      autorun = !read_candidate(row["file"]).match?(Framework::MINITEST_REQUIRE)
+      command = @frameworks.fetch(row["file"]).rerun(File.join(tests_from_root, row["file"]), name, row["line"], pin_root: pin_root, launcher: launcher, autorun: autorun)
       bundled ? "bundle exec #{command}" : command
     end
 

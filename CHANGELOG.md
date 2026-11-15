@@ -4,6 +4,7 @@
 
 - The gem now ships RBS signatures in `sig/generated/`, written from rbs-inline comments in `lib/`, and CI checks `lib/` against them with Steep.
 - A `config/routes.rb` that passes a block with `&`, as `namespace :admin, &admin_routes`, no longer stops `context` and `run` with a `NoMethodError`. The routes that block draws are not read, and the routes around it still are.
+- A Minitest test file that leaves `require "minitest/autorun"` to a runner such as `bin/test` now runs: every run loads `minitest/autorun`, and the rerun line of a file that requires no minitest loads it too. Before, each row of such a file read `minitest summary not found`.
 - `context` reads a bare constant as Ruby does, from the method's own namespace out. A `CONFIG` added to one module no longer marks the methods of another module that read their own `CONFIG` as `affected`.
 - A test helper whose body builds one class, such as `def caller = Engine::Caller.new(Outer)`, types the calls sent to what it returns, directly or through a local. `caller.call(...)` names `Engine::Caller#call`, so the related method is no longer a guess among every changed method some other `call` reaches.
 - `context` no longer stops with a `NoMethodError` when the change edits a `to_param` defined outside any class.

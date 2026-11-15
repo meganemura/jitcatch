@@ -26,6 +26,11 @@ module JitCatch
 
       REPORTER: String
 
+      # A suite whose files leave `require "minitest/autorun"` to a runner
+      # such as bin/test runs nothing as `ruby file`, so the run loads it,
+      # and so does the rerun line of a file that requires no minitest.
+      AUTORUN: String
+
       # : (String path) -> Array[String]
       def self?.arguments: (String path) -> Array[String]
 
@@ -44,8 +49,8 @@ module JitCatch
       # : (bool bundled) -> String
       def self?.missing: (bool bundled) -> String
 
-      # : (String path, String? name, Integer? _line, ?pin_root: bool, ?launcher: bool) -> String
-      def self?.rerun: (String path, String? name, Integer? _line, ?pin_root: bool, ?launcher: bool) -> String
+      # : (String path, String? name, Integer? _line, ?pin_root: bool, ?launcher: bool, ?autorun: bool) -> String
+      def self?.rerun: (String path, String? name, Integer? _line, ?pin_root: bool, ?launcher: bool, ?autorun: bool) -> String
 
       # A word a shell reads as written stays bare, so a path and a
       # `Class#test` name stay readable; any other word is single-quoted.
@@ -91,8 +96,8 @@ module JitCatch
       # the working directory as its root and adds its lib/, so the line
       # needs no pin, the one part that sets rspec-core's private state, and
       # is plain `rspec` when head's Ruby loads the launcher.
-      # : (String path, String? _name, Integer? line, ?pin_root: bool, ?launcher: bool) -> String
-      def self?.rerun: (String path, String? _name, Integer? line, ?pin_root: bool, ?launcher: bool) -> String
+      # : (String path, String? _name, Integer? line, ?pin_root: bool, ?launcher: bool, ?autorun: bool) -> String
+      def self?.rerun: (String path, String? _name, Integer? line, ?pin_root: bool, ?launcher: bool, ?autorun: bool) -> String
     end
   end
 end

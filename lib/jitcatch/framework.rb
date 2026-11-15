@@ -34,10 +34,14 @@ module JitCatch
       end
 
       REPORTER = File.expand_path("minitest_report.rb", __dir__.to_s) #: String
+      # A suite whose files leave `require "minitest/autorun"` to a runner
+      # such as bin/test runs nothing as `ruby file`, so the run loads it,
+      # and so does the rerun line of a file that requires no minitest.
+      AUTORUN = "-rminitest/autorun" #: String
 
       #: (String path) -> Array[String]
       def arguments(path)
-        ["-r#{REPORTER}", path, "--seed", "1"]
+        ["-r#{REPORTER}", AUTORUN, path, "--seed", "1"]
       end
 
       #: (String? report, String stdout, String stderr, normalizer normalizer) -> doc
@@ -61,10 +65,11 @@ module JitCatch
         bundled ? 'minitest is not in the bundle: add gem "minitest" to the Gemfile' : "minitest is not installed for this Ruby: gem install minitest"
       end
 
-      #: (String path, String? name, Integer? _line, ?pin_root: bool, ?launcher: bool) -> String
-      def rerun(path, name, _line, pin_root: true, launcher: false)
+      #: (String path, String? name, Integer? _line, ?pin_root: bool, ?launcher: bool, ?autorun: bool) -> String
+      def rerun(path, name, _line, pin_root: true, launcher: false, autorun: false)
         selection = name ? ["-n", name] : [] #: Array[String]
-        ["ruby", "-Ilib", "-I.", path, *selection].map { |part| quote(part) }.join(" ")
+        loads = autorun ? [AUTORUN] : [] #: Array[String]
+        ["ruby", "-Ilib", "-I.", *loads, path, *selection].map { |part| quote(part) }.join(" ")
       end
 
       # A word a shell reads as written stays bare, so a path and a
@@ -128,8 +133,8 @@ module JitCatch
       # the working directory as its root and adds its lib/, so the line
       # needs no pin, the one part that sets rspec-core's private state, and
       # is plain `rspec` when head's Ruby loads the launcher.
-      #: (String path, String? _name, Integer? line, ?pin_root: bool, ?launcher: bool) -> String
-      def rerun(path, _name, line, pin_root: true, launcher: false)
+      #: (String path, String? _name, Integer? line, ?pin_root: bool, ?launcher: bool, ?autorun: bool) -> String
+      def rerun(path, _name, line, pin_root: true, launcher: false, autorun: false)
         target = "#{path}#{":#{line}" if line}"
         return ["rspec", "-I.", "-r", LAUNCHER, target].map { |part| Minitest.quote(part) }.join(" ") if launcher && !pin_root
 

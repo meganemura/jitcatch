@@ -148,6 +148,28 @@ class TestRunner < Minitest::Test
     end
   end
 
+  # A gem whose test files leave minitest/autorun to bin/test ran nothing
+  # as `ruby file`, and every row read "minitest summary not found".
+  def test_a_test_file_that_requires_no_minitest_still_runs_and_reruns
+    with_repo do |repo|
+      repo.write("lib/calc.rb", BASE_CALC)
+      repo.commit("Initial calc", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/calc.rb", HEAD_CALC)
+      repo.commit("Tweak calc helpers.", date: "2026-02-12T00:00:00Z")
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, { "double_test.rb" => candidate_source("DoubleTest", "test_double", "assert_equal 4, Calc.new.double(2)").sub(%(require "minitest/autorun"\n), "") })
+
+      doc = execute(repo, tests)
+
+      row = doc["tests"].fetch(0)
+      assert_equal %w[pass fail], [row["base"]["status"], row["head"]["status"]]
+      assert_equal "ruby -Ilib -I. -rminitest/autorun candidates/double_test.rb -n DoubleTest#test_double", row["rerun"]
+      output, = Open3.capture2e(*Shellwords.split(row["rerun"]), chdir: repo.dir)
+      assert_match(/1 runs, 1 assertions, 1 failures/, output)
+    end
+  end
+
   def test_drops_a_test_that_does_not_fail_again_on_head
     with_repo do |repo|
       repo.write("lib/flag.rb", "module Flag; def self.ok; true; end; end\n")
