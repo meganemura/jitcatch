@@ -618,6 +618,30 @@ class TestSourceIndexExamples < Minitest::Test
     assert_equal %w[Cart#name Cart#size Cart#total], names.grep(/#/)
   end
 
+  # A Minitest helper that builds one class types the calls sent to what
+  # it returns, so `caller.call` is not a mention of every `call`.
+  def test_a_helper_method_that_builds_one_class_types_its_calls
+    source = <<~RUBY
+      class CallerTest < Minitest::Test
+        def caller = Engine::Caller.new(Outer, {})
+        def either = flag ? Engine::Caller.new : Order.new
+
+        def test_direct = caller.call(Outer)
+
+        def test_local
+          c = caller
+          c.calls
+          e = either
+          e.run
+        end
+      end
+    RUBY
+    index = JitCatch::SourceIndex.parse(source, file: "test/caller_test.rb")
+
+    assert_equal %w[Engine::Caller#call], index.referenced_names("CallerTest#test_direct").grep(/#/)
+    assert_equal %w[Engine::Caller#calls], index.referenced_names("CallerTest#test_local").grep(/#/)
+  end
+
   def test_only_a_let_or_subject_symbol_names_a_spec_helper
     source = <<~SPEC
       RSpec.describe Cart do

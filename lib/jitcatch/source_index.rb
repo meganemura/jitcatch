@@ -230,6 +230,7 @@ module JitCatch
     # @rbs @defined: Hash[String, Array[String]]
     # @rbs @described: Array[String?]
     # @rbs @returned: Hash[String, Array[String]?]
+    # @rbs @built: Hash[String, Array[String]]
     # @rbs @association_classes: Hash[String, String]
     # @rbs @symbol_lists: Hash[String, Array[Prism::SymbolNode]]
     # @rbs @paths: Hash[String?, Array[String]]
@@ -324,6 +325,7 @@ module JitCatch
       @defined = Hash.new { |hash, key| hash[key] = [] }
       @described = []
       @returned = {}
+      @built = {}
       @association_classes = {}
       @symbol_lists = {}
       @paths = Hash.new { |hash, key| hash[key] = [] }
@@ -1220,12 +1222,37 @@ module JitCatch
         procs = @local_procs.fetch([call.enclosing, local], [])
         next call.with(receiver: PROC_RECEIVER) if procs.any? && procs.all?
 
-        assigned = @local_classes.fetch([call.enclosing, local], [])
+        assigned = @local_classes.fetch([call.enclosing, local], []).map { |consts| built_by_helper(consts, call.enclosing) }
         next call if assigned.all?(&:empty?)
 
         built = assigned.flatten.uniq
         call.with(receiver: typed_or_named(built, assigned.all? { |consts| consts.size == 1 }, local))
       end
+    end
+
+    # `c = caller` takes what the method `caller` of the same class builds,
+    # which only the whole walk knows, so the walk keeps the method's name
+    # behind HELPER_MARK and the typing reads it.
+    HELPER_MARK = "->" #: String
+
+    #: (Prism::Node? value) -> Array[String]
+    def local_built(value)
+      built = built_constants(value).uniq
+      return built unless built.empty? && value.is_a?(Prism::CallNode) && value.receiver.nil? && value.arguments.nil? && value.block.nil?
+
+      ["#{HELPER_MARK}#{value.name}"]
+    end
+
+    #: (Array[String] consts, String? enclosing) -> Array[String]
+    def built_by_helper(consts, enclosing)
+      mark = consts.first
+      return consts unless consts.size == 1 && mark&.start_with?(HELPER_MARK)
+
+      qualifier, sep, _bare = self.class.split_qualified(enclosing.to_s)
+      helper = mark.delete_prefix(HELPER_MARK)
+      names = [sep == ".", sep != "."].map { |singleton| self.class.qualify(qualifier, helper, singleton) }
+      built = @built.values_at(*names).compact.first.to_a.uniq
+      built.size == 1 ? built : []
     end
 
     #: (Array[String] built, bool every_assignment_builds, String name) -> Receiver
@@ -1269,6 +1296,10 @@ module JitCatch
         # A singleton reader names `Loan.borrower`, which no association line records.
         association = @association_classes[reader] unless @defined.fetch(returned, []).include?(reader)
         next call.with(receiver: Receiver.new(kind: "instance", const: association)) if association
+
+        # `def caller = Caller.new(Outer)` makes `caller.call` a call on a Caller.
+        built = @built.values_at(*names).compact.first.to_a.uniq
+        next call.with(receiver: Receiver.new(kind: "instance", const: built.first)) if consts.empty? && built.size == 1
 
         call.with(receiver: consts.empty? ? UNKNOWN_RECEIVER : Receiver.new(kind: "one_of", const: consts))
       end
@@ -1389,7 +1420,10 @@ module JitCatch
         singleton = singleton_context || !node.receiver.nil?
         qname = self.class.qualify(qualifier, node.name.to_s, singleton)
         @defined[node.name.to_s] << qname unless @defined[node.name.to_s].include?(qname)
-        @returned[qname] = returned_constants(node.body) unless returns?(node.body)
+        unless returns?(node.body)
+          @returned[qname] = returned_constants(node.body)
+          @built[qname] = built_constants(node.body)
+        end
         node.compact_child_nodes.each { |child| walk(child, qualifier, singleton_context, qname) }
       when Prism::CallNode
         return walk_spec_block(node, qualifier, singleton_context, enclosing) if spec_block?(node)
@@ -1457,7 +1491,7 @@ module JitCatch
         text = node.unescaped
         @paths[enclosing] << text if text.valid_encoding? && text.match?(PATH_LIKE) && !@compared.key?(node.location.start_offset)
       when Prism::LocalVariableWriteNode
-        @local_classes[[enclosing, node.name.to_s]] << built_constants(node.value).uniq
+        @local_classes[[enclosing, node.name.to_s]] << local_built(node.value)
         @local_procs[[enclosing, node.name.to_s]] << proc_literal?(node.value)
         node.compact_child_nodes.each { |child| walk(child, qualifier, singleton_context, enclosing) }
       # A local bound here can hold any value, so it types no call.

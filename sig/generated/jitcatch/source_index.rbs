@@ -339,6 +339,8 @@ module JitCatch
 
     @returned: Hash[String, Array[String]?]
 
+    @built: Hash[String, Array[String]]
+
     @association_classes: Hash[String, String]
 
     @symbol_lists: Hash[String, Array[Prism::SymbolNode]]
@@ -678,6 +680,17 @@ module JitCatch
     # runs before the instance variables become `named` too.
     # : () -> void
     def type_local_variables: () -> void
+
+    # `c = caller` takes what the method `caller` of the same class builds,
+    # which only the whole walk knows, so the walk keeps the method's name
+    # behind HELPER_MARK and the typing reads it.
+    HELPER_MARK: String
+
+    # : (Prism::Node? value) -> Array[String]
+    def local_built: (Prism::Node? value) -> Array[String]
+
+    # : (Array[String] consts, String? enclosing) -> Array[String]
+    def built_by_helper: (Array[String] consts, String? enclosing) -> Array[String]
 
     # : (Array[String] built, bool every_assignment_builds, String name) -> Receiver
     def typed_or_named: (Array[String] built, bool every_assignment_builds, String name) -> Receiver

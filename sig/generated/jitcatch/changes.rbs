@@ -141,6 +141,14 @@ module JitCatch
     # : (Array[doc] methods, Array[doc] constants, doc base_idx, doc head_idx) -> void
     def attach_affected: (Array[doc] methods, Array[doc] constants, doc base_idx, doc head_idx) -> void
 
+    # A bare name reads the constant Ruby finds first from the method's
+    # namespace out, so a CONFIG added to one module is not the CONFIG
+    # another module defines and reads. A name no namespace on the way
+    # defines may come from a superclass or an include, so it still counts.
+    # A path such as `EnvCheck::CONFIG` reads the constant it ends with.
+    # : (String source, String qualifier, String const_name) -> bool
+    def reads_constant?: (String source, String qualifier, String const_name) -> bool
+
     # : (Array[doc] methods, Array[doc] constants) -> void
     def link_constants: (Array[doc] methods, Array[doc] constants) -> void
 
