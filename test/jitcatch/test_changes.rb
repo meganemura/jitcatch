@@ -459,6 +459,27 @@ class TestChanges < Minitest::Test
     end
   end
 
+  # Ruby reads a bare constant from the innermost namespace out, so a
+  # CONFIG added to one module is not the CONFIG another module reads.
+  def test_a_bare_constant_reads_its_own_namespace_and_not_one_added_elsewhere
+    with_repo do |repo|
+      repo.write("lib/base.rb", "module App\n  module Base\n    CONFIG = \"base.yml\"\n\n    def self.path = CONFIG\n  end\nend\n")
+      repo.write("lib/init.rb", "module App\n  module Init\n    CONFIG = \"init.yml\"\n\n    def self.path = CONFIG\n  end\nend\n")
+      repo.write("lib/report.rb", "module App\n  module Report\n    def self.path = EnvCheck::CONFIG\n  end\nend\n")
+      repo.write("lib/env_check.rb", "module App\n  module EnvCheck\n  end\nend\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("lib/env_check.rb", "module App\n  module EnvCheck\n    CONFIG = \"env.yml\"\n\n    def self.path = CONFIG\n  end\nend\n")
+      repo.commit("Add EnvCheck.", date: "2026-02-12T00:00:00Z")
+
+      doc = JitCatch::Changes.between(repo.dir, "base", "HEAD")
+
+      assert_equal [["App::EnvCheck::CONFIG", "added"]], doc["constants"].map { |const| const.values_at("name", "change") }
+      assert_equal [["App::EnvCheck.path", "added"], ["App::Report.path", "affected"]], doc["methods"].map { |method| method.values_at("name", "change") }.sort
+      assert_equal doc["methods"].map { _1["id"] }.sort, doc["constants"].fetch(0)["read_by"]
+    end
+  end
+
   def test_a_class_or_module_that_only_one_side_defines_is_a_constant
     with_repo do |repo|
       repo.write("lib/model.rb", <<~RUBY)

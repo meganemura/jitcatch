@@ -71,6 +71,7 @@ module JitCatch
       base_idx = index_ref(base, "base")
       head_idx = index_ref(head, "head")
       @head_constants = lookups(head_idx)[2].keys.reject(&:empty?).sort
+      @defined_constants = [base_idx, head_idx].flat_map { |idx| idx["constants"] + idx["namespaces"] }.to_h { |node| [node.qualified, true] }
       methods = changed_methods(base_idx, head_idx, hunks)
       constants = changed_constants(base_idx, head_idx, hunks, methods)
       attach_affected(methods, constants, base_idx, head_idx)
@@ -399,11 +400,10 @@ module JitCatch
       constants.each do |const|
         next if const["namespace"] || const["change"] == "moved"
 
-        bare = (const["new"] || const["old"]).bare_name
-        pattern = /\b#{Regexp.escape(bare)}\b/
+        const_name = (const["new"] || const["old"]).qualified
         head_idx["methods"].each do |method|
           next if test_file?(method.file)
-          next unless method.source.match?(pattern)
+          next unless reads_constant?(method.source, method.qualifier, const_name)
 
           key = identity(method)
           next if known[key]
@@ -418,14 +418,32 @@ module JitCatch
       end
     end
 
+    # A bare name reads the constant Ruby finds first from the method's
+    # namespace out, so a CONFIG added to one module is not the CONFIG
+    # another module defines and reads. A name no namespace on the way
+    # defines may come from a superclass or an include, so it still counts.
+    # A path such as `EnvCheck::CONFIG` reads the constant it ends with.
+    #: (String source, String qualifier, String const_name) -> bool
+    def reads_constant?(source, qualifier, const_name)
+      bare = const_name.split("::").last.to_s
+      source.scan(/((?:[A-Z]\w*::)*)\b#{Regexp.escape(bare)}\b/).any? do |(path)|
+        if path.to_s.empty?
+          found = resolve_constant(bare, qualifier, @defined_constants || {})
+          found.nil? || found == const_name
+        else
+          written = "#{path}#{bare}"
+          const_name == written || const_name.end_with?("::#{written}")
+        end
+      end
+    end
+
     #: (Array[doc] methods, Array[doc] constants) -> void
     def link_constants(methods, constants)
       constants.each do |const|
-        bare = (const["new"] || const["old"]).bare_name
-        pattern = /\b#{Regexp.escape(bare)}\b/
+        const_name = (const["new"] || const["old"]).qualified
         const["read_by"] = methods.filter_map { |method|
-          sources = [method["old"]&.source, method["new"]&.source].compact
-          method["id"] if sources.any? { |source| source.match?(pattern) }
+          nodes = [method["old"], method["new"]].compact
+          method["id"] if nodes.any? { |node| reads_constant?(node.source, node.qualifier, const_name) }
         }.uniq.sort
       end
       methods.each do |method|
