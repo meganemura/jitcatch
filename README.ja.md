@@ -985,6 +985,9 @@ npx skills add meganemura/jitcatch -a claude-code
 
 CLI を使わない場合は、`skills/jitcatch` をエージェントの skills ディレクトリへコピーまたはシンボリックリンクする（例: `.agents/skills/`、`.claude/skills/`、`.cursor/skills/`）。
 
+**jitcatch 0.3.0 以降**の gem はスキルを同梱し、[Rails Hyperdrive](https://github.com/rails-hyperdrive/rails-hyperdrive) の companion としての導入に対応する。
+jitcatch を bundle している Rails アプリでは、`bin/rails hyperdrive:init` がスキルを `.claude/skills/jitcatch/SKILL.md` に入れる。
+
 ## 限界
 
 - 呼び出しを数えるのは、レシーバのクラスがソースに書かれているときだけである。

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- The gem declares itself a [Rails Hyperdrive](https://github.com/rails-hyperdrive/rails-hyperdrive) companion in its metadata (`hyperdrive_targets: "*"`, `hyperdrive_artifacts: skill`). In a Rails app that bundles it, `bin/rails hyperdrive:init` installs the skill the gem ships to `.claude/skills/jitcatch/SKILL.md`.
+
 - The gem now ships RBS signatures in `sig/generated/`, written from rbs-inline comments in `lib/`, and CI checks `lib/` against them with Steep.
 - A `config/routes.rb` that passes a block with `&`, as `namespace :admin, &admin_routes`, no longer stops `context` and `run` with a `NoMethodError`. The routes that block draws are not read, and the routes around it still are.
 - A Minitest test file that leaves `require "minitest/autorun"` to a runner such as `bin/test` now runs: every run loads `minitest/autorun`, and the rerun line of a file that requires no minitest loads it too. Before, each row of such a file read `minitest summary not found`.
