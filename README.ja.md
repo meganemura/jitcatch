@@ -418,6 +418,7 @@ directory ruby (candidates, the bundle check, and each rerun line run here; file
 | `--workers N` | `run` | 同時に実行するテストファイルの数。ワーカーごとに base と head の worktree を持つ。既定は 1。1 つのワーカーは Ruby プロセスを 2 つ同時に動かすので、ワーカーを増やして速くなるのは CPU が空いているときだけである。N によらずレポートは同じになる。 |
 | `--number-database-url` | `run` | `--env` で渡した `DATABASE_URL` のデータベース名に各チェックアウトの `TEST_ENV_NUMBER` を足し、base と head にそれぞれのデータベースを持たせる（Rails アプリの節を参照）。`--env DATABASE_URL` が要る。 |
 | `--setup CMD` | `run` | 候補の前に、各チェックアウトで `CMD` を `/bin/sh` で一度ずつ走らせる。その側の `TEST_ENV_NUMBER`、`DATABASE_URL`、`--env` で渡した変数を渡し、`--env` で別の値を渡さない限り `RAILS_ENV=test` も渡す。`--setup 'bin/rails db:create db:schema:load'` なら、各側のスキーマをそれぞれのテスト用データベースに読み込む。失敗すると終了コード 3 で終わる。 |
+| `--setup-timeout SEC` | `run` | `--setup` とバンドルの確認を、チェックアウトごとに止めるまでの秒数。指定しなければ `--timeout` を使う。混んだマシンではスキーマの読み込みがテストファイルの制限より長くかかることがある。最小は 1。 |
 | `--serial` | `run` | Ruby プロセスを 1 つずつ動かす。ファイルの base 側を走らせてから head 側を走らせる。worktree の外の決まったパスに書く候補や、決まったポートで待ち受ける候補のためのものである。`--workers` に 1 より大きい値は渡せない。Rails アプリの base と head が 1 つのテスト用データベースを共有するときも、`run` は `warning:` を出してこのように動かす（Rails アプリの節を参照）。テキストのレポートは `serial` と出し、`--json` は `"serial": true` を記録する。 |
 | `--env NAME` | `run` | この環境変数を今の環境からテストのプロセスへ渡す。複数の名前は繰り返して渡す。実行結果には値ではなく名前を記録する。設定されていない名前は `env_unset` 行に出す。これはエラーではなく注記で、その名前なしで実行したのでコード自身の既定値が使われたことを示す。名前だけを受け取る。`--env DB_PORT=55801` はシェルでの書き方を示して止まる。`export DB_PORT=<value>` のあとに `--env DB_PORT` を渡す。再実行の行は値をシェルから読むからである。 |
 

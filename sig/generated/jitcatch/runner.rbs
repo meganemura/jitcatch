@@ -132,6 +132,8 @@ module JitCatch
 
     @timeout: Integer | Float | nil
 
+    @setup_timeout: Integer | Float | nil
+
     @finished_in_time: finished_in_time
 
     @env_names: Array[String]
@@ -152,16 +154,19 @@ module JitCatch
 
     @tests_from_root: String?
 
-    # : (GitRepo | String repo, String base_ref, String head_ref, String tests_dir, ?reruns: Integer, ?timeout: Integer | Float | nil, ?env: Array[String], ?workers: Integer, ?serial: bool, ?number_database_url: bool, ?setup: String?, ?finished_in_time: finished_in_time?) -> doc
-    def self.run: (GitRepo | String repo, String base_ref, String head_ref, String tests_dir, ?reruns: Integer, ?timeout: Integer | Float | nil, ?env: Array[String], ?workers: Integer, ?serial: bool, ?number_database_url: bool, ?setup: String?, ?finished_in_time: finished_in_time?) -> doc
+    # : (GitRepo | String repo, String base_ref, String head_ref, String tests_dir, ?reruns: Integer, ?timeout: Integer | Float | nil, ?env: Array[String], ?workers: Integer, ?serial: bool, ?number_database_url: bool, ?setup: String?, ?setup_timeout: Integer | Float | nil, ?finished_in_time: finished_in_time?) -> doc
+    def self.run: (GitRepo | String repo, String base_ref, String head_ref, String tests_dir, ?reruns: Integer, ?timeout: Integer | Float | nil, ?env: Array[String], ?workers: Integer, ?serial: bool, ?number_database_url: bool, ?setup: String?, ?setup_timeout: Integer | Float | nil, ?finished_in_time: finished_in_time?) -> doc
 
     # `finished_in_time` takes the thread that waits on a child and says
     # whether the child ended before the timeout. A test passes its own so
     # that which child times out does not depend on the machine's load.
     # `setup` is a shell command run once in each checkout before its
     # candidates, such as a schema load into that checkout's database.
-    # : (GitRepo | String repo, String base_ref, String head_ref, String tests_dir, reruns: Integer, timeout: Integer | Float | nil, env: Array[String], ?workers: Integer, ?serial: bool, ?number_database_url: bool, ?setup: String?, ?finished_in_time: finished_in_time?) -> void
-    def initialize: (GitRepo | String repo, String base_ref, String head_ref, String tests_dir, reruns: Integer, timeout: Integer | Float | nil, env: Array[String], ?workers: Integer, ?serial: bool, ?number_database_url: bool, ?setup: String?, ?finished_in_time: finished_in_time?) -> void
+    # `setup_timeout` limits that command and the bundle check apart from
+    # the tests: a schema load on a loaded machine took longer than a test
+    # file may, and failed the whole run as a setup that timed out.
+    # : (GitRepo | String repo, String base_ref, String head_ref, String tests_dir, reruns: Integer, timeout: Integer | Float | nil, env: Array[String], ?workers: Integer, ?serial: bool, ?number_database_url: bool, ?setup: String?, ?setup_timeout: Integer | Float | nil, ?finished_in_time: finished_in_time?) -> void
+    def initialize: (GitRepo | String repo, String base_ref, String head_ref, String tests_dir, reruns: Integer, timeout: Integer | Float | nil, env: Array[String], ?workers: Integer, ?serial: bool, ?number_database_url: bool, ?setup: String?, ?setup_timeout: Integer | Float | nil, ?finished_in_time: finished_in_time?) -> void
 
     # : () -> void
     def check_database_url: () -> void
@@ -255,8 +260,8 @@ module JitCatch
     # : (String worktree, String relative, normalizer normalizer) -> Result
     def execute: (String worktree, String relative, normalizer normalizer) -> Result
 
-    # : (Array[String] cmd, chdir: String, stdout_path: String, stderr_path: String, env: Hash[String, String?]) -> [Process::Status?, String, String, bool, Float]
-    def run_process: (Array[String] cmd, chdir: String, stdout_path: String, stderr_path: String, env: Hash[String, String?]) -> [ Process::Status?, String, String, bool, Float ]
+    # : (Array[String] cmd, chdir: String, stdout_path: String, stderr_path: String, env: Hash[String, String?], ?limit: Integer | Float | nil) -> [Process::Status?, String, String, bool, Float]
+    def run_process: (Array[String] cmd, chdir: String, stdout_path: String, stderr_path: String, env: Hash[String, String?], ?limit: Integer | Float | nil) -> [ Process::Status?, String, String, bool, Float ]
 
     # : (Integer pid) -> void
     def kill_group: (Integer pid) -> void

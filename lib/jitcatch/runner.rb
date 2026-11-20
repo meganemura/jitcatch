@@ -90,6 +90,7 @@ module JitCatch
     # @rbs @tests_dir: String
     # @rbs @reruns: Integer
     # @rbs @timeout: Integer | Float | nil
+    # @rbs @setup_timeout: Integer | Float | nil
     # @rbs @finished_in_time: finished_in_time
     # @rbs @env_names: Array[String]
     # @rbs @workers: Integer
@@ -101,10 +102,10 @@ module JitCatch
     # @rbs @temp_roots: Array[String]?
     # @rbs @tests_from_root: String?
 
-    #: (GitRepo | String repo, String base_ref, String head_ref, String tests_dir, ?reruns: Integer, ?timeout: Integer | Float | nil, ?env: Array[String], ?workers: Integer, ?serial: bool, ?number_database_url: bool, ?setup: String?, ?finished_in_time: finished_in_time?) -> doc
-    def self.run(repo, base_ref, head_ref, tests_dir, reruns: 2, timeout: nil, env: [], workers: 1, serial: false, number_database_url: false, setup: nil, finished_in_time: nil)
+    #: (GitRepo | String repo, String base_ref, String head_ref, String tests_dir, ?reruns: Integer, ?timeout: Integer | Float | nil, ?env: Array[String], ?workers: Integer, ?serial: bool, ?number_database_url: bool, ?setup: String?, ?setup_timeout: Integer | Float | nil, ?finished_in_time: finished_in_time?) -> doc
+    def self.run(repo, base_ref, head_ref, tests_dir, reruns: 2, timeout: nil, env: [], workers: 1, serial: false, number_database_url: false, setup: nil, setup_timeout: nil, finished_in_time: nil)
       new(repo, base_ref, head_ref, tests_dir, reruns: reruns, timeout: timeout, env: env, workers: workers, serial: serial,
-        number_database_url: number_database_url, setup: setup, finished_in_time: finished_in_time).run
+        number_database_url: number_database_url, setup: setup, setup_timeout: setup_timeout, finished_in_time: finished_in_time).run
     end
 
     # `finished_in_time` takes the thread that waits on a child and says
@@ -112,10 +113,14 @@ module JitCatch
     # that which child times out does not depend on the machine's load.
     # `setup` is a shell command run once in each checkout before its
     # candidates, such as a schema load into that checkout's database.
-    #: (GitRepo | String repo, String base_ref, String head_ref, String tests_dir, reruns: Integer, timeout: Integer | Float | nil, env: Array[String], ?workers: Integer, ?serial: bool, ?number_database_url: bool, ?setup: String?, ?finished_in_time: finished_in_time?) -> void
-    def initialize(repo, base_ref, head_ref, tests_dir, reruns:, timeout:, env:, workers: 1, serial: false, number_database_url: false, setup: nil, finished_in_time: nil)
+    # `setup_timeout` limits that command and the bundle check apart from
+    # the tests: a schema load on a loaded machine took longer than a test
+    # file may, and failed the whole run as a setup that timed out.
+    #: (GitRepo | String repo, String base_ref, String head_ref, String tests_dir, reruns: Integer, timeout: Integer | Float | nil, env: Array[String], ?workers: Integer, ?serial: bool, ?number_database_url: bool, ?setup: String?, ?setup_timeout: Integer | Float | nil, ?finished_in_time: finished_in_time?) -> void
+    def initialize(repo, base_ref, head_ref, tests_dir, reruns:, timeout:, env:, workers: 1, serial: false, number_database_url: false, setup: nil, setup_timeout: nil, finished_in_time: nil)
       @git = repo.is_a?(GitRepo) ? repo : GitRepo.new(repo)
       @setup = setup
+      @setup_timeout = setup_timeout
       @base_ref = base_ref
       @head_ref = head_ref
       @tests_dir = File.expand_path(tests_dir)
@@ -244,6 +249,7 @@ module JitCatch
         "warnings" => change["warnings"] + require_warnings(files) + helper_warnings + [*(shared_database_warnings(shared) if shared)],
         "reruns" => @reruns,
         "timeout_s" => @timeout,
+        **(@setup_timeout ? { "setup_timeout_s" => @setup_timeout } : {}),
         "serial" => @serial,
         "setup" => @setup,
         "numbered_databases" => numbered_databases,
@@ -518,12 +524,12 @@ module JitCatch
       )
     end
 
-    #: (Array[String] cmd, chdir: String, stdout_path: String, stderr_path: String, env: Hash[String, String?]) -> [Process::Status?, String, String, bool, Float]
-    def run_process(cmd, chdir:, stdout_path:, stderr_path:, env:)
+    #: (Array[String] cmd, chdir: String, stdout_path: String, stderr_path: String, env: Hash[String, String?], ?limit: Integer | Float | nil) -> [Process::Status?, String, String, bool, Float]
+    def run_process(cmd, chdir:, stdout_path:, stderr_path:, env:, limit: nil)
       started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       pid = Process.spawn(env, *cmd, chdir: chdir, out: stdout_path, err: stderr_path, pgroup: true, unsetenv_others: true)
       waiter = Process.detach(pid)
-      timed_out = !@finished_in_time.call(waiter)
+      timed_out = limit ? waiter.join(limit).nil? : !@finished_in_time.call(waiter)
       seconds = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
       kill_group(pid) if timed_out
       status = waiter.value
@@ -652,7 +658,8 @@ module JitCatch
         chdir: worktree,
         stdout_path: File.join(worktree, ".jitcatch-stdout"),
         stderr_path: File.join(worktree, ".jitcatch-stderr"),
-        env: child_env(worktree)
+        env: child_env(worktree),
+        limit: @setup_timeout
       )
       return { "bundle" => bundle, "failure" => nil } if !timed_out && status&.success?
 
@@ -662,7 +669,7 @@ module JitCatch
         "side" => side,
         "commit" => commit,
         "command" => "ruby -e #{Framework::Minitest.quote(requires.map { |library| %(require "#{library}") }.join("; "))}",
-        "stderr" => timed_out ? ["timed out after #{@timeout}s"] : tail,
+        "stderr" => timed_out ? ["timed out after #{@setup_timeout || @timeout}s"] : tail,
         "not_passed" => bundled ? unpassed_bundler_settings : [] #: Array[String]
       }
       { "bundle" => bundle, "failure" => failure }
@@ -686,7 +693,8 @@ module JitCatch
           chdir: worktree,
           stdout_path: File.join(worktree, ".jitcatch-stdout"),
           stderr_path: File.join(worktree, ".jitcatch-stderr"),
-          env: env
+          env: env,
+          limit: @setup_timeout
         )
         next if !timed_out && status&.success?
 
@@ -695,7 +703,7 @@ module JitCatch
           "side" => side,
           "commit" => change[side],
           "command" => setup,
-          "stderr" => timed_out ? ["timed out after #{@timeout}s"] : lines.last(SETUP_STDERR_LINES),
+          "stderr" => timed_out ? ["timed out after #{@setup_timeout || @timeout}s"] : lines.last(SETUP_STDERR_LINES),
           "not_passed" => [], #: Array[String]
           "database_not_passed" => timed_out ? [] : database_not_passed(lines) #: Array[String]
         }

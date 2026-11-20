@@ -72,7 +72,7 @@ module JitCatch
 
     #: (Array[String] argv) -> Integer
     def command_run(argv)
-      opts, positional = parse_options(argv, %i[repo reruns timeout env workers serial number_database_url setup])
+      opts, positional = parse_options(argv, %i[repo reruns timeout env workers serial number_database_url setup setup_timeout])
       return write_help if opts[:help]
       raise UsageError, "usage: jitcatch run BASE HEAD TESTS_DIR" unless positional.size == 3
 
@@ -88,6 +88,7 @@ module JitCatch
         serial: opts.fetch(:serial, false),
         number_database_url: opts.fetch(:number_database_url, false),
         setup: opts[:setup],
+        setup_timeout: opts[:setup_timeout],
         finished_in_time: @finished_in_time
       )
       doc = Assessor.apply(raw)
@@ -148,7 +149,7 @@ module JitCatch
 
           opts[name] = case name
           when :reruns then integer_option(arg, value)
-          when :timeout, :workers then positive_option(arg, value)
+          when :timeout, :setup_timeout, :workers then positive_option(arg, value)
           else value
           end
         else
@@ -206,7 +207,7 @@ module JitCatch
 
         Usage:
           jitcatch context [--json] [--repo DIR] [--coverage FILE] [--all-readers] BASE HEAD
-          jitcatch run [--json] [--repo DIR] [--reruns N] [--timeout SEC] [--workers N | --serial] [--env NAME]... [--number-database-url] [--setup CMD] BASE HEAD TESTS_DIR
+          jitcatch run [--json] [--repo DIR] [--reruns N] [--timeout SEC] [--workers N | --serial] [--env NAME]... [--number-database-url] [--setup CMD [--setup-timeout SEC]] BASE HEAD TESTS_DIR
           jitcatch assess [--json] RUN.json
           jitcatch --version
 

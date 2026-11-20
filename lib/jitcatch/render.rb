@@ -111,6 +111,7 @@ module JitCatch
       lines << "reruns #{doc["reruns"]}"
       lines << "timeout_s #{doc["timeout_s"]}"
       lines << "setup #{doc["setup"]}" if doc["setup"]
+      lines << "setup_timeout_s #{doc["setup_timeout_s"]}" if doc["setup_timeout_s"]
       lines << "serial" if doc["serial"]
       lines << "numbered_databases #{doc["numbered_databases"].join(" ")}" unless doc["numbered_databases"].to_a.empty?
       lines << "env #{doc["env"].join(" ")}" unless doc["env"].to_a.empty?

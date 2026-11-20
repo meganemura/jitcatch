@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- `run --setup-timeout SEC` limits `--setup` and the bundle check apart from `--timeout`. A schema load on a busy machine took longer than the 60 seconds a Rails test file gets, and the whole run stopped as a setup that timed out. The report prints `setup_timeout_s` when the flag is given.
 - The gem declares itself a [Rails Hyperdrive](https://github.com/rails-hyperdrive/rails-hyperdrive) companion in its metadata (`hyperdrive_targets: "*"`, `hyperdrive_artifacts: skill`). In a Rails app that bundles it, `bin/rails hyperdrive:init` installs the skill the gem ships to `.claude/skills/jitcatch/SKILL.md`.
 
 - The gem now ships RBS signatures in `sig/generated/`, written from rbs-inline comments in `lib/`, and CI checks `lib/` against them with Steep.

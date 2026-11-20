@@ -2516,6 +2516,30 @@ class TestRunner < Minitest::Test
     end
   end
 
+  # A schema load can take longer than a test file may, so the setup has a
+  # limit of its own; the waiter the tests pass never decides it.
+  def test_setup_timeout_limits_the_setup_apart_from_the_tests
+    with_repo do |repo|
+      repo.write("lib/calc.rb", "class Calc\nend\n")
+      repo.commit("base", date: "2026-02-11T00:00:00Z")
+      repo.branch("base")
+      repo.write("README.md", "head\n")
+      repo.commit("Touch readme.", date: "2026-02-12T00:00:00Z")
+      tests = File.join(repo.dir, "candidates")
+      write_tests(tests, { "a_test.rb" => candidate_source("ATest", "test_a", "assert true") })
+      never = ->(waiter) { waiter.join; true }
+
+      err = assert_raises(JitCatch::EnvironmentError) do
+        JitCatch::Runner.run(repo.dir, "base", "HEAD", tests, reruns: 0, timeout: 60, setup: "sleep 30", setup_timeout: 1, finished_in_time: never)
+      end
+      assert_equal [["base", ["timed out after 1s"]], ["head", ["timed out after 1s"]]], err.doc["setup_failed"].map { |failure| failure.values_at("side", "stderr") }
+
+      doc = JitCatch::Runner.run(repo.dir, "base", "HEAD", tests, reruns: 0, setup: "true", setup_timeout: 120, finished_in_time: never)
+      assert_equal 120, doc["setup_timeout_s"]
+      assert_includes JitCatch::Render.run_text(JitCatch::Assessor.apply(doc)), "\nsetup true\nsetup_timeout_s 120\n"
+    end
+  end
+
   # A database client the shell points at a port of its own reaches the
   # app's default port in a checkout, because the child gets only the names
   # --env passes, and the refusal says nothing of the variable it lacked.
